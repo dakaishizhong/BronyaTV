@@ -1,0 +1,5 @@
+BronyaTV includes the AndroidX Media3 FFmpeg audio extension 1.11.1 (Apache-2.0)
+and FFmpeg 6.1.4 (LGPL-2.1-or-later), statically linked without GPL or nonfree components.
+Corresponding source, license texts and the native rebuild script are included at:
+https://github.com/dakaishizhong/BronyaTV
+See decoder-ffmpeg/, third_party/ffmpeg/ and scripts/build_audio_decoders.sh.

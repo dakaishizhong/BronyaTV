@@ -29,8 +29,8 @@ import androidx.media3.common.*
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
-import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
@@ -85,7 +85,8 @@ class PlaybackActivity : TvActivity(), Player.Listener {
     private var spec: PlaybackSpec? = null
     private var position = 0L
     private var wantedPlay = true
-    private var softwareMode = false
+    private var softwareVideo = false
+    private val seekRecovery = SeekRecovery()
     private var trackPreferences: TrackSelectionParameters? = null
     private val skippedExternalSubtitles = mutableSetOf<Int>()
     private var retryAttempt = 0
@@ -278,9 +279,9 @@ class PlaybackActivity : TvActivity(), Player.Listener {
                 val prepared=app.api.playbackSpec(s,video.id,source,playback.playSessionId)
                 if(!active) return@launch
                 if(startedReported) report("Stopped")
-                startedReported=false;playerView.player=null;player?.release();player=null
+                startedReported=false;playerView.player=null;player?.removeListener(this@PlaybackActivity);player?.release();player=null
                 // Track overrides reference the old item's groups; language preferences carry to the new item.
-                position=0;wantedPlay=true;trackPreferences=null;softwareMode=false;retryAttempt=0
+                position=0;wantedPlay=true;trackPreferences=null;softwareVideo=false;retryAttempt=0
                 forceOriginalRoute=false;refreshedRejectedUrl=false;lastRejectedUrlRefresh=0;lastProgressReport=0
                 skippedExternalSubtitles.clear();introHandled=false;outroHandled=false
                 neighbors=EpisodeNeighbors();neighborsForId="";item=video;spec=prepared
@@ -330,10 +331,11 @@ class PlaybackActivity : TvActivity(), Player.Listener {
         if(app.settings.autoNextEpisode && next!=null) switchEpisode(next)
         else if(p.duration>0) { control?.markSeek();p.seekTo(p.duration) }
     }
-    private fun createPlayer() {
+    private fun createPlayer(preserveSeekRecovery: Boolean = false) {
         if(!active) return
         val s = session ?: return; val current = spec ?: return
-        player?.let { position = it.currentPosition; wantedPlay = it.playWhenReady; trackPreferences = it.trackSelectionParameters; playerView.player = null; it.release() }
+        if(!preserveSeekRecovery) seekRecovery.clear()
+        player?.let { position = it.currentPosition; wantedPlay = it.playWhenReady; trackPreferences = it.trackSelectionParameters; playerView.player = null; it.removeListener(this); it.release() }
         playbackHttp?.connectionPool?.evictAll()
         val r = Runtime.getRuntime()
         val mem = ActivityManager.MemoryInfo().also { (getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(it) }
@@ -344,9 +346,10 @@ class PlaybackActivity : TvActivity(), Player.Listener {
         val selector = MediaCodecSelector { mime, secure, tunnel ->
             val codecs = MediaCodecSelector.DEFAULT.getDecoderInfos(mime, secure, tunnel)
             codecs.forEach(currentStats::registerCodec)
-            if(softwareMode) codecs.filter { it.softwareOnly } else codecs.sortedBy { if(it.hardwareAccelerated) 0 else 1 }
+            if(softwareVideo && MimeTypes.isVideo(mime)) codecs.filter { it.softwareOnly }
+            else codecs.sortedBy { if(it.hardwareAccelerated) 0 else 1 }
         }
-        val renderers = DefaultRenderersFactory(this).setEnableDecoderFallback(true).setMediaCodecSelector(selector)
+        val renderers = TvRenderersFactory(this).setEnableDecoderFallback(true).setMediaCodecSelector(selector)
         receiveSocketFactory = ReceiveBufferSocketFactory(app.settings.receiveBufferKb * 1024)
         val streamPlan=StreamPolicy.create(app.settings.streamConnections,current.version.bitrate,r.maxMemory(),r.totalMemory()-r.freeMemory(),mem.lowMemory)
         val prefetchBudget=streamPlan.budgetBytes
@@ -396,7 +399,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
         val media = MediaItem.Builder().setUri(current.url).setMediaId(item!!.id)
             .setMediaMetadata(MediaMetadata.Builder().setTitle(item!!.name).build()).setSubtitleConfigurations(subtitles).build()
         p.setMediaItem(media, position.coerceAtLeast(0)); playerView.player = p
-        setStatus(if(softwareMode) "正在尝试设备软件解码器…" else "正在缓冲…")
+        setStatus(if(softwareVideo) "正在尝试设备软件解码器…" else "正在缓冲…")
         p.prepare(); p.playWhenReady = wantedPlay
         stalledAt = SystemClock.elapsedRealtime(); previousBuffer = -1; previousPosition = -1
     }
@@ -423,13 +426,18 @@ class PlaybackActivity : TvActivity(), Player.Listener {
     }
     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) { wantedPlay = playWhenReady; report("Progress") }
     override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo,newPosition: Player.PositionInfo,reason: Int) {
-        if(reason==Player.DISCONTINUITY_REASON_SEEK) { control?.markSeek();report("Progress") }
+        if(reason==Player.DISCONTINUITY_REASON_SEEK) {
+            control?.markSeek();position=newPosition.positionMs
+            seekRecovery.begin(position,SystemClock.elapsedRealtime());report("Progress")
+        }
     }
     override fun onPlayerError(error: PlaybackException) {
         val p = player ?: return
         position = p.currentPosition; wantedPlay = p.playWhenReady
-        if(error.errorCode in 4000..4999 && !softwareMode) {
-            softwareMode = true; createPlayer(); return
+        if(error.errorCode in 4000..4999 && error is ExoPlaybackException &&
+            error.type==ExoPlaybackException.TYPE_RENDERER && error.rendererIndex in 0 until p.rendererCount &&
+            p.getRendererType(error.rendererIndex)==C.TRACK_TYPE_VIDEO && !softwareVideo) {
+            softwareVideo = true; createPlayer(); return
         }
         val http = HttpFailures.find(error)
         if(http != null && http.responseCode in listOf(401, 403, 404, 410)) {
@@ -493,6 +501,16 @@ class PlaybackActivity : TvActivity(), Player.Listener {
                     val now = SystemClock.elapsedRealtime();stats.observe(p,now)
                     if(p.bufferedPosition != previousBuffer || p.currentPosition != previousPosition) stalledAt = now
                     previousBuffer = p.bufferedPosition; previousPosition = p.currentPosition
+                    val shouldAdvance=p.playWhenReady && p.playbackSuppressionReason==Player.PLAYBACK_SUPPRESSION_REASON_NONE &&
+                        p.playerError==null && p.playbackState!=Player.STATE_ENDED && (p.duration<=0 || p.currentPosition<p.duration-1000)
+                    val canAdvance=p.playbackState==Player.STATE_READY ||
+                        (p.playbackState==Player.STATE_BUFFERING && !p.isLoading && (control?.allocatedBytes ?: 0)>0)
+                    val frames=p.videoDecoderCounters?.renderedOutputBufferCount.takeIf { p.videoFormat!=null }
+                    if(seekRecovery.shouldRecover(p.currentPosition,now,shouldAdvance,canAdvance,frames)) {
+                        android.util.Log.w("BronyaTVPlayback","Seek output stalled; rebuilding renderers at current position")
+                        createPlayer(preserveSeekRecovery=true)
+                        delay(1000);continue
+                    }
                     if(p.playbackState == Player.STATE_BUFFERING && p.playWhenReady && now - stalledAt > 45_000 && retryJob?.isActive != true) {
                         position = p.currentPosition; wantedPlay = p.playWhenReady; createPlayer()
                     }
@@ -611,8 +629,8 @@ class PlaybackActivity : TvActivity(), Player.Listener {
                         try {
                             val next=app.api.playbackSpec(s,video.id,info.versions[index],info.playSessionId)
                             report("Stopped");startedReported=false;retryJob?.cancel()
-                            player?.let { position=it.currentPosition;wantedPlay=it.playWhenReady;playerView.player=null;it.release() };player=null
-                            trackPreferences=null;softwareMode=false;forceOriginalRoute=false;refreshedRejectedUrl=false
+                            player?.let { position=it.currentPosition;wantedPlay=it.playWhenReady;playerView.player=null;it.removeListener(this@PlaybackActivity);it.release() };player=null
+                            trackPreferences=null;softwareVideo=false;forceOriginalRoute=false;refreshedRejectedUrl=false
                             skippedExternalSubtitles.clear();spec=next
                             intent.putExtra("source_id",next.version.id);createPlayer();dialog.dismiss()
                         } catch(e: Exception) { message(e.message ?: "无法切换片源") }
@@ -773,7 +791,8 @@ class PlaybackActivity : TvActivity(), Player.Listener {
         player?.let { position = it.currentPosition; wantedPlay = it.playWhenReady; trackPreferences = it.trackSelectionParameters }
         if(startedReported) { report("Stopped"); startedReported = false }
         if(::playerView.isInitialized) playerView.player = null
-        player?.release(); player = null
+        player?.removeListener(this);player?.release(); player = null
+        seekRecovery.clear()
         playbackHttp?.connectionPool?.evictAll(); playbackHttp = null; receiveSocketFactory = null
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         super.onStop()

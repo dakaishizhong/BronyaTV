@@ -100,7 +100,7 @@ class PlayerStatsMonitor : AnalyticsListener, VideoFrameMetadataListener {
         codecMimes[info.name]=info.codecMimeType
         codecs[info.name]=when { info.softwareOnly -> "软件";info.hardwareAccelerated -> "硬件";else -> "系统未明确" }
     }
-    private fun decoderMode(name:String)=codecs[name] ?: "等待确认"
+    private fun decoderMode(name:String)=if(name.startsWith("ffmpeg")) "FFmpeg 软件音频" else codecs[name] ?: "等待确认"
     override fun onVideoDecoderInitialized(eventTime:AnalyticsListener.EventTime,decoderName:String,initializedTimestampMs:Long,initializationDurationMs:Long) { videoDecoder=decoderName }
     override fun onAudioDecoderInitialized(eventTime:AnalyticsListener.EventTime,decoderName:String,initializedTimestampMs:Long,initializationDurationMs:Long) { audioDecoder=decoderName }
     override fun onDroppedVideoFrames(eventTime:AnalyticsListener.EventTime,droppedFrames:Int,elapsedMs:Long) { dropped+=droppedFrames }

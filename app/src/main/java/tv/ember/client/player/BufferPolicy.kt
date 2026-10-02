@@ -3,7 +3,7 @@ package tv.ember.client.player
 import tv.ember.client.settings.BufferMode
 import tv.ember.client.settings.BufferPreferences
 
-/** A selectable ceiling, never a reservation. No disk or offline cache. */
+/** A selectable memory target; load control allows a bounded recovery reserve. No disk cache. */
 data class BufferPolicy(val minMs: Int, val maxMs: Int, val startMs: Int, val rebufferMs: Int, val targetBytes: Int, val backBufferMs: Int = 0) {
     companion object {
         fun create(p: BufferPreferences, heapMax: Long, usedHeap: Long = 0, lowMemory: Boolean = false, bitrate: Long = 0): BufferPolicy {

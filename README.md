@@ -2,7 +2,7 @@
 
 面向 Android TV 的 Emby 播放客户端。简洁暗色界面、圆角海报和清晰的遥控器焦点，让电影与剧集更适合大屏观看。支持 Android 6.0 及以上系统。
 
-[下载 BronyaTV 1.2.0](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.2.0/BronyaTV-1.2.0-release.apk) · [版本发布说明](https://github.com/dakaishizhong/BronyaTV/releases) · [构建与开发](docs/DEVELOPMENT.md)
+[下载 BronyaTV 1.2.1](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.2.1/BronyaTV-1.2.1-release.apk) · [版本发布说明](https://github.com/dakaishizhong/BronyaTV/releases) · [构建与开发](docs/DEVELOPMENT.md)
 
 ## 功能
 
@@ -11,6 +11,7 @@
 - 影片详情、海报、多片源选择，播放中切换片源并保留进度。
 - 原始片源播放，支持 MP4、MKV、H.264、H.265，以及设备支持的 HDR / Dolby Vision。
 - 音轨和字幕选择、内嵌与外置 SRT / ASS 字幕、字幕大小和语言偏好。
+- 内置 TrueHD / MLP 软件音频解码，使用 PCM 兼容输出；此路径不提供 TrueHD Atmos 直通。
 - 短按、长按快进与快退，步长分别可调；跳转预览、返回取消、指定时间跳转。
 - 上一集、下一集、跨季连续播放；可调片头片尾秒数，片尾连播倒计时可取消。
 - 播放速度、画面比例、默认播放器；支持调用已安装的 VLC、MX Player、Just Player。
@@ -22,7 +23,7 @@
 下载 APK 后在电视上安装。覆盖安装可保留登录和设置；也可使用 ADB：
 
 ```bash
-adb install -r BronyaTV-1.2.0-release.apk
+adb install -r BronyaTV-1.2.1-release.apk
 ```
 
 输入服务器地址、账号和密码。地址支持 HTTPS、自定义端口和反向代理路径，例如 `https://emby.example.com/emby`。省略协议时使用 HTTPS。登录成功后会自动保存加密会话，密码不保存。

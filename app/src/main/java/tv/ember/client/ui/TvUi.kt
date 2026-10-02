@@ -10,6 +10,7 @@ import android.graphics.drawable.StateListDrawable
 import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -98,7 +99,20 @@ object TvUi {
     }
 }
 open class TvActivity: FragmentActivity() {
+    companion object { private val backKeys = BackKeyGate() }
     val app get()=application as BronyaApp
+    // TV remote keys need repeat filtering. Accepted keys use the same dispatcher callbacks
+    // as gesture navigation; gesture callbacks themselves are not intercepted here.
+    @android.annotation.SuppressLint("RestrictedApi", "GestureBackNavigation")
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+            if (event.action == KeyEvent.ACTION_UP && backKeys.accept(event.downTime, event.isCanceled)) {
+                onBackPressedDispatcher.onBackPressed()
+            }
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)

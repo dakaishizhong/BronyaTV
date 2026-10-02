@@ -36,13 +36,21 @@ class TvLoadControl private constructor(
     override fun retainBackBufferFromKeyframe(playerId: PlayerId) = policy.backBufferMs>0
 
     override fun shouldContinueLoading(parameters: LoadControl.Parameters): Boolean {
-        if (allocator.totalBytesAllocated >= policy.targetBytes) return false
+        // A seek can leave retained samples at the target while the new forward buffer is empty.
+        // Allow only a small, bounded reserve to obtain playable audio and video at the new position.
+        if (allocator.totalBytesAllocated >= policy.targetBytes) {
+            val reserve = minOf(policy.targetBytes / 4, 4 * 1024 * 1024)
+            return parameters.bufferedDurationUs < 500_000L * parameters.playbackSpeed &&
+                allocator.totalBytesAllocated.toLong() < policy.targetBytes.toLong() + reserve
+        }
         return delegate.shouldContinueLoading(parameters)
     }
     override fun shouldStartPlayback(parameters: LoadControl.Parameters): Boolean {
-        // A short buffer at the safe byte ceiling must start draining, even if 60 s cannot fit.
+        // Don't declare a seek ready based on memory retained from the old position alone.
         val enoughForSeek = seeking && parameters.bufferedDurationUs >= minOf(policy.startMs,1200)*1000L*parameters.playbackSpeed
-        val start = enoughForSeek || (parameters.bufferedDurationUs > 0 && allocator.totalBytesAllocated >= policy.targetBytes) || delegate.shouldStartPlayback(parameters)
+        val full = allocator.totalBytesAllocated >= policy.targetBytes
+        val start = enoughForSeek || if(full) parameters.bufferedDurationUs >= 500_000L * parameters.playbackSpeed
+            else delegate.shouldStartPlayback(parameters)
         if(start) seeking=false
         return start
     }

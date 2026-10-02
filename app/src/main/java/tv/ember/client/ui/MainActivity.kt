@@ -29,7 +29,6 @@ class MainActivity : TvActivity() {
     private val history = ArrayDeque<BrowserPage>()
     private var page: BrowserPage? = null
     private var loadingLogin = false
-    private var lastHomeLoaded=0L
     private var selectedItemId: String?=null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -84,7 +83,6 @@ class MainActivity : TvActivity() {
         }
         loadingLogin = false
         if(s != loadedSession) { loadedSession = s; history.clear(); page = null; loadHome() }
-        else if(page==null && android.os.SystemClock.elapsedRealtime()-lastHomeLoaded>15_000 && work?.isActive!=true) loadHome(true)
     }
     private fun row(name: String, items: List<Any>) {
         if(items.isEmpty()) return
@@ -106,7 +104,6 @@ class MainActivity : TvActivity() {
                 val v = views.await(); val r = resume.await(); val l = latest.await()
                 adapter.clear(); row("继续观看", r); row("最近添加", l); row("服务器分类", v)
                 if(adapter.size() == 0) row("暂无内容", listOf(BrowserCommand("刷新服务器") { loadHome() }))
-                lastHomeLoaded=android.os.SystemClock.elapsedRealtime()
                 title.text = "欢迎回来，${s.userName}"; description.text = "接着看喜欢的电影与剧集"
                 var restored=false
                 if(selectedId!=null) for(rowIndex in 0 until adapter.size()) {

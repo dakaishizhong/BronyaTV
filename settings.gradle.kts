@@ -4,4 +4,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "BronyaTV"
-include(":app")
+include(":app", ":decoder-ffmpeg")
