@@ -1,0 +1,44 @@
+name: Publish signed APK
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out release
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Verify and publish signed APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          version="${RELEASE_TAG#v}"
+          release_dir="releases/$RELEASE_TAG"
+          apk="$release_dir/EmberTV-$version-release.apk"
+          test -s "$apk"
+          (
+            cd "$release_dir"
+            sha256sum --check SHA256SUMS
+          )
+          assets=("$apk" "$release_dir/SHA256SUMS" --repo "$GITHUB_REPOSITORY")
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${assets[@]}" --verify-tag --title "Ember TV $version" --notes-file "$release_dir/RELEASE-NOTES.md"
+          fi

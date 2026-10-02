@@ -4,7 +4,7 @@
 
 ## 安装与使用
 
-当前版本为 1.0.3。发布 APK 可在仓库 Releases 中提供；本地构建产物位于 `artifacts/EmberTV-1.0.3-release.apk`。通用 Java/Kotlin APK，没有限定 ABI 的原生库，同一个 APK 可在 `armeabi-v7a` 和 `arm64-v8a` Android TV 安装。
+当前版本为 1.0.3。直接[下载 APK](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.0.3/EmberTV-1.0.3-release.apk)，或查看 [GitHub Release](https://github.com/dakaishizhong/BronyaTV/releases/tag/v1.0.3)。本地构建产物位于 `artifacts/EmberTV-1.0.3-release.apk`。通用 Java/Kotlin APK，没有限定 ABI 的原生库，同一个 APK 可在 `armeabi-v7a` 和 `arm64-v8a` Android TV 安装。
 
 电视开启开发者选项和 ADB 调试，在配对/连接设备后运行：
 

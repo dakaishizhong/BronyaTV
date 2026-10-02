@@ -19,7 +19,7 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Release binaries and private signing material belong outside source control.
+# Ignore build outputs and private signing material.
 *.apk
 *.aab
 *.jks
@@ -28,3 +28,6 @@ Thumbs.db
 *.pem
 .env
 .env.*
+
+# Keep verified signed packages available for GitHub Releases.
+!/releases/v*/EmberTV-*-release.apk
