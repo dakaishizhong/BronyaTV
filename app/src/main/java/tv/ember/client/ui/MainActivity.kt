@@ -15,7 +15,7 @@ import tv.ember.client.data.*
 import tv.ember.client.network.ApiException
 
 data class BrowserCommand(val name: String, val action: () -> Unit)
-private data class BrowserPage(val parent: String, val name: String, val search: String = "")
+private data class BrowserPage(val parent: String, val name: String, val search: String = "", val sort: String = "SortName")
 
 class MainActivity : TvActivity() {
     private lateinit var rows: RowsSupportFragment
@@ -29,16 +29,17 @@ class MainActivity : TvActivity() {
     private val history = ArrayDeque<BrowserPage>()
     private var page: BrowserPage? = null
     private var loadingLogin = false
+    private var lastHomeLoaded=0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val root = paddedColumn()
         root.setPadding(TvUi.dp(root, 36), TvUi.dp(root, 16), TvUi.dp(root, 36), 0)
         val nav = TvUi.row(this)
-        navLabel = TvUi.text(this, "EMBER TV", 22f, TvUi.accent).apply { letterSpacing = .1f }
+        navLabel = TvUi.text(this, "BronyaTV", 22f, TvUi.accent).apply { letterSpacing = .1f;maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END }
         nav.addView(navLabel, LinearLayout.LayoutParams(0, -2, 1f))
         homeButton = TvUi.button(this, "首页") { history.clear(); page = null; loadHome() }
-        listOf(homeButton, TvUi.button(this, "搜索") { searchDialog() }, TvUi.button(this, "设置") { startActivity(Intent(this, SettingsActivity::class.java)) },
+        listOf(homeButton, TvUi.button(this, "搜索") { searchDialog() },TvUi.button(this,"排序") { sortDialog() }, TvUi.button(this, "设置") { startActivity(Intent(this, SettingsActivity::class.java)) },
             TvUi.button(this, "刷新") { if(page == null) loadHome() else loadPage(page!!) }).forEach {
             nav.addView(it, LinearLayout.LayoutParams(-2, TvUi.dp(nav, 46)).apply { marginStart = TvUi.dp(nav, 8) })
         }
@@ -72,20 +73,25 @@ class MainActivity : TvActivity() {
         super.onResume()
         val s = app.sessions.load()
         if(s == null) {
+            loadedSession=null;adapter.clear()
+            title.text="连接你的媒体库";description.text="登录 Emby，继续观看电影与剧集。";navLabel.text="BronyaTV"
+            row("开始观看",listOf(BrowserCommand("连接服务器") { startActivity(Intent(this,LoginActivity::class.java)) }))
             if(!loadingLogin) { loadingLogin = true; startActivity(Intent(this, LoginActivity::class.java)) }
             return
         }
         loadingLogin = false
         if(s != loadedSession) { loadedSession = s; history.clear(); page = null; loadHome() }
+        else if(page==null && android.os.SystemClock.elapsedRealtime()-lastHomeLoaded>15_000 && work?.isActive!=true) loadHome(true)
     }
     private fun row(name: String, items: List<Any>) {
         if(items.isEmpty()) return
         val a = ArrayObjectAdapter(CardPresenter()).apply { addAll(0, items) }
         adapter.add(ListRow(HeaderItem(name), a))
     }
-    private fun loadHome() {
+    private fun loadHome(preserveFocus: Boolean=false) {
         val s = app.sessions.load() ?: return
-        page = null; navLabel.text = "EMBER TV  /  ${s.userName}"; title.text = "正在连接服务器…"; description.text = ""
+        val selected=if(preserveFocus) rows.selectedPosition else 0
+        page = null; navLabel.text = "BronyaTV  /  ${s.userName}"; title.text = "正在连接服务器…"; description.text = ""
         work?.cancel()
         work = lifecycleScope.launch {
             try {
@@ -95,19 +101,21 @@ class MainActivity : TvActivity() {
                 val v = views.await(); val r = resume.await(); val l = latest.await()
                 adapter.clear(); row("继续观看", r); row("最近添加", l); row("服务器分类", v)
                 if(adapter.size() == 0) row("暂无内容", listOf(BrowserCommand("刷新服务器") { loadHome() }))
-                title.text = "欢迎回来，${s.userName}"; description.text = "浏览服务器提供的内容 · Direct Play 优先"
+                lastHomeLoaded=android.os.SystemClock.elapsedRealtime()
+                title.text = "欢迎回来，${s.userName}"; description.text = "接着看喜欢的电影与剧集"
+                rows.setSelectedPosition(selected.coerceIn(0,(adapter.size()-1).coerceAtLeast(0)))
                 rows.view?.requestFocus()
             } catch(e: CancellationException) { throw e } catch(e: Exception) { showError(e) }
         }
     }
-    private suspend fun optional(block: suspend () -> List<VideoItem>): List<VideoItem> = try { block() } catch(e: CancellationException) { throw e } catch(e: Exception) { android.util.Log.w("EmberBrowse", "Optional server row unavailable", e); emptyList() }
+    private suspend fun optional(block: suspend () -> List<VideoItem>): List<VideoItem> = try { block() } catch(e: CancellationException) { throw e } catch(e: Exception) { android.util.Log.w("BronyaTVBrowse", "Optional server row unavailable", e); emptyList() }
     private fun openPage(next: BrowserPage) { history.addLast(page ?: BrowserPage("", "首页")); page = next; loadPage(next) }
     private fun loadPage(next: BrowserPage) {
         val s = app.sessions.load() ?: return
-        page = next; work?.cancel(); title.text = "正在加载 ${next.name}…"; description.text = ""; navLabel.text = "EMBER TV  /  ${next.name}"
+        page = next; work?.cancel(); title.text = "正在加载 ${next.name}…"; description.text = ""; navLabel.text = "BronyaTV  /  ${next.name}"
         work = lifecycleScope.launch {
             try {
-                val data = app.api.items(s, next.parent, search = next.search)
+                val data = app.api.items(s, next.parent, search = next.search,sort=next.sort)
                 adapter.clear(); appendPage(next, data, 0)
                 title.text = next.name; description.text = "共 ${data.total} 项 · 选择影片查看详情或打开分类"
                 rows.view?.requestFocus()
@@ -120,7 +128,7 @@ class MainActivity : TvActivity() {
         if(end < data.total && data.items.isNotEmpty()) row("更多内容", listOf(BrowserCommand("加载更多（$end / ${data.total}）") {
             work?.cancel(); work = lifecycleScope.launch {
                 try {
-                    val more = app.api.items(app.sessions.load() ?: return@launch, next.parent, end, next.search)
+                    val more = app.api.items(app.sessions.load() ?: return@launch, next.parent, end, next.search,next.sort)
                     adapter.removeItems(adapter.size() - 1, 1); appendPage(next, more, end)
                 } catch(e: CancellationException) { throw e } catch(e: Exception) { message(e.message ?: "加载失败") }
             }
@@ -137,10 +145,18 @@ class MainActivity : TvActivity() {
         rows.view?.requestFocus()
     }
     private fun searchDialog() {
-        val field = EditText(this).apply { hint = "影片或剧集名称"; isSingleLine = true; setTextColor(TvUi.text) }
+        val field = TvUi.input(this,"影片或剧集名称").apply { setText(page?.search.orEmpty()) }
         AlertDialog.Builder(this).setTitle("搜索服务器").setView(field).setPositiveButton("搜索") { _, _ ->
             val q = field.text.toString().trim(); if(q.isNotBlank()) openPage(BrowserPage("", "搜索：$q", q))
         }.setNegativeButton("取消", null).show()
+    }
+    private fun sortDialog() {
+        val current=page ?: run { message("打开分类或搜索结果后可选择排序");return }
+        val values=listOf("SortName","DateCreated","PremiereDate","CommunityRating")
+        AlertDialog.Builder(this).setTitle("内容排序").setSingleChoiceItems(
+            arrayOf("名称","最近添加","上映时间","评分"),values.indexOf(current.sort)) { dialog,index ->
+            dialog.dismiss();loadPage(current.copy(sort=values[index]))
+        }.setNegativeButton("取消",null).show()
     }
     inner class CardPresenter : Presenter() {
         inner class Holder(val card: ImageCardView) : ViewHolder(card) { var job: Job? = null }
@@ -148,14 +164,18 @@ class MainActivity : TvActivity() {
             isFocusable = true; isFocusableInTouchMode = true
             setMainImageDimensions(TvUi.dp(this, 132), TvUi.dp(this, 188))
             setMainImageScaleType(ImageView.ScaleType.CENTER_CROP)
-            setBackgroundColor(TvUi.panel); setInfoAreaBackgroundColor(TvUi.panel)
-            setOnFocusChangeListener { _, hasFocus -> animate().scaleX(if(hasFocus) 1.055f else 1f).scaleY(if(hasFocus) 1.055f else 1f).setDuration(150).start() }
+            background=TvUi.box(TvUi.panel,18f);clipToOutline=true;setInfoAreaBackgroundColor(TvUi.panel)
+            setOnFocusChangeListener { _, hasFocus ->
+                background=TvUi.box(TvUi.panel,18f,if(hasFocus) TvUi.accent else 0)
+                setInfoAreaBackgroundColor(if(hasFocus) TvUi.raised else TvUi.panel)
+                animate().scaleX(if(hasFocus) 1.055f else 1f).scaleY(if(hasFocus) 1.055f else 1f).setDuration(130).start()
+            }
         })
         override fun onBindViewHolder(viewHolder: ViewHolder, item: Any?) {
             val h = viewHolder as Holder; h.job?.cancel()
             when(item) {
                 is VideoItem -> {
-                    h.card.titleText = item.name; h.card.contentText = item.subtitle.ifBlank { if(item.isFolder) "打开分类" else "查看详情" }
+                    h.card.titleText = item.name; h.card.contentText = if(item.resumeTicks>0) "续看 · ${tv.ember.client.player.SeekPolicy.time(item.resumeTicks/10000)}" else item.subtitle.ifBlank { if(item.isFolder) "打开分类" else "查看详情" }
                     h.card.mainImageView!!.setBackgroundColor(TvUi.panel)
                     val s = app.sessions.load()
                     if(s != null) h.job = PosterLoader.load(lifecycleScope, h.card.mainImageView!!, app.api.imageUrl(s, item), s)

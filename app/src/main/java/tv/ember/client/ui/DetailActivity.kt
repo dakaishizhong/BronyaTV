@@ -17,6 +17,8 @@ class DetailActivity : TvActivity() {
     private var item: VideoItem? = null
     private var busy = false
     private var choice = PlayerChoice.INTERNAL
+    private var playbackInfo: PlaybackInfo?=null
+    private var playbackInfoAt=0L
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         choice = app.settings.player
@@ -39,7 +41,7 @@ class DetailActivity : TvActivity() {
     private fun render(video: VideoItem, session: Session) {
         val root = paddedColumn()
         val body = TvUi.row(this)
-        val poster = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; background = TvUi.box(TvUi.panel) }
+        val poster = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; background = TvUi.box(TvUi.panel,22f);clipToOutline=true }
         body.addView(poster, LinearLayout.LayoutParams(TvUi.dp(body, 195), TvUi.dp(body, 292)).apply { marginEnd = TvUi.dp(body, 28) })
         PosterLoader.load(lifecycleScope, poster, app.api.imageUrl(session, video), session)
         val info = TvUi.column(this)
@@ -47,11 +49,11 @@ class DetailActivity : TvActivity() {
         TvUi.add(info, TvUi.text(this, video.subtitle, 17f, TvUi.muted))
         val overview = ScrollView(this).apply { addView(TvUi.text(this@DetailActivity, video.overview.ifBlank { "服务器未提供简介。" }, 18f).apply { setLineSpacing(3f, 1.1f) }) }
         TvUi.add(info, overview, height = TvUi.dp(body, 136))
-        status = TvUi.text(this, "选择片源后播放 · Direct Play", 15f, TvUi.muted)
+        status = TvUi.text(this, "选择喜欢的版本，开始观看。", 15f, TvUi.muted)
         TvUi.add(info, status)
         body.addView(info, LinearLayout.LayoutParams(0, -2, 1f)); TvUi.add(root, body)
         val actions = TvUi.row(this)
-        val play = TvUi.button(this, if(video.resumeTicks > 0) "继续播放" else "选择片源并播放") { chooseVersion(video.resumeTicks / 10_000) }
+        val play = TvUi.button(this, if(video.resumeTicks > 0) "继续播放 · ${tv.ember.client.player.SeekPolicy.time(video.resumeTicks/10000)}" else "选择片源并播放",true) { chooseVersion(video.resumeTicks / 10_000) }
         actions.addView(play)
         if(video.resumeTicks > 0) actions.addView(TvUi.button(this, "从头播放") { chooseVersion(0) }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = 16 })
         val playerButton = TvUi.button(this, "播放器：${choice.label}") {
@@ -71,20 +73,26 @@ class DetailActivity : TvActivity() {
         busy = true; status.text = "正在获取可播放版本…"
         lifecycleScope.launch {
             try {
-                val info = app.api.playbackInfo(s, v.id)
+                val now=android.os.SystemClock.elapsedRealtime()
+                val info = playbackInfo?.takeIf { now-playbackInfoAt<15_000 } ?: app.api.playbackInfo(s,v.id).also { playbackInfo=it;playbackInfoAt=now }
                 check(info.versions.isNotEmpty()) { "服务器没有提供视频版本" }
                 status.text = "${info.versions.size} 个版本可供选择"
-                AlertDialog.Builder(this@DetailActivity).setTitle("选择视频版本")
-                    .setItems(info.versions.map { it.label }.toTypedArray()) { _, index ->
+                fun play(index: Int) {
                         val source = info.versions[index]
                         if(choice == PlayerChoice.INTERNAL) {
+                            val spec=app.api.playbackSpec(s,v.id,source,info.playSessionId)
+                            app.launches.put(s,v,spec)
                             startActivity(Intent(this@DetailActivity, PlaybackActivity::class.java).putExtra("item_id", v.id)
                                 .putExtra("source_id", source.id).putExtra("position_ms", positionMs))
                         } else {
                             try { ExternalPlayers.launch(this@DetailActivity, choice, app.api.playbackSpec(s, v.id, source, info.playSessionId), v.name, positionMs) }
                             catch(e: Exception) { message(e.message ?: "无法打开外部播放器") }
                         }
-                    }.setNegativeButton("取消", null).show()
+                }
+                if(info.versions.size==1) play(0) else AlertDialog.Builder(this@DetailActivity).setTitle("选择视频版本")
+                    .setItems(info.versions.map { it.label }.toTypedArray()) { _,index ->
+                        try { play(index) } catch(e: Exception) { message(e.message ?: "无法打开所选片源") }
+                    }.setNegativeButton("取消",null).show()
             } catch(e: CancellationException) { throw e }
             catch(e: Exception) { status.text = e.message ?: "片源请求失败" }
             finally { busy = false }

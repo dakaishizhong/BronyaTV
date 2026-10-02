@@ -18,8 +18,11 @@ import kotlinx.coroutines.withContext
 class EmbyApi(private val client: OkHttpClient, private val deviceId: String) {
     companion object {
         fun normalizeServer(input: String): String {
-            val value = input.trim().trimEnd('/')
+            val cleaned = input.trim().trimEnd('/')
+            val explicitScheme=cleaned.contains("://")
+            val value = if(explicitScheme) cleaned else "https://$cleaned"
             val u = value.toHttpUrlOrNull() ?: throw IllegalArgumentException("请输入完整服务器地址，例如 https://emby.example.com")
+            require(explicitScheme || u.host.contains('.') || u.host.contains(':') || u.host=="localhost") { "请输入服务器域名或 IP 地址" }
             require(u.username.isEmpty() && u.password.isEmpty() && u.query == null && u.fragment == null) { "服务器地址不能包含密码、查询参数或片段" }
             return u.toString().trimEnd('/')
         }
@@ -42,7 +45,7 @@ class EmbyApi(private val client: OkHttpClient, private val deviceId: String) {
             return requireNotNull(base.resolve(relative)).toString()
         }
     }
-    fun authHeader(token: String = "") = "MediaBrowser Client=\"Ember TV\", Device=\"Android TV\", DeviceId=\"$deviceId\", Version=\"${tv.ember.client.BuildConfig.VERSION_NAME}\"" +
+    fun authHeader(token: String = "") = "MediaBrowser Client=\"BronyaTV\", Device=\"Android TV\", DeviceId=\"$deviceId\", Version=\"${tv.ember.client.BuildConfig.VERSION_NAME}\"" +
         if (token.isBlank()) "" else ", Token=\"${token.replace("\"", "")}\""
     private fun url(server: String, path: String, query: Map<String, String> = emptyMap()): HttpUrl {
         val b = (server.trimEnd('/') + "/").toHttpUrl().newBuilder().addPathSegments(path.trimStart('/'))
@@ -86,8 +89,9 @@ class EmbyApi(private val client: OkHttpClient, private val deviceId: String) {
         mapOf("Limit" to "16", "MediaTypes" to "Video", "Fields" to "Overview,MediaSources", "EnableImageTypes" to "Primary"))).optJSONArray("Items").objects().map(VideoItem::parse)
     suspend fun latest(s: Session): List<VideoItem> = JSONArray(request(s.server, "Users/${s.userId}/Items/Latest", s.token,
         mapOf("Limit" to "24", "IncludeItemTypes" to "Movie,Episode", "Fields" to "Overview,MediaSources"))).objects().map(VideoItem::parse)
-    suspend fun items(s: Session, parent: String, start: Int = 0, search: String = ""): ItemPage {
-        val q = mutableMapOf("Limit" to "40", "StartIndex" to "$start", "Fields" to "Overview,MediaSources", "SortBy" to "SortName", "SortOrder" to "Ascending", "EnableTotalRecordCount" to "true")
+    suspend fun items(s: Session, parent: String, start: Int = 0, search: String = "", sort: String = "SortName"): ItemPage {
+        require(sort in listOf("SortName","DateCreated","PremiereDate","CommunityRating"))
+        val q = mutableMapOf("Limit" to "40", "StartIndex" to "$start", "Fields" to "Overview,MediaSources", "SortBy" to sort, "SortOrder" to if(sort=="SortName") "Ascending" else "Descending", "EnableTotalRecordCount" to "true")
         if (parent.isNotBlank()) q["ParentId"] = parent
         if (search.isNotBlank()) { q["SearchTerm"] = search; q["Recursive"] = "true"; q["IncludeItemTypes"] = "Movie,Series,Episode" }
         val j = JSONObject(request(s.server, "Users/${s.userId}/Items", s.token, q))
@@ -95,7 +99,7 @@ class EmbyApi(private val client: OkHttpClient, private val deviceId: String) {
     }
     suspend fun detail(s: Session, id: String) = VideoItem.parse(JSONObject(request(s.server, "Users/${s.userId}/Items/$id", s.token)))
     suspend fun playbackInfo(s: Session, id: String, sourceId: String = ""): PlaybackInfo {
-        val profile = JSONObject().put("Name", "Ember TV Direct Play")
+        val profile = JSONObject().put("Name", "BronyaTV Direct Play")
             .put("MaxStreamingBitrate", 1_000_000_000)
             .put("DirectPlayProfiles", JSONArray().put(JSONObject().put("Type", "Video").put("Container", "mkv,mp4,m4v,mov,webm,avi,ts,mpegts")))
             .put("TranscodingProfiles", JSONArray())
@@ -141,7 +145,7 @@ class EmbyApi(private val client: OkHttpClient, private val deviceId: String) {
             url(s.server, "Videos/$itemId/${version.id}/Subtitles/${stream.index}/Stream.${if (stream.codec in listOf("ass", "ssa")) "ass" else "srt"}").toString()
         return if (sameOrigin(s.server, address)) address.toHttpUrl().newBuilder().setQueryParameter("api_key", s.token).build().toString() else address
     }
-    fun imageUrl(s: Session, item: VideoItem): String = url(s.server, "Items/${item.imageId}/Images/Primary", mapOf("maxWidth" to "500", "quality" to "90", "tag" to item.imageTag)).toString()
+    fun imageUrl(s: Session, item: VideoItem): String = url(s.server, "Items/${item.imageId}/Images/Primary", mapOf("maxWidth" to "360", "quality" to "85", "tag" to item.imageTag)).toString()
     suspend fun report(s: Session, event: String, itemId: String, spec: PlaybackSpec, positionMs: Long, paused: Boolean) {
         request(s.server, "Sessions/Playing${if (event.isBlank()) "" else "/$event"}", s.token, body = JSONObject()
             .put("ItemId", itemId).put("MediaSourceId", spec.version.id).put("PlaySessionId", spec.playSessionId)

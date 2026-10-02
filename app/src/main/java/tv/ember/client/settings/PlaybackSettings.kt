@@ -8,7 +8,7 @@ enum class PlayerChoice(val label: String, val packages: List<String>) {
     MX("MX Player", listOf("com.mxtech.videoplayer.pro", "com.mxtech.videoplayer.ad")),
     JUST("Just Player", listOf("com.brouken.player"))
 }
-data class BufferPreferences(val mode: BufferMode = BufferMode.AUTO, val requestedMb: Int = 512, val prebufferSeconds: Int = 5)
+data class BufferPreferences(val mode: BufferMode = BufferMode.AUTO, val requestedMb: Int = 0, val prebufferSeconds: Int = 2, val backBufferSeconds: Int = 5)
 class PlaybackSettings(context: Context) {
     private val p = context.getSharedPreferences("playback", Context.MODE_PRIVATE)
     // SO_RCVBUF locks the socket's receive size and disables Linux TCP auto-tuning.
@@ -24,17 +24,35 @@ class PlaybackSettings(context: Context) {
         get() = runCatching { BufferMode.valueOf(p.getString("mode", "AUTO")!!) }.getOrDefault(BufferMode.AUTO)
         set(v) { p.edit().putString("mode", v.name).apply() }
     var bufferMb: Int
-        get() = p.getInt("buffer_mb", 512).takeIf { it in listOf(512, 1024, 2048) } ?: 512
-        set(v) { require(v in listOf(512, 1024, 2048)); p.edit().putInt("buffer_mb", v).apply() }
+        get() = p.getInt("buffer_mb", 0).takeIf { it in listOf(0, 16, 32, 64, 128, 256, 512, 1024, 2048) } ?: 0
+        set(v) { require(v in listOf(0, 16, 32, 64, 128, 256, 512, 1024, 2048)); p.edit().putInt("buffer_mb", v).apply() }
     var prebuffer: Int
-        get() = p.getInt("prebuffer", 5).takeIf { it in listOf(5, 15, 30, 60) } ?: 5
-        set(v) { require(v in listOf(5, 15, 30, 60)); p.edit().putInt("prebuffer", v).apply() }
+        get() = p.getInt("prebuffer", 2).takeIf { it in listOf(2, 5, 10, 15, 30, 60) } ?: 2
+        set(v) { require(v in listOf(2, 5, 10, 15, 30, 60)); p.edit().putInt("prebuffer", v).apply() }
     var receiveBufferKb: Int
         get() = p.getInt("receive_buffer_kb", 0).takeIf { it in listOf(0, 256, 512, 1024, 2048, 4096) } ?: 0
         set(v) { require(v in listOf(0, 256, 512, 1024, 2048, 4096)); p.edit().putInt("receive_buffer_kb", v).apply() }
     var streamConnections:Int
-        get()=p.getInt("stream_connections",1).takeIf { it in listOf(1,2,4,8) } ?: 1
-        set(v) { require(v in listOf(1,2,4,8));p.edit().putInt("stream_connections",v).apply() }
+        get()=p.getInt("stream_connections",0).takeIf { it in listOf(0,1,2,4,8) } ?: 0
+        set(v) { require(v in listOf(0,1,2,4,8));p.edit().putInt("stream_connections",v).apply() }
+    var backBufferSeconds: Int
+        get()=p.getInt("back_buffer_seconds",5).takeIf { it in listOf(0,5,15,30) } ?: 5
+        set(v) { require(v in listOf(0,5,15,30));p.edit().putInt("back_buffer_seconds",v).apply() }
+    var seekSeconds: Int
+        get()=p.getInt("seek_seconds",10).takeIf { it in listOf(5,10,20,30,60) } ?: 10
+        set(v) { require(v in listOf(5,10,20,30,60));p.edit().putInt("seek_seconds",v).apply() }
+    var audioLanguage: String
+        get()=p.getString("audio_language","").orEmpty()
+        set(v) { p.edit().putString("audio_language",v).apply() }
+    var subtitleLanguage: String
+        get()=p.getString("subtitle_language","zh").orEmpty()
+        set(v) { p.edit().putString("subtitle_language",v).apply() }
+    var resizeMode: Int
+        get()=p.getInt("resize_mode",0).takeIf { it in listOf(0,3,4) } ?: 0
+        set(v) { require(v in listOf(0,3,4));p.edit().putInt("resize_mode",v).apply() }
+    var subtitleScale: Int
+        get()=p.getInt("subtitle_scale",100).takeIf { it in listOf(80,100,120,140) } ?: 100
+        set(v) { require(v in listOf(80,100,120,140));p.edit().putInt("subtitle_scale",v).apply() }
     var player: PlayerChoice
         get() = runCatching { PlayerChoice.valueOf(p.getString("player", "INTERNAL")!!) }.getOrDefault(PlayerChoice.INTERNAL)
         set(v) { p.edit().putString("player", v.name).apply() }
@@ -43,5 +61,5 @@ class PlaybackSettings(context: Context) {
         set(v) { p.edit().putBoolean("osd", v).apply() }
     // Debug mode is deliberately ephemeral and does not survive process restart.
     var debugEnabled = false
-    fun snapshot() = BufferPreferences(mode, bufferMb, prebuffer)
+    fun snapshot() = BufferPreferences(mode, bufferMb, prebuffer, backBufferSeconds)
 }

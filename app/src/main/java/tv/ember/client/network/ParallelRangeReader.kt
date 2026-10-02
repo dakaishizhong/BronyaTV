@@ -15,7 +15,7 @@ class ParallelRangeReader(private val client:OkHttpClient, private val url:Strin
                           private val start:Long, private val requestedLength:Long, private val connections:Int,
                           private val chunkBytes:Int, private val onBytes:(Int)->Unit) : AutoCloseable {
     private data class Chunk(val bytes:ByteArray)
-    private val executor=Executors.newFixedThreadPool(connections) { task -> Thread(task,"EmberRange").apply { isDaemon=true } }
+    private val executor=Executors.newFixedThreadPool(connections) { task -> Thread(task,"BronyaTVRange").apply { isDaemon=true } }
     private val calls=java.util.Collections.newSetFromMap(ConcurrentHashMap<Call,Boolean>())
     private val closed=AtomicBoolean()
     private val pending=ArrayDeque<Future<Chunk>>()
@@ -55,7 +55,10 @@ class ParallelRangeReader(private val client:OkHttpClient, private val url:Strin
     private fun fetch(position:Long,initial:Boolean):Chunk {
         if(closed.get()) throw InterruptedIOException("分段接收已停止")
         val limit=if(initial) {
-            if(requestedLength>=0) minOf(start+requestedLength,position+chunkBytes) else position+chunkBytes
+            // Start with a small probe. Waiting for an entire multi-MiB chunk here
+            // serializes startup and every seek before any other worker can start.
+            val probe=minOf(chunkBytes,64*1024)
+            if(requestedLength>=0) minOf(start+requestedLength,position+probe) else position+probe
         } else minOf(endExclusive,position+chunkBytes)
         val request=Request.Builder().url(url)
         headers.forEach { (k,v)->request.header(k,v) }

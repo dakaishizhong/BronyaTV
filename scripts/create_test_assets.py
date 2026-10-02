@@ -10,9 +10,6 @@ for y in range(750):
         c=(int(12+24*y/750),int(26+30*x/500),int(45+62*y/750));im.putpixel((x,y),c)
 d=ImageDraw.Draw(im);d.ellipse((40,60,420,440),fill=(184,122,83));d.ellipse((115,112,440,500),fill=(19,49,66))
 d.text((42,535),'OCEAN',font=ImageFont.truetype(f,55),fill=(248,237,215));d.text((44,605),'OF LIGHT',font=ImageFont.truetype(f,45),fill=(248,237,215));im.save(a/'poster.jpg',quality=92)
-b=Image.new('RGB',(320,180),(11,16,27));d=ImageDraw.Draw(b);d.polygon([(25,47),(25,132),(78,90)],fill=(255,180,92));d.text((91,67),'Ember TV',font=ImageFont.truetype(f,32),fill=(245,244,240))
-dest=r/'app/src/main/res/drawable-xhdpi';dest.mkdir(exist_ok=True);b.save(dest/'tv_banner.png')
-(r/'app/src/main/res/drawable/tv_banner.xml').unlink(missing_ok=True)
 (a/'subtitle.srt').write_text('1\n00:00:00,000 --> 00:00:40,000\nDirect Play · SRT subtitle test\n\n2\n00:00:40,000 --> 00:01:30,000\nAudio and network recovery test\n')
 (a/'subtitle.ass').write_text('''[Script Info]
 ScriptType: v4.00+
@@ -31,4 +28,4 @@ if not (a/'sample.mp4').exists():
     run(['-i',str(a/'sample.mp4'),'-i',str(a/'subtitle.srt'),'-i',str(a/'subtitle.ass'),'-map','0','-map','1','-map','2','-c','copy',str(a/'sample.mkv')])
 if not (a/'hevc.mkv').exists():
     run(['-f','lavfi','-i','testsrc2=size=640x360:rate=24','-f','lavfi','-i','sine=sample_rate=48000','-t','30','-c:v','libx265','-preset','ultrafast','-pix_fmt','yuv420p10le','-x265-params','pools=2:frame-threads=2:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc','-c:a','aac',str(a/'hevc.mkv')])
-print('Created TV banner and real MP4 / MKV / HEVC test assets')
+print('Created real MP4 / MKV / HEVC test assets')

@@ -20,7 +20,10 @@ class TvLoadControl private constructor(
         DefaultLoadControl.Builder().setAllocator(allocator)
             .setBufferDurationsMs(policy.minMs, policy.maxMs, policy.startMs, policy.rebufferMs)
             .setTargetBufferBytes(policy.targetBytes).setPrioritizeTimeOverSizeThresholds(false)
-            .setBackBuffer(0, false).build())
+            .setBackBuffer(policy.backBufferMs, policy.backBufferMs>0).build())
+
+    @Volatile private var seeking = false
+    fun markSeek() { seeking = true }
 
     // Explicit forwarding is essential: Kotlin delegation does not forward Java interface defaults.
     override fun onPrepared(playerId: PlayerId) = delegate.onPrepared(playerId)
@@ -29,8 +32,8 @@ class TvLoadControl private constructor(
     override fun onStopped(playerId: PlayerId) = delegate.onStopped(playerId)
     override fun onReleased(playerId: PlayerId) = delegate.onReleased(playerId)
     override fun getAllocator(playerId: PlayerId) = delegate.getAllocator(playerId)
-    override fun getBackBufferDurationUs(playerId: PlayerId) = 0L
-    override fun retainBackBufferFromKeyframe(playerId: PlayerId) = false
+    override fun getBackBufferDurationUs(playerId: PlayerId) = policy.backBufferMs*1000L
+    override fun retainBackBufferFromKeyframe(playerId: PlayerId) = policy.backBufferMs>0
 
     override fun shouldContinueLoading(parameters: LoadControl.Parameters): Boolean {
         if (allocator.totalBytesAllocated >= policy.targetBytes) return false
@@ -38,8 +41,10 @@ class TvLoadControl private constructor(
     }
     override fun shouldStartPlayback(parameters: LoadControl.Parameters): Boolean {
         // A short buffer at the safe byte ceiling must start draining, even if 60 s cannot fit.
-        if (parameters.bufferedDurationUs > 0 && allocator.totalBytesAllocated >= policy.targetBytes) return true
-        return delegate.shouldStartPlayback(parameters)
+        val enoughForSeek = seeking && parameters.bufferedDurationUs >= minOf(policy.startMs,1200)*1000L*parameters.playbackSpeed
+        val start = enoughForSeek || (parameters.bufferedDurationUs > 0 && allocator.totalBytesAllocated >= policy.targetBytes) || delegate.shouldStartPlayback(parameters)
+        if(start) seeking=false
+        return start
     }
     val allocatedBytes get() = allocator.totalBytesAllocated
 }

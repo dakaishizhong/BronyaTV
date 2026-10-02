@@ -77,6 +77,11 @@ class EmbyApiTest {
             try { EmbyApi.normalizeServer(value); fail(value) } catch(_: IllegalArgumentException) {}
         }
     }
+    @Test fun missingSchemeUsesHttpsAndExplicitPortsAndProxyPathsArePreserved() {
+        assertEquals("https://example.com:8443/proxy/emby",EmbyApi.normalizeServer(" example.com:8443/proxy/emby/ "))
+        assertEquals("http://192.168.1.9:8096",EmbyApi.normalizeServer("http://192.168.1.9:8096"))
+        assertEquals("https://example.com",EmbyApi.normalizeServer("example.com:443"))
+    }
     @Test fun rejectsSourcesThatRequireTranscoding() {
         val v = MediaVersion.parse(JSONObject("""{"Id":"v","SupportsDirectPlay":false,"TranscodingUrl":"/Videos/v/master.m3u8"}"""))
         try { api.playbackSpec(session, "m", v, "p"); fail("Must reject") } catch(_: IllegalArgumentException) {}

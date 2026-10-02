@@ -28,7 +28,7 @@ import tv.ember.client.ui.*
 @RunWith(AndroidJUnit4::class)
 class TvIntegrationTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
-    private val app get() = context.applicationContext as EmberApp
+    private val app get() = context.applicationContext as BronyaApp
     private fun children(view: View): List<View> = listOf(view) + if(view is ViewGroup) (0 until view.childCount).flatMap { children(view.getChildAt(it)) } else emptyList()
     private fun views(a: android.app.Activity) = children(a.window.decorView)
     private fun fixture(url: String) { HttpClient.api.newCall(Request.Builder().url("http://10.0.2.2:8765$url").build()).execute().close() }
@@ -44,6 +44,7 @@ class TvIntegrationTest {
     }
     @Test fun encryptedSessionSurvivesReloadWithoutPlaintext() {
         assertEquals("fixture-token", app.sessions.load()?.token)
+        assertEquals(app.sessions.load(),tv.ember.client.data.SessionStore(context).load())
         val stored = context.getSharedPreferences("session", 0).getString("encrypted", "")!!
         assertFalse(stored.contains("fixture-token")); assertFalse(stored.contains("http://"))
     }

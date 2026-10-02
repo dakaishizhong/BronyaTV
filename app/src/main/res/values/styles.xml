@@ -1,8 +1,9 @@
 <resources>
-    <color name="background">#0B101B</color>
-    <color name="accent">#FFB45C</color>
-    <style name="Theme.Ember" parent="Theme.Leanback">
-        <item name="android:fontFamily">sans</item>
+    <color name="background">#080E18</color>
+    <color name="accent">#69E2CF</color>
+    <style name="Theme.BronyaTV" parent="Theme.Leanback">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:alertDialogTheme">@style/Theme.BronyaTV.Dialog</item>
         <item name="android:windowBackground">@color/background</item>
         <item name="android:colorAccent">@color/accent</item>
         <item name="android:colorPrimary">@color/background</item>
@@ -10,7 +11,16 @@
         <item name="android:windowAllowReturnTransitionOverlap">true</item>
         <item name="android:windowAllowEnterTransitionOverlap">true</item>
     </style>
-    <style name="Theme.Ember.Player" parent="Theme.Ember">
+    <style name="Theme.BronyaTV.Player" parent="Theme.BronyaTV">
         <item name="android:windowFullscreen">true</item>
+    </style>
+    <style name="Theme.BronyaTV.Dialog" parent="android:style/Theme.Material.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/dialog_surface</item>
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:textColorPrimary">#F1F7F9</item>
+        <item name="android:textColorSecondary">#9CB1BE</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:windowMinWidthMajor">62%</item>
+        <item name="android:windowMinWidthMinor">76%</item>
     </style>
 </resources>

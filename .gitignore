@@ -1,12 +1,15 @@
 /.gradle/
 /**/build/
 /tools/
+/tools
 /local.properties
 /signing.properties
 /signing/
+/signing
 *.hprof
 /.android/
 /tests/assets/
+/tests/assets
 __pycache__/
 
 # Local build environment, reports, and upload staging.
@@ -31,3 +34,5 @@ Thumbs.db
 
 # Keep verified signed packages available for GitHub Releases.
 !/releases/v*/EmberTV-*-release.apk
+
+!/releases/v*/BronyaTV-*-release.apk

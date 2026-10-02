@@ -58,7 +58,7 @@ class LaunchCompatibilityTest {
     }
 
     @Test fun installerStyleOpenWithoutASessionDisplaysTheLoginForm() {
-        val app = context.applicationContext as EmberApp
+        val app = context.applicationContext as BronyaApp
         val saved = app.sessions.load()
         app.sessions.clear()
         try {

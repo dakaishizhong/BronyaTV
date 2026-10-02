@@ -22,7 +22,7 @@ class RealEmbyServerTest {
     @Test fun officialServerLoginBrowseAndAllThreeDirectPlayVersions() = runBlocking {
         assumeTrue(InstrumentationRegistry.getArguments().getString("realEmby") == "true")
         val context=InstrumentationRegistry.getInstrumentation().targetContext
-        val app=context.applicationContext as EmberApp
+        val app=context.applicationContext as BronyaApp
         val session=app.api.login("http://10.0.2.2:8097/emby", "embertest", "Ember-Test-Only-2026")
         app.sessions.save(session)
         app.settings.receiveBufferKb=0

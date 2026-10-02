@@ -4,7 +4,7 @@ import android.os.Process
 import android.os.SystemClock
 import java.io.File
 
-data class CpuSample(val percent: Double?, val processOnly: Boolean, val frequencyMhz: Long?)
+data class CpuSample(val percent: Double?, val processOnly: Boolean, val frequencyMhz: Long?, val coreEquivalent: Double)
 class CpuMonitor {
     private var previousTotal = 0L
     private var previousIdle = 0L
@@ -12,6 +12,9 @@ class CpuMonitor {
     private var previousTime = SystemClock.elapsedRealtime()
     fun sample(): CpuSample {
         var processOnly = false
+        val now=SystemClock.elapsedRealtime();val app=Process.getElapsedCpuTime()
+        val singleCore=if(now>previousTime) 100.0*(app-previousApp)/(now-previousTime) else 0.0
+        previousApp=app;previousTime=now
         val percent = runCatching {
             val line = File("/proc/stat").bufferedReader().use { it.readLine() }
             val values = line.trim().split(Regex("\\s+")).drop(1).take(8).map(String::toLong)
@@ -21,14 +24,11 @@ class CpuMonitor {
             result
         }.getOrElse {
             processOnly = true
-            val now = SystemClock.elapsedRealtime(); val app = Process.getElapsedCpuTime()
-            val result = if (now > previousTime) 100.0 * (app - previousApp) / (now - previousTime) / Runtime.getRuntime().availableProcessors() else null
-            previousApp = app; previousTime = now
-            result
+            singleCore/Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
         }
         val frequency = runCatching {
             (File("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq").readText().trim().toLong() / 1000).takeIf { it > 0 }
         }.getOrNull()
-        return CpuSample(percent?.coerceIn(0.0, 100.0), processOnly, frequency)
+        return CpuSample(percent?.coerceIn(0.0, 100.0), processOnly, frequency,singleCore.coerceAtLeast(0.0))
     }
 }

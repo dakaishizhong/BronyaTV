@@ -1,4 +1,4 @@
-# Ember TV 1.0.1 启动兼容修复
+# BronyaTV 1.0.1 启动兼容修复
 
 版本号 1.0.1，versionCode 2，包名 tv.ember.client，沿用初版发布签名。
 

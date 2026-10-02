@@ -1,4 +1,4 @@
-# Ember TV 交付与测试记录
+# BronyaTV 交付与测试记录
 
 测试环境：Linux 云服务器，2 核/2 线程 AMD EPYC，15.6GiB 内存，NVMe。JDK 21、Gradle 8.13、AGP 8.13.2、Kotlin 2.3.21、SDK/Build Tools 36、Media3 1.11.1。Gradle Worker=2，堆=6078MB，Kotlin 堆=1919MB；Kotlin JVM 后端线程数与 Worker 数联动。并行构建、增量编译、构建缓存、配置缓存均开启，缓存及临时文件在 NVMe 工作盘。最终输出是独立签名、经过 R8/资源压缩的通用 Release APK。
 
@@ -8,7 +8,7 @@
 
 最终签名 Release 在 Android TV 模拟器实际安装并验证登录、D-pad 导航、详情、3 个版本选择、内置播放、性能 OSD、隐藏调试与认证参数遮盖、双音轨菜单，以及 Just Player 交接。Just Player 的系统媒体会话报告 PLAYING，客户端 service 查询为 `(nothing)`。界面截图和 `test-results/release-ui-smoke.json` 保存了验证结果。动态 OSD 曾导致 UiAutomator 层级观察超时，随后分段完成层级与截图检查；该观察工具异常不是应用崩溃。
 
-- APK：`EmberTV-1.0.0-release.apk`，2,357,302 字节（约 2.3MB）。
+- APK：1.0.0 正式包，2,357,302 字节（约 2.3MB）。
 - SHA-256：`4688d5dbddf00a0f8c4a97fe8003c642d4735d8f5bb2e9d20cdb6ce8c134904c`。
 - 签名：RSA 3072，v1/v2 验证通过；ZIP 对齐验证通过。
 - 包名：`tv.ember.client`；版本：1.0.0；最低 API 23，目标 API 36；未打包原生 `.so`。

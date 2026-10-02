@@ -11,12 +11,12 @@
         <package android:name="com.mxtech.videoplayer.pro" />
         <package android:name="com.brouken.player" />
     </queries>
-    <application android:name=".EmberApp" android:label="Ember TV"
-        android:theme="@style/Theme.Ember" android:icon="@drawable/ic_launcher"
+    <application android:name=".BronyaApp" android:label="BronyaTV"
+        android:theme="@style/Theme.BronyaTV" android:icon="@drawable/ic_launcher"
         android:banner="@drawable/tv_banner" android:allowBackup="false"
         android:supportsRtl="true" android:usesCleartextTraffic="true">
         <activity android:name=".ui.MainActivity" android:exported="true"
-            android:label="Ember TV" android:icon="@drawable/ic_launcher"
+            android:label="BronyaTV" android:icon="@drawable/ic_launcher"
             android:banner="@drawable/tv_banner">
             <!-- Generic package installers and vendor TV launchers use this entry point. -->
             <intent-filter>
@@ -35,6 +35,6 @@
         <activity android:name=".ui.SettingsActivity" android:exported="false" />
         <activity android:name=".player.PlaybackActivity" android:exported="false"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize"
-            android:theme="@style/Theme.Ember.Player" />
+            android:theme="@style/Theme.BronyaTV.Player" />
     </application>
 </manifest>

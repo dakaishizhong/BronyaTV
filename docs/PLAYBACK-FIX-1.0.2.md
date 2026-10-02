@@ -1,6 +1,6 @@
-# Ember TV 1.0.2 播放地址与接收缓冲修复
+# BronyaTV 1.0.2 播放地址与接收缓冲修复
 
-2026-10-02。APK：EmberTV-1.0.2-release.apk；包名 tv.ember.client；versionCode 3；沿用 1.0.0/1.0.1 签名，可覆盖安装并保留电视上的登录和设置。
+2026-10-02。APK：1.0.2 正式包；包名 tv.ember.client；versionCode 3；沿用 1.0.0/1.0.1 签名，可覆盖安装并保留电视上的登录和设置。
 
 APK SHA-256：`8a6e214147d05ea50904fa42fecb46688de17bd456da3125540a1e0f4818b513`。
 

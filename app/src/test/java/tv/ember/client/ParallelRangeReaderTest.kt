@@ -37,7 +37,7 @@ class ParallelRangeReaderTest {
             server.dispatcher=object:Dispatcher() { override fun dispatch(request:RecordedRequest):MockResponse {
                 val r=response(request)
                 val offset=request.getHeader("Range")!!.removePrefix("bytes=").substringBefore('-').toInt()
-                if(offset==12345+chunk) r.setBodyDelay(120,TimeUnit.MILLISECONDS)
+                if(offset==12345+65536) r.setBodyDelay(120,TimeUnit.MILLISECONDS)
                 return r
             } }
             val peak=AtomicLong();var reader:ParallelRangeReader?=null
@@ -46,6 +46,7 @@ class ParallelRangeReaderTest {
                 peak.updateAndGet { maxOf(it,reader!!.bufferedBytes.get()) }
             }
             reader.use { assertEquals(count.toLong(),it.open());assertArrayEquals(bytes.copyOfRange(12345,12345+count),readAll(it)) }
+            assertEquals("bytes=12345-77880",server.takeRequest().getHeader("Range"))
             assertTrue("bounded prefetch",peak.get()<=5L*chunk)
             assertEquals(0L,reader.bufferedBytes.get())
         }

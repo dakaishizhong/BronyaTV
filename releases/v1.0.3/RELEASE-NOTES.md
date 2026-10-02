@@ -1,4 +1,4 @@
-# Ember TV 1.0.3
+# BronyaTV 1.0.3
 
 Android TV Emby 客户端，最低 Android 6.0，支持 ARM 32 位和 64 位电视。
 
