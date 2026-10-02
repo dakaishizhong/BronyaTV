@@ -1,0 +1,6 @@
+<lint>
+    <!-- Accept the pinned Media3 API's documented opt-in throughout this player app. -->
+    <issue id="UnsafeOptInUsageError">
+        <option name="opt-in" value="androidx.media3.common.util.UnstableApi" />
+    </issue>
+</lint>

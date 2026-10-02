@@ -1,0 +1,40 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- Vendor TV firmware can use a regular Android launcher without advertising Leanback. -->
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <queries>
+        <package android:name="org.videolan.vlc" />
+        <package android:name="com.mxtech.videoplayer.ad" />
+        <package android:name="com.mxtech.videoplayer.pro" />
+        <package android:name="com.brouken.player" />
+    </queries>
+    <application android:name=".EmberApp" android:label="Ember TV"
+        android:theme="@style/Theme.Ember" android:icon="@drawable/ic_launcher"
+        android:banner="@drawable/tv_banner" android:allowBackup="false"
+        android:supportsRtl="true" android:usesCleartextTraffic="true">
+        <activity android:name=".ui.MainActivity" android:exported="true"
+            android:label="Ember TV" android:icon="@drawable/ic_launcher"
+            android:banner="@drawable/tv_banner">
+            <!-- Generic package installers and vendor TV launchers use this entry point. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".ui.LoginActivity" android:exported="false" />
+        <activity android:name=".ui.DetailActivity" android:exported="false" />
+        <activity android:name=".ui.SettingsActivity" android:exported="false" />
+        <activity android:name=".player.PlaybackActivity" android:exported="false"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize"
+            android:theme="@style/Theme.Ember.Player" />
+    </application>
+</manifest>

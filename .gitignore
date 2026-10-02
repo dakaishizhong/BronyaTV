@@ -1,0 +1,30 @@
+/.gradle/
+/**/build/
+/tools/
+/local.properties
+/signing.properties
+/signing/
+*.hprof
+/.android/
+/tests/assets/
+__pycache__/
+
+# Local build environment, reports, and upload staging.
+/logs/
+/artifacts/
+/github/
+/github-connection/
+/.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Release binaries and private signing material belong outside source control.
+*.apk
+*.aab
+*.jks
+*.keystore
+*.p12
+*.pem
+.env
+.env.*
