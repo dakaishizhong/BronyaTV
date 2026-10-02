@@ -1,7 +1,13 @@
 package tv.ember.client.monitor
 
 import android.os.SystemClock
+import android.media.MediaFormat
+import android.view.Display
+import android.os.Build
 import androidx.media3.common.Format
+import androidx.media3.common.VideoSize
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.video.VideoFrameMetadataListener
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -14,7 +20,64 @@ import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 
 @UnstableApi
-class PlayerStatsMonitor : AnalyticsListener {
+class PlayerStatsMonitor : AnalyticsListener, VideoFrameMetadataListener {
+    private data class FrameOutput(val width:Int=0,val height:Int=0,val transfer:Int=-1,val hdr10Plus:Boolean=false)
+    @Volatile private var frameOutput=FrameOutput()
+    private var lastMediaFormat: MediaFormat?=null
+    private var videoSize=VideoSize.UNKNOWN
+    private var surfaceWidth=0
+    private var surfaceHeight=0
+    private var rendered=false
+    private var audioOutput: AudioSink.AudioTrackConfig?=null
+    private val audioTracks=ArrayDeque<AudioSink.AudioTrackConfig>()
+    private val codecMimes=ConcurrentHashMap<String,String>()
+    override fun onVideoFrameAboutToBeRendered(presentationTimeUs:Long,releaseTimeNs:Long,format:Format,mediaFormat:MediaFormat?) {
+        // This callback runs on the playback thread. Read a new output format once, not once per frame.
+        if(mediaFormat==null || mediaFormat===lastMediaFormat) return
+        lastMediaFormat=mediaFormat
+        fun value(key:String)=runCatching { if(mediaFormat.containsKey(key)) mediaFormat.getInteger(key) else -1 }.getOrDefault(-1)
+        val width=value("width");val height=value("height")
+        val left=value("crop-left");val right=value("crop-right");val top=value("crop-top");val bottom=value("crop-bottom")
+        frameOutput=FrameOutput(if(left>=0 && right>=left) right-left+1 else width,
+            if(top>=0 && bottom>=top) bottom-top+1 else height,value("color-transfer"),mediaFormat.containsKey("hdr10-plus-info"))
+    }
+    override fun onVideoSizeChanged(eventTime:AnalyticsListener.EventTime,videoSize:VideoSize) { this.videoSize=videoSize }
+    override fun onSurfaceSizeChanged(eventTime:AnalyticsListener.EventTime,width:Int,height:Int) { surfaceWidth=width;surfaceHeight=height }
+    override fun onRenderedFirstFrame(eventTime:AnalyticsListener.EventTime,output:Any,renderTimeMs:Long) { rendered=true }
+    override fun onAudioTrackInitialized(eventTime:AnalyticsListener.EventTime,audioTrackConfig:AudioSink.AudioTrackConfig) {
+        audioTracks.addLast(audioTrackConfig);audioOutput=audioTrackConfig
+    }
+    override fun onAudioTrackReleased(eventTime:AnalyticsListener.EventTime,audioTrackConfig:AudioSink.AudioTrackConfig) {
+        // Release callbacks may arrive after a new track starts, with a newly constructed config object.
+        val old=audioTracks.firstOrNull { it.encoding==audioTrackConfig.encoding && it.sampleRate==audioTrackConfig.sampleRate &&
+            it.channelConfig==audioTrackConfig.channelConfig && it.tunneling==audioTrackConfig.tunneling &&
+            it.offload==audioTrackConfig.offload && it.bufferSize==audioTrackConfig.bufferSize }
+        if(old!=null) audioTracks.remove(old)
+        audioOutput=audioTracks.lastOrNull()
+    }
+    fun outputSummary(p:ExoPlayer):String {
+        val f=frameOutput
+        val width=f.width.takeIf { it>0 } ?: videoSize.width
+        val height=f.height.takeIf { it>0 } ?: videoSize.height
+        val size=if(width>0 && height>0) "${width}×${height}" else "等待尺寸"
+        val dolby=p.videoFormat?.sampleMimeType=="video/dolby-vision"
+        return "实际解码画面 $size · ${if(rendered) "已输出首帧" else "等待首帧"}\n"+
+            "色彩输出 ${OutputLabels.video(f.transfer,dolby,codecMimes[videoDecoder].orEmpty(),rendered)}"+
+            (if(f.hdr10Plus) " · HDR10+ 元数据" else "")+"\n系统音频输出 ${OutputLabels.audio(audioOutput?.encoding ?: 0)}"+
+            (audioOutput?.let { " · ${it.sampleRate}Hz · ${Integer.bitCount(it.channelConfig)} 声道" } ?: "")+
+            "\n"+OutputLabels.atmos(audioOutput?.encoding ?: 0,p.audioFormat?.sampleMimeType)
+    }
+    @Suppress("DEPRECATION")
+    fun displaySummary(display:Display?):String {
+        if(display==null) return "显示模式：系统未提供"
+        val mode=display.mode
+        val hdr=if(Build.VERSION.SDK_INT>=24) display.hdrCapabilities.supportedHdrTypes.map { when(it) {
+            1 -> "Dolby Vision";2 -> "HDR10";3 -> "HLG";4 -> "HDR10+";else -> "类型 $it"
+        } }.joinToString(" / ").ifBlank { "未报告 HDR 能力" } else "系统未提供"
+        return "显示模式 ${mode.physicalWidth}×${mode.physicalHeight} @ %.2fHz\n".format(mode.refreshRate)+
+            "显示器支持 $hdr（能力信息）\n屏幕当前 HDR / Dolby Vision 模式：系统未提供可靠确认"
+    }
+
     var videoDecoder="等待解码器";private set
     var audioDecoder="等待解码器";private set
     var dropped=0;private set
@@ -34,6 +97,7 @@ class PlayerStatsMonitor : AnalyticsListener {
     private var bufferingTotal=0L
     private var bufferingCount=0
     fun registerCodec(info:MediaCodecInfo) {
+        codecMimes[info.name]=info.codecMimeType
         codecs[info.name]=when { info.softwareOnly -> "软件";info.hardwareAccelerated -> "硬件";else -> "系统未明确" }
     }
     private fun decoderMode(name:String)=codecs[name] ?: "等待确认"
@@ -75,6 +139,7 @@ class PlayerStatsMonitor : AnalyticsListener {
         val v=p.videoFormat;val a=p.audioFormat
         val buffer=maxOf(0,p.bufferedPosition-p.currentPosition)
         return "片源总码率 ${mbps(sourceBitrate)} · 缓冲 %.1fs\n".format(buffer/1000.0)+
+            outputSummary(p)+"\n"+
             "解码输入 ${v?.sampleMimeType ?: "等待"} · ${v?.width ?: "—"}×${v?.height ?: "—"}${color(v)}\n"+
             "视频 ${decoderMode(videoDecoder)} · $videoDecoder\n音频 ${a?.sampleMimeType ?: "等待"} · ${a?.channelCount?.takeIf { it>0 } ?: "—"} 声道\n"+
             "输出 %.1ffps · 丢帧 $dropped · 缓冲 $bufferingCount 次".format(renderFps)
@@ -86,7 +151,12 @@ class PlayerStatsMonitor : AnalyticsListener {
         val sourceVideo=version.streams.firstOrNull { it.type=="Video" }
         return sourceSummary(version)+"\n片源名称 ${version.name}\n片源大小 ${version.sizeBytes.takeIf { it>0 }?.let { "%.1fMiB".format(it/1048576.0) } ?: "未提供"}"+
             "\n片源视频 Profile ${sourceVideo?.profile?.ifBlank { "未提供" } ?: "未提供"}\n片源总码率 ${mbps(sourceBitrate)}（包含音频等）\n"+
+            "片源声明 ${sourceVideo?.width ?: 0}×${sourceVideo?.height ?: 0} · ${sourceVideo?.videoRange?.ifBlank { "未提供" } ?: "未提供"}\n"+
             "实际视频输入 ${format(v)}${color(v)}\n实际音频输入 ${format(a)}\n"+
+            outputSummary(p)+"\nSurface ${surfaceWidth}×${surfaceHeight}（画布，不是片源分辨率）\n"+
+            "解码器 MIME ${codecMimes[videoDecoder] ?: "等待确认"}\n"+
+            (audioOutput?.let { "AudioTrack ${it.sampleRate}Hz · 声道掩码 0x${it.channelConfig.toString(16)} · ${if(it.offload) "Offload" else "标准输出"} · ${if(it.tunneling) "Tunneling" else "非隧道"}\n" } ?: "AudioTrack 等待初始化\n")+
+            OutputLabels.atmos(audioOutput?.encoding ?: 0,a?.sampleMimeType)+"\n"+
             "实际视频解码器 ${decoderMode(videoDecoder)} · $videoDecoder\n实际音频解码器 ${decoderMode(audioDecoder)} · $audioDecoder\n"+
             "输出 %.1ffps · 已渲染 ${counters?.renderedOutputBufferCount ?: 0} 帧 · 跳过 ${counters?.skippedOutputBufferCount ?: 0} · 丢帧 $dropped\n".format(renderFps)+
             "帧处理偏移 ${if(offsetFrames>0) "%.2fms".format(offsetUs/1000.0/offsetFrames) else "未测"} · 音频欠载 $underruns 次\n"+
@@ -104,7 +174,7 @@ class PlayerStatsMonitor : AnalyticsListener {
         private fun color(v:Format?):String {
             val info=v?.colorInfo ?: return ""
             val depth=info.lumaBitdepth.takeIf { it>0 }?.let { " · ${it}bit" } ?: ""
-            return depth+when(info.colorTransfer) { 6 -> " · HDR10/PQ";7 -> " · HLG";else -> "" }
+            return depth+when(info.colorTransfer) { 6 -> " · PQ / HDR";7 -> " · HLG";else -> "" }
         }
         private fun format(f:Format?):String {
             if(f==null) return "等待轨道"

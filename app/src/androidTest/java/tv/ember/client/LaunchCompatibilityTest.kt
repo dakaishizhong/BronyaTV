@@ -70,7 +70,7 @@ class LaunchCompatibilityTest {
             while (!displayed && System.currentTimeMillis() < end) {
                 instrumentation.runOnMainSync {
                     displayed = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
-                        .filterIsInstance<LoginActivity>().any { all(it.window.decorView).filterIsInstance<EditText>().size == 5 }
+                        .filterIsInstance<LoginActivity>().any { all(it.window.decorView).filterIsInstance<EditText>().size == 3 }
                 }
                 if (!displayed) Thread.sleep(100)
             }

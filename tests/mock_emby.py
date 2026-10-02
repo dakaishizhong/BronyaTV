@@ -25,10 +25,17 @@ def sources(item_id='demo'):
     return media
 
 def video(i='demo'):
-    return dict(Id=i, Name='Ocean of light' if i=='demo' else 'After the horizon '+i,
+    item=dict(Id=i, Name='Ocean of light' if i=='demo' else 'After the horizon '+i,
                 Type='Movie', Overview='A journey through colour, motion and sound. This server fixture exercises Direct Play, version selection, audio and subtitle tracks.',
                 ProductionYear=2026, OfficialRating='TV', RunTimeTicks=900000000, ImageTags={'Primary':'fixture'},
                 UserData={'PlaybackPositionTicks':120000000 if i=='demo' else 0}, MediaSources=sources(i))
+    if i.startswith('ep'):
+        number=int(i[2:])
+        item.update(Type='Episode',SeriesId='series',SeasonId='season1' if number<3 else 'season2',
+                    ParentIndexNumber=1 if number<3 else 2,IndexNumber=number if number<3 else number-2,
+                    Name=['First light','Across the blue','New horizons'][number-1],UserData={'PlaybackPositionTicks':0})
+    return item
+
 
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
@@ -85,9 +92,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             device=q.get('DeviceId',[''])[0]
             self.respond([{'DeviceId':device,'UserId':'u1','UserName':'Demo TV'}]); return
         if path.endswith('/Users/Me') or path.endswith('/Users/u1'): self.respond({'Id':'u1','Name':'Demo TV'}); return
+        if path.endswith('/Shows/series/Episodes'):
+            all_items=[video('ep'+str(i)) for i in range(1,4)]
+            self.respond({'Items':all_items,'TotalRecordCount':3}); return
         if path.endswith('/Views'): self.respond({'Items':[dict(Id='movies',Name='Cinema',Type='CollectionFolder',ImageTags={'Primary':'fixture'})]}); return
         if path.endswith('/Items/Resume'): self.respond({'Items':[video()]}); return
-        if path.endswith('/Items/Latest'): self.respond([video('film'+str(i)) for i in range(8)]); return
+        if path.endswith('/Items/Latest'): self.respond([video('ep1')]+[video('film'+str(i)) for i in range(7)]); return
         if path.endswith('/Users/u1/Items'):
             start=int(q.get('StartIndex',['0'])[0]); limit=int(q.get('Limit',['40'])[0]); all_items=[video('film'+str(i)) for i in range(45)]
             self.respond({'Items':all_items[start:start+limit],'TotalRecordCount':len(all_items)}); return

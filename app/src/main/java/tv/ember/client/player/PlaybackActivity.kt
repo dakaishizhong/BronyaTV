@@ -18,6 +18,9 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.Button
+import tv.ember.client.R
 import android.widget.TextView
 import android.widget.ScrollView
 import androidx.lifecycle.lifecycleScope
@@ -51,7 +54,21 @@ class PlaybackActivity : TvActivity(), Player.Listener {
     private lateinit var status: TextView
     private lateinit var osd: TextView
     private lateinit var debug: TextView
-    private lateinit var menu: android.widget.Button
+    private lateinit var menu: Button
+    private lateinit var episodeBar: LinearLayout
+    private lateinit var previousEpisode: Button
+    private lateinit var nextEpisode: Button
+    private lateinit var skipIntro: Button
+    private lateinit var skipOutro: Button
+    private var neighbors=EpisodeNeighbors()
+    private var neighborsForId=""
+    private var neighborJob: Job?=null
+    private var changingEpisode=false
+    private var introHandled=false
+    private var outroHandled=false
+    private var outroDeadline=0L
+    private var sourceJob: Job?=null
+    private var activeDialog: AlertDialog?=null
     private var player: ExoPlayer? = null
     private var stats = PlayerStatsMonitor()
     private lateinit var network: NetworkMonitor
@@ -113,29 +130,40 @@ class PlaybackActivity : TvActivity(), Player.Listener {
         showDebug = app.settings.debugEnabled
         network = NetworkMonitor(this); cpu = CpuMonitor(); memory = MemoryMonitor(this)
         val root = FrameLayout(this).apply { setBackgroundColor(android.graphics.Color.BLACK) }
-        playerView = PlayerView(this).apply {
+        playerView = (layoutInflater.inflate(R.layout.bronya_player_view,null) as PlayerView).apply {
             resizeMode=app.settings.resizeMode
             subtitleView?.setFractionalTextSize(.0533f*app.settings.subtitleScale/100f)
             controllerShowTimeoutMs = 4500
-            setShowSubtitleButton(true); setShowNextButton(false); setShowPreviousButton(false)
+            setShowSubtitleButton(false); setShowNextButton(false); setShowPreviousButton(false)
             setShowFastForwardButton(true); setShowRewindButton(true)
             setKeepContentOnPlayerReset(true)
             setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { visibility ->
-                title.visibility = visibility
-                if(::menu.isInitialized) menu.visibility = visibility
+                if(::title.isInitialized) title.visibility=visibility
+                if(::episodeBar.isInitialized) episodeBar.visibility=visibility
             })
         }
+        listOf(androidx.media3.ui.R.id.exo_rew,androidx.media3.ui.R.id.exo_play_pause,androidx.media3.ui.R.id.exo_ffwd)
+            .forEach { id -> playerView.findViewById<View>(id)?.let(TvUi::focusOnTouch) }
         root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
         title = TvUi.text(this, "正在打开视频…", 20f).apply { setShadowLayer(4f, 0f, 1f, android.graphics.Color.BLACK) }
-        root.addView(title, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { topMargin = 26; marginStart = 36 })
+        root.addView(title, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { topMargin = TvUi.dp(root,20); marginStart = TvUi.dp(root,24) })
         status = TvUi.text(this, "", 18f).apply { setBackgroundColor(0xB0000000.toInt()); setPadding(20, 10, 20, 10); visibility = View.GONE }
-        root.addView(status, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = 70 })
-        osd = overlay(13f)
+        root.addView(status, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = TvUi.dp(root,116) })
+        osd = overlay(12f).apply { maxWidth=TvUi.dp(this,330) }
         root.addView(osd, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { topMargin = 24; marginEnd = 28 })
         debug = overlay(11f)
         root.addView(debug, FrameLayout.LayoutParams(TvUi.dp(root, 520), -2, Gravity.BOTTOM or Gravity.START).apply { bottomMargin = 100; marginStart = 28 })
-        menu = TvUi.button(this, "播放选项") { showMenu() }
-        root.addView(menu, FrameLayout.LayoutParams(-2, TvUi.dp(root, 43), Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = 18 })
+        episodeBar=TvUi.row(this)
+        menu=TvUi.button(this,"播放选项") { showMenu() }
+        previousEpisode=TvUi.button(this,"上一集") { neighbors.previous?.let(::switchEpisode) }
+        nextEpisode=TvUi.button(this,"下一集") { neighbors.next?.let(::switchEpisode) }
+        skipIntro=TvUi.button(this,"跳过片头") { skipOpening() }
+        skipOutro=TvUi.button(this,"跳过片尾") { finishEpisode() }
+        listOf(menu,previousEpisode,nextEpisode,skipIntro,skipOutro).forEach {
+            episodeBar.addView(it,LinearLayout.LayoutParams(-2,TvUi.dp(root,42)).apply { marginEnd=TvUi.dp(root,8) })
+        }
+        root.addView(episodeBar,FrameLayout.LayoutParams(-2,-2,Gravity.TOP or Gravity.START).apply { topMargin=TvUi.dp(root,56);marginStart=TvUi.dp(root,24) })
+        updateEpisodeButtons()
         seekPreview=TvUi.text(this,"",22f).apply {
             background=TvUi.box(0xE8172230.toInt(),22f,TvUi.accent)
             setPadding(TvUi.dp(this,28),TvUi.dp(this,16),TvUi.dp(this,28),TvUi.dp(this,16))
@@ -147,6 +175,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
         onBackPressedDispatcher.addCallback(this) {
             when {
                 pendingSeek!=null -> cancelSeekPreview()
+                outroDeadline>0 -> cancelOutro()
                 playerView.isControllerFullyVisible -> playerView.hideController()
                 else -> finish()
             }
@@ -165,7 +194,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
             connectivity.registerNetworkCallback(NetworkRequest.Builder().addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET).build(), connectionCallback)
             registered = true
         }
-        if(spec == null) loadVideo() else createPlayer()
+        if(spec == null) loadVideo() else { createPlayer();refreshNeighbors() }
         startMonitor()
     }
     private fun loadVideo(rejectedAddress: String? = null) {
@@ -175,6 +204,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
         if(spec==null && rejectedAddress==null) {
             app.launches.take(s,id,intent.getStringExtra("source_id").orEmpty())?.let { (video,next) ->
                 item=video;spec=next;title.text=video.name
+                refreshNeighbors()
                 if(active) createPlayer()
                 return
             }
@@ -196,10 +226,109 @@ class PlaybackActivity : TvActivity(), Player.Listener {
                 }
                 item = v; spec = next
                 title.text = v.name
+                refreshNeighbors()
                 if(active) createPlayer()
             } catch(e: CancellationException) { throw e }
             catch(e: Exception) { android.util.Log.e("BronyaTVPlayback", "Unable to prepare media", e); setStatus(e.message ?: "无法获取片源；按菜单键重试") }
         }
+    }
+    private fun updateEpisodeButtons() {
+        if(!::previousEpisode.isInitialized) return
+        val episode=item?.type=="Episode"
+        previousEpisode.visibility=if(episode && neighbors.previous!=null) View.VISIBLE else View.GONE
+        nextEpisode.visibility=if(episode && neighbors.next!=null) View.VISIBLE else View.GONE
+        skipIntro.visibility=if(episode && app.settings.introSeconds>0) View.VISIBLE else View.GONE
+        skipOutro.visibility=if(episode && app.settings.outroSeconds>0) View.VISIBLE else View.GONE
+        listOf(previousEpisode,nextEpisode,skipIntro,skipOutro).forEach { it.isEnabled=!changingEpisode }
+    }
+    private fun refreshNeighbors() {
+        val s=session ?: return;val video=item ?: return
+        updateEpisodeButtons()
+        if(video.type!="Episode" || video.seriesId.isBlank() || neighborsForId==video.id || neighborJob?.isActive==true) return
+        neighborJob=lifecycleScope.launch {
+            try {
+                val result=app.api.adjacentEpisodes(s,video)
+                if(item?.id!=video.id || !active) return@launch
+                neighbors=result;neighborsForId=video.id;updateEpisodeButtons()
+                if(player?.playbackState==Player.STATE_ENDED && app.settings.autoNextEpisode) result.next?.let(::switchEpisode)
+            } catch(e: CancellationException) { throw e } catch(e: Exception) {
+                if(item?.id==video.id) message("剧集列表暂时无法加载，可在播放选项中重试")
+            }
+        }
+    }
+    private fun switchEpisode(next: VideoItem) {
+        if(!active || changingEpisode) return
+        val s=session ?: return
+        changingEpisode=true;cancelSeekPreview();cancelOutro();updateEpisodeButtons()
+        retryJob?.cancel();loadJob?.cancel();neighborJob?.cancel();sourceJob?.cancel();activeDialog?.dismiss()
+        val resume=player?.playWhenReady==true
+        player?.pause();setStatus("正在打开 ${next.episodeLabel.ifBlank { next.name }}…")
+        loadJob=lifecycleScope.launch {
+            try {
+                val (video,playback)=coroutineScope {
+                    val detail=async { app.api.detail(s,next.id) }
+                    val info=async { app.api.playbackInfo(s,next.id) }
+                    detail.await() to info.await()
+                }
+                val old=spec?.version
+                val oldHeight=old?.streams?.firstOrNull { it.type=="Video" }?.height
+                val source=playback.versions.filter { it.directPlay && !it.requiresOpening }.let { versions ->
+                    versions.firstOrNull { it.container==old?.container && it.streams.firstOrNull { stream -> stream.type=="Video" }?.height==oldHeight } ?: versions.firstOrNull()
+                } ?: error("本集没有可播放的片源")
+                val prepared=app.api.playbackSpec(s,video.id,source,playback.playSessionId)
+                if(!active) return@launch
+                if(startedReported) report("Stopped")
+                startedReported=false;playerView.player=null;player?.release();player=null
+                // Track overrides reference the old item's groups; language preferences carry to the new item.
+                position=0;wantedPlay=true;trackPreferences=null;softwareMode=false;retryAttempt=0
+                forceOriginalRoute=false;refreshedRejectedUrl=false;lastRejectedUrlRefresh=0;lastProgressReport=0
+                skippedExternalSubtitles.clear();introHandled=false;outroHandled=false
+                neighbors=EpisodeNeighbors();neighborsForId="";item=video;spec=prepared
+                intent.putExtra("item_id",video.id).putExtra("source_id",source.id).putExtra("position_ms",0L)
+                title.text=listOf(video.name,video.episodeLabel).filter(String::isNotBlank).joinToString(" · ")
+                createPlayer();refreshNeighbors()
+            } catch(e: CancellationException) { throw e } catch(e: Exception) {
+                setStatus(e.message ?: "无法打开剧集，请重试")
+                if(active && resume) player?.play()
+            } finally { changingEpisode=false;updateEpisodeButtons() }
+        }
+    }
+    private fun maybeSkipOpening() {
+        val p=player ?: return
+        if(item?.type!="Episode" || introHandled || p.duration<=0) return
+        // Run once per episode so rewinding manually does not trigger another automatic skip.
+        introHandled=true
+        SkipPolicy.intro(p.currentPosition,p.duration,app.settings.introSeconds)?.let { control?.markSeek();p.seekTo(it) }
+    }
+    private fun skipOpening() {
+        val p=player ?: return
+        val target=SkipPolicy.intro(p.currentPosition,p.duration,app.settings.introSeconds)
+        if(target!=null) { introHandled=true;control?.markSeek();p.seekTo(target) } else message("已过片头或当前时长不足")
+    }
+    private fun maybeSkipEnding(p:ExoPlayer,now:Long) {
+        if(changingEpisode || item?.type!="Episode") return
+        if(activeDialog?.isShowing==true || !hasWindowFocus()) return
+        if(p.playbackState==Player.STATE_ENDED && app.settings.autoNextEpisode && neighbors.next!=null) { switchEpisode(neighbors.next!!);return }
+        if(outroDeadline>0) {
+            if(!p.isPlaying) { cancelOutro();return }
+            if(now>=outroDeadline) { outroDeadline=0;finishEpisode() }
+            else setStatus("${(outroDeadline-now+999)/1000} 秒后播放下一集 · 按返回取消")
+            return
+        }
+        if(outroHandled || !p.isPlaying || pendingSeek!=null || !SkipPolicy.outro(p.currentPosition,p.duration,app.settings.outroSeconds)) return
+        if(neighborJob?.isActive==true) return
+        outroHandled=true
+        if(app.settings.autoNextEpisode && neighbors.next!=null) {
+            outroDeadline=now+5000;setStatus("5 秒后播放下一集 · 按返回取消")
+        } else finishEpisode()
+    }
+    private fun cancelOutro() { outroDeadline=0;if(::status.isInitialized) setStatus("") }
+    private fun finishEpisode() {
+        val p=player ?: return
+        outroHandled=true;cancelOutro()
+        val next=neighbors.next
+        if(app.settings.autoNextEpisode && next!=null) switchEpisode(next)
+        else if(p.duration>0) { control?.markSeek();p.seekTo(p.duration) }
     }
     private fun createPlayer() {
         if(!active) return
@@ -250,7 +379,8 @@ class PlaybackActivity : TvActivity(), Player.Listener {
         val sourceFactory = DefaultMediaSourceFactory(dataSources).setLoadErrorHandlingPolicy(errorPolicy)
         val p = ExoPlayer.Builder(this, renderers).setMediaSourceFactory(sourceFactory).setLoadControl(control!!)
             .setSeekBackIncrementMs(app.settings.seekSeconds*1000L).setSeekForwardIncrementMs(app.settings.seekSeconds*1000L).build()
-        player = p; p.addListener(this); p.addAnalyticsListener(stats)
+        player = p; p.addListener(this); p.addAnalyticsListener(stats);p.setVideoFrameMetadataListener(stats)
+        playerView.findViewById<androidx.media3.ui.DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)?.setKeyTimeIncrement(app.settings.seekSeconds*1000L)
         p.setAudioAttributes(AudioAttributes.DEFAULT, true)
         p.setHandleAudioBecomingNoisy(true)
         p.trackSelectionParameters = trackPreferences ?: p.trackSelectionParameters.buildUpon()
@@ -276,15 +406,20 @@ class PlaybackActivity : TvActivity(), Player.Listener {
             Player.STATE_READY -> {
                 retryAttempt = 0; retryJob?.cancel(); setStatus("")
                 if(!startedReported) { startedReported = true; report("") }
+                maybeSkipOpening()
             }
             Player.STATE_BUFFERING -> setStatus("正在缓冲，网络恢复后将继续播放…")
-            Player.STATE_ENDED -> { wantedPlay = false; setStatus("播放结束 · 按返回键选择其他视频") }
+            Player.STATE_ENDED -> {
+                wantedPlay=false
+                if(item?.type=="Episode" && app.settings.autoNextEpisode && neighbors.next!=null && !changingEpisode && activeDialog?.isShowing!=true) switchEpisode(neighbors.next!!)
+                else setStatus("播放结束")
+            }
         }
-        if(playbackState == Player.STATE_READY) title.text = "${item?.name.orEmpty()}  ·  ${p.audioFormat?.sampleMimeType.orEmpty()}"
+        if(playbackState == Player.STATE_READY) title.text = item?.let { listOf(it.name,it.episodeLabel).filter(String::isNotBlank).joinToString(" · ") }.orEmpty()
     }
     override fun onTracksChanged(tracks: Tracks) {
         val p = player ?: return
-        title.text = "${item?.name.orEmpty()}  ·  ${p.audioFormat?.sampleMimeType.orEmpty()}"
+        title.text = item?.let { listOf(it.name,it.episodeLabel).filter(String::isNotBlank).joinToString(" · ") }.orEmpty()
     }
     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) { wantedPlay = playWhenReady; report("Progress") }
     override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo,newPosition: Player.PositionInfo,reason: Int) {
@@ -376,6 +511,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
                         debug.text = stats.debug(p, spec?.url.orEmpty(), session?.server.orEmpty())
                         debug.visibility = if(showDebug) View.VISIBLE else View.GONE
                     } else if(!showOsd && !showDebug) { osd.visibility = View.GONE; debug.visibility = View.GONE }
+                    maybeSkipEnding(p,now)
                     if(startedReported && now - lastProgressReport >= 10_000) { report("Progress"); lastProgressReport = now }
                 }
                 delay(1000)
@@ -389,6 +525,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
     }
     private fun setStatus(value: String) { status.text = value; status.visibility = if(value.isBlank()) View.GONE else View.VISIBLE }
     private fun showMenu() {
+        if(activeDialog?.isShowing==true || changingEpisode) return
         commitSeekPreview()
         val actions=mutableListOf<Pair<String,()->Unit>>(
             "视频轨道" to { chooseTrack(C.TRACK_TYPE_VIDEO) },
@@ -404,32 +541,51 @@ class PlaybackActivity : TvActivity(), Player.Listener {
             "使用外部播放器" to { externalDialog() },
             "播放诊断详情" to { showDiagnostics() }
         )
+        if(item?.type=="Episode") {
+            neighbors.previous?.let { episode -> actions.add(0,"上一集 · ${episode.episodeLabel}" to { switchEpisode(episode) }) }
+            neighbors.next?.let { episode -> actions.add(0,"下一集 · ${episode.episodeLabel}" to { switchEpisode(episode) }) }
+            actions.add("重新加载剧集列表" to { neighborsForId="";neighborJob?.cancel();neighborJob=null;refreshNeighbors() })
+        }
         if(app.settings.debugEnabled) actions.add("高级调试信息：${if(showDebug) "开启" else "关闭"}" to { showDebug=!showDebug })
-        AlertDialog.Builder(this).setTitle("播放选项").setItems(actions.map { it.first }.toTypedArray()) { _,index -> actions[index].second() }.show()
+        val dialog=TvUi.dialog(this).setTitle("播放选项").setItems(actions.map { it.first }.toTypedArray()) { d,index ->
+            d.dismiss();activeDialog=null;actions[index].second()
+        }.create()
+        displayDialog(dialog,false)
+    }
+    private fun displayDialog(dialog:AlertDialog,parentMenu:Boolean=true) {
+        activeDialog=dialog
+        dialog.setOnDismissListener { if(activeDialog===dialog) activeDialog=null }
+        dialog.setOnCancelListener {
+            if(activeDialog===dialog) activeDialog=null
+            sourceJob?.cancel()
+            if(parentMenu && active) main.post { if(active) showMenu() }
+        }
+        dialog.show()
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.takeIf { it.text=="取消" }?.setOnClickListener { dialog.cancel() }
     }
     private fun chooseSpeed() {
         val values=listOf(.5f,.75f,1f,1.25f,1.5f,2f)
-        AlertDialog.Builder(this).setTitle("播放速度").setSingleChoiceItems(values.map { "${it} 倍" }.toTypedArray(),values.indexOf(playbackSpeed)) { dialog,index ->
+        TvUi.dialog(this).setTitle("播放速度").setSingleChoiceItems(values.map { "${it} 倍" }.toTypedArray(),values.indexOf(playbackSpeed)) { dialog,index ->
             playbackSpeed=values[index];player?.setPlaybackSpeed(playbackSpeed);dialog.dismiss()
-        }.setNegativeButton("取消",null).show()
+        }.setNegativeButton("取消",null).create().also { displayDialog(it) }
     }
     private fun chooseResize() {
         val values=listOf(0,4,3)
-        AlertDialog.Builder(this).setTitle("画面比例").setSingleChoiceItems(arrayOf("适应屏幕","裁切填满","拉伸"),values.indexOf(playerView.resizeMode)) { dialog,index ->
+        TvUi.dialog(this).setTitle("画面比例").setSingleChoiceItems(arrayOf("适应屏幕","裁切填满","拉伸"),values.indexOf(playerView.resizeMode)) { dialog,index ->
             playerView.resizeMode=values[index];app.settings.resizeMode=values[index];dialog.dismiss()
-        }.setNegativeButton("取消",null).show()
+        }.setNegativeButton("取消",null).create().also { displayDialog(it) }
     }
     private fun chooseSubtitleSize() {
         val values=listOf(80,100,120,140)
-        AlertDialog.Builder(this).setTitle("字幕大小").setSingleChoiceItems(values.map { "${it}%" }.toTypedArray(),values.indexOf(app.settings.subtitleScale)) { dialog,index ->
+        TvUi.dialog(this).setTitle("字幕大小").setSingleChoiceItems(values.map { "${it}%" }.toTypedArray(),values.indexOf(app.settings.subtitleScale)) { dialog,index ->
             app.settings.subtitleScale=values[index];playerView.subtitleView?.setFractionalTextSize(.0533f*values[index]/100f);dialog.dismiss()
-        }.setNegativeButton("取消",null).show()
+        }.setNegativeButton("取消",null).create().also { displayDialog(it) }
     }
     private fun chooseTime() {
         val p=player ?: return
         if(!p.isCurrentMediaItemSeekable) { message("当前片源不支持跳转");return }
         val field=TvUi.input(this,"时:分:秒 或 分:秒").apply { setText(SeekPolicy.time(p.currentPosition)) }
-        val dialog=AlertDialog.Builder(this).setTitle("跳转到指定时间").setView(field).setPositiveButton("跳转",null).setNegativeButton("取消",null).create()
+        val dialog=TvUi.dialog(this).setTitle("跳转到指定时间").setView(field).setPositiveButton("跳转",null).setNegativeButton("取消",null).create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val target=SeekPolicy.parseTime(field.text.toString())
@@ -437,16 +593,20 @@ class PlaybackActivity : TvActivity(), Player.Listener {
                 else { control?.markSeek();p.seekTo(if(p.duration>0) target.coerceAtMost((p.duration-1).coerceAtLeast(0)) else target);dialog.dismiss() }
             }
         }
-        dialog.show()
+        displayDialog(dialog)
     }
     private fun chooseSource() {
         val s=session ?: return;val video=item ?: return
-        lifecycleScope.launch {
+        if(sourceJob?.isActive==true) return
+        val loading=TvUi.dialog(this).setTitle("切换片源").setMessage("正在获取可播放版本…").setNegativeButton("取消",null).create()
+        displayDialog(loading)
+        sourceJob=lifecycleScope.launch {
             try {
                 val info=app.api.playbackInfo(s,video.id)
-                if(!active) return@launch
+                if(!active || item?.id!=video.id) return@launch
                 check(info.versions.isNotEmpty()) { "服务器没有提供其他片源" }
-                AlertDialog.Builder(this@PlaybackActivity).setTitle("切换片源 · 保留当前进度")
+                loading.dismiss()
+                TvUi.dialog(this@PlaybackActivity).setTitle("切换片源 · 保留当前进度")
                     .setSingleChoiceItems(info.versions.map { it.label }.toTypedArray(),info.versions.indexOfFirst { it.id==spec?.version?.id }) { dialog,index ->
                         try {
                             val next=app.api.playbackSpec(s,video.id,info.versions[index],info.playSessionId)
@@ -456,8 +616,8 @@ class PlaybackActivity : TvActivity(), Player.Listener {
                             skippedExternalSubtitles.clear();spec=next
                             intent.putExtra("source_id",next.version.id);createPlayer();dialog.dismiss()
                         } catch(e: Exception) { message(e.message ?: "无法切换片源") }
-                    }.setNegativeButton("取消",null).show()
-            } catch(e: CancellationException) { throw e } catch(e: Exception) { message(e.message ?: "片源请求失败") }
+                    }.setNegativeButton("取消",null).create().also { displayDialog(it) }
+            } catch(e: CancellationException) { throw e } catch(e: Exception) { loading.dismiss();message(e.message ?: "片源请求失败") }
         }
     }
     private fun showDiagnostics() {
@@ -465,7 +625,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
             typeface=android.graphics.Typeface.MONOSPACE;setPadding(22,14,22,14)
         }
         val scroll=ScrollView(this).apply { addView(text);isFocusable=true;isFocusableInTouchMode=true }
-        val dialog=AlertDialog.Builder(this).setTitle("播放诊断详情").setView(scroll)
+        val dialog=TvUi.dialog(this).setTitle("播放诊断详情").setView(scroll)
             .setPositiveButton("关闭",null).setNeutralButton("刷新",null).setNegativeButton("复制",null).create()
         fun refresh() { lifecycleScope.launch {
             val link=withContext(Dispatchers.IO) { network.linkDetails() }
@@ -476,7 +636,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
             text.text="BronyaTV ${tv.ember.client.BuildConfig.VERSION_NAME} · ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} · Android ${android.os.Build.VERSION.RELEASE}\n"+
                 "SoC/硬件 $soc · Board ${android.os.Build.BOARD} · 可用 CPU 核 ${rt.availableProcessors()}\n"+
                 "APP 最大堆 ${rt.maxMemory()/1048576}MiB · 已用堆 ${(rt.totalMemory()-rt.freeMemory())/1048576}MiB（不等于系统可用内存）\n"+
-                stats.details(p,current.version)+"\n\n网络接收（包含预取，含等待时间，非测速）\n"+
+                stats.outputSummary(p)+"\n"+stats.displaySummary(windowManager.defaultDisplay)+"\n\n"+stats.details(p,current.version)+"\n\n网络接收（包含预取，含等待时间，非测速）\n"+
                 "当前 %.2f MB/s · 近5秒 %.2f MB/s · 近30秒峰值 %.2f MB/s\n".format((net?.bytesPerSecond ?: 0)/1048576.0,(net?.average ?: 0)/1048576.0,(net?.peak ?: 0)/1048576.0)+
                 "累计 %.1f MiB · 距离收到数据 ${net?.idleMs?.let { "${it}ms" } ?: "未收到"}\n".format((net?.total ?: 0)/1048576.0)+
                 "接收方式 ${rangeStatus?.mode} · 设置 ${if(app.settings.streamConnections==0) "自动" else "${app.settings.streamConnections} 路"}\n"+
@@ -510,7 +670,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
                 else -> false
             }
         }
-        dialog.show()
+        displayDialog(dialog)
         dialog.window?.setLayout((resources.displayMetrics.widthPixels*0.86).toInt(),(resources.displayMetrics.heightPixels*0.88).toInt())
     }
     private fun chooseTrack(type: Int) {
@@ -529,24 +689,24 @@ class PlaybackActivity : TvActivity(), Player.Listener {
             override!=null -> options.indexOfFirst { (g,i) -> g.mediaTrackGroup==override.mediaTrackGroup && i in override.trackIndices }.let { if(it<0) 0 else it+prefix.size }
             else -> 0
         }
-        AlertDialog.Builder(this).setTitle(when(type) { C.TRACK_TYPE_VIDEO -> "视频轨道"; C.TRACK_TYPE_AUDIO -> "音频轨道"; else -> "字幕轨道" }).setSingleChoiceItems(names.toTypedArray(),selected) { dialog, index ->
+        TvUi.dialog(this).setTitle(when(type) { C.TRACK_TYPE_VIDEO -> "视频轨道"; C.TRACK_TYPE_AUDIO -> "音频轨道"; else -> "字幕轨道" }).setSingleChoiceItems(names.toTypedArray(),selected) { dialog, index ->
             val b = p.trackSelectionParameters.buildUpon().clearOverridesOfType(type).setTrackTypeDisabled(type, prefix.size==2 && index == 1)
             if(index >= prefix.size) { val (g, i) = options[index - prefix.size]; b.setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, i)) }
             p.trackSelectionParameters = b.build()
             dialog.dismiss()
-        }.setNegativeButton("取消",null).show()
+        }.setNegativeButton("取消",null).create().also { displayDialog(it) }
     }
     private fun externalDialog() {
         val choices = tv.ember.client.settings.PlayerChoice.entries.filter { it != tv.ember.client.settings.PlayerChoice.INTERNAL && ExternalPlayers.available(this, it) }
         if(choices.isEmpty()) { message("未检测到 VLC、MX Player 或 Just Player"); return }
-        AlertDialog.Builder(this).setTitle("外部播放器").setItems(choices.map { it.label }.toTypedArray()) { _, index ->
+        TvUi.dialog(this).setTitle("外部播放器").setItems(choices.map { it.label }.toTypedArray()) { _, index ->
             val current = spec ?: return@setItems
             try {
                 val pos = player?.currentPosition ?: position
                 ExternalPlayers.launch(this, choices[index], current, item?.name.orEmpty(), pos)
                 finish()
             } catch(e: Exception) { message(e.message ?: "外部播放器启动失败") }
-        }.show()
+        }.create().also { displayDialog(it) }
     }
     private fun cancelSeekPreview() {
         main.removeCallbacks(commitSeek);pendingSeek=null
@@ -571,10 +731,10 @@ class PlaybackActivity : TvActivity(), Player.Listener {
                 if(event.action==KeyEvent.ACTION_DOWN) {
                     main.removeCallbacks(commitSeek)
                     val now=SystemClock.elapsedRealtime()
-                    if(event.repeatCount==0 || now-lastSeekMove>=150) {
+                    if(event.repeatCount==0 || now-lastSeekMove>=450) {
                         if(pendingSeek==null) seekOrigin=p.currentPosition
                         val direction=if(key==KeyEvent.KEYCODE_DPAD_LEFT || key==KeyEvent.KEYCODE_MEDIA_REWIND) -1 else 1
-                        val target=SeekPolicy.target(pendingSeek ?: p.currentPosition,p.duration,direction,event.repeatCount,app.settings.seekSeconds)
+                        val target=SeekPolicy.target(pendingSeek ?: p.currentPosition,p.duration,direction,event.repeatCount,app.settings.seekSeconds,app.settings.longSeekSeconds)
                         pendingSeek=target;lastSeekMove=now
                         val delta=target-seekOrigin
                         seekPreview.text="${if(delta>=0) "快进" else "快退"}  ${SeekPolicy.time(target)}  /  ${SeekPolicy.time(p.duration)}\n"+
@@ -606,7 +766,8 @@ class PlaybackActivity : TvActivity(), Player.Listener {
     }
     override fun onStop() {
         cancelSeekPreview()
-        active = false; retryJob?.cancel(); loadJob?.cancel(); monitorJob?.cancel()
+        active=false;retryJob?.cancel();loadJob?.cancel();monitorJob?.cancel();neighborJob?.cancel();sourceJob?.cancel()
+        activeDialog?.dismiss();activeDialog=null;outroDeadline=0
         if(registered) { runCatching { connectivity.unregisterNetworkCallback(connectionCallback) }; registered = false }
         main.removeCallbacksAndMessages(null)
         player?.let { position = it.currentPosition; wantedPlay = it.playWhenReady; trackPreferences = it.trackSelectionParameters }

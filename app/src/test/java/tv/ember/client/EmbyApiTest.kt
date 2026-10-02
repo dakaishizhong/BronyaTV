@@ -27,12 +27,17 @@ class EmbyApiTest {
         assertEquals("TV", body.getString("Username")); assertEquals("access", result.token)
         assertTrue(request.getHeader("X-Emby-Authorization")!!.contains("test-device"))
     }
-    @Test fun tokenLoginValidatesUser() = runBlocking {
-        server.enqueue(MockResponse().setBody("""[{"DeviceId":"test-device","UserId":"u1"}]"""))
+    @Test fun restoredSessionUsesAuthenticatedUserValidation() = runBlocking {
         server.enqueue(MockResponse().setBody("""{"Id":"u1","Name":"TV"}"""))
-        assertEquals("u1", api.tokenLogin(session.server, "access").userId)
-        val discovery=server.takeRequest(); assertEquals("/proxy/emby/Sessions?DeviceId=test-device",discovery.path)
-        val r = server.takeRequest(); assertEquals("/proxy/emby/Users/u1", r.path); assertEquals("access", r.getHeader("X-Emby-Token"))
+        api.validate(session)
+        val r=server.takeRequest();assertEquals("/proxy/emby/Users/u1",r.path);assertEquals("secret",r.getHeader("X-Emby-Token"))
+    }
+    @Test fun adjacentEpisodesRequestServerOrderAcrossSeasons() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"Items":[{"Id":"a","Type":"Episode","SeriesId":"series","ParentIndexNumber":1,"IndexNumber":12},{"Id":"b","Type":"Episode","SeriesId":"series","ParentIndexNumber":2,"IndexNumber":1},{"Id":"c","Type":"Episode","SeriesId":"series","ParentIndexNumber":2,"IndexNumber":2}]}"""))
+        val result=api.adjacentEpisodes(session,VideoItem("b","Episode","Episode",seriesId="series"))
+        assertEquals("a",result.previous?.id);assertEquals("c",result.next?.id)
+        val r=server.takeRequest().requestUrl!!
+        assertEquals("/proxy/emby/Shows/series/Episodes",r.encodedPath);assertEquals("b",r.queryParameter("AdjacentTo"));assertNull(r.queryParameter("SeasonId"))
     }
     @Test fun playbackNegotiationExplicitlyDisablesTranscodingAndRetainsVersions() = runBlocking {
         server.enqueue(MockResponse().setBody("""{"PlaySessionId":"p1","MediaSources":[{"Id":"4k","Name":"4K HDR","Container":"mkv","SupportsDirectPlay":true},{"Id":"1080","Container":"mp4"}]}"""))

@@ -4,10 +4,6 @@
 
 APK SHA-256：`8a6e214147d05ea50904fa42fecb46688de17bd456da3125540a1e0f4818b513`。
 
-## 用户实机证据
-
-Skyworth A6E / Android 13 已确认 1.0.1 显示图标、登录、主页、观看记录和版本选择正常；部分视频 HTTP 206 可播放，部分返回 HTTP 410。用户进一步确认其他客户端可播放失败片源，并发现失败链接使用 stream.mp4、正常链接使用 original.mkv。1.0.2 尚待该电视和第三方服务的复测；本报告中的成功结果来自本地测试服务与独立的官方 Emby Server。
-
 ## 修复行为
 
 - 优先使用最新 PlaybackInfo 的 DirectStreamUrl，保留签名查询参数和 RequiredHttpHeaders；根据 AddApiKeyToDirectStreamUrl 添加 URL 认证，不覆盖已有认证参数。HTTP 远程片源可使用服务器提供的 Path。保留协议、有效端口、反向代理前缀，支持 //cdn 形式地址。
@@ -28,7 +24,7 @@ HTTPS 未指定端口时默认使用 443，无需追加 :443；非默认端口�
 | Android TV API 30 | 2/2 通过，0 跳过：HEVC 10-bit 实际播放，以及官方 Emby 登录/浏览/MP4、MKV、HDR 三种版本原文件播放 |
 | 官方 Emby Server 4.10.1.0 | 三种片源的 stream 与 original 接口共 6 个 Range 请求均返回 206，文件头和容器一致 |
 | 签名 Release 实际 UI | 从 1.0.1 覆盖安装成功；登录、选择失败片源、410 后恢复 original.mkv、READY/206、接收缓冲设置和返回设置后保留数值均通过 |
-| 普通应用接收缓冲 | UID 10101，所有手动档位均可调用；本地系统报告 512KB，包括请求 1024KB 的真实播放连接。此数值不代表用户电视的上限 |
+| 普通应用接收缓冲 | UID 10101，所有手动档位均可调用；本地系统报告 512KB，包括请求 1024KB 的真实播放连接。此数值不代表实体设备的上限 |
 | 构建与检查 | Debug/Release lint 通过；Release R8/资源压缩；v1/v2 签名和 zipalign 验证通过 |
 
 API 33 模拟器不支持测试样片的 HEVC Main10/HDR profile，首次完整回归的这一项失败于硬件和系统软件解码器能力，证据保留在 playback-fix-1.0.2/api33-first-run.*。没有改变或削弱该用例；随后在已支持该样片的 API 30 TV 环境使用最终代码验证通过。API 30 首次启动后网络尚未就绪导致连接失败，待网络就绪重跑 2 项均通过。

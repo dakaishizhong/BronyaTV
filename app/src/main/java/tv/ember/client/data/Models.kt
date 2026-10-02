@@ -8,7 +8,8 @@ data class VideoItem(
     val id: String, val name: String, val type: String, val overview: String = "",
     val year: String = "", val rating: String = "", val runtimeTicks: Long = 0,
     val resumeTicks: Long = 0, val imageTag: String = "", val imageId: String = id,
-    val sources: List<MediaVersion> = emptyList(), val episodeLabel: String = ""
+    val sources: List<MediaVersion> = emptyList(), val episodeLabel: String = "",
+    val seriesId: String = "", val seasonId: String = "", val seasonNumber: Int = -1, val episodeNumber: Int = -1
 ) {
     val isFolder get() = type in listOf("CollectionFolder", "Folder", "Series", "Season", "BoxSet")
     val subtitle get() = listOf(year, episodeLabel, rating, if (runtimeTicks >= 600_000_000) "${runtimeTicks / 600_000_000} 分钟" else if(runtimeTicks > 0) "${runtimeTicks / 10_000_000} 秒" else "").filter { it.isNotBlank() }.joinToString("  ·  ")
@@ -22,7 +23,8 @@ data class VideoItem(
                 o.optJSONObject("UserData")?.optLong("PlaybackPositionTicks") ?: 0,
                 tag.ifBlank { inherited }, if (tag.isBlank() && inherited.isNotBlank()) o.optString("SeriesId", o.getString("Id")) else o.getString("Id"),
                 o.optJSONArray("MediaSources").objects().map(MediaVersion::parse),
-                if (o.optString("Type") == "Episode") "S${o.optInt("ParentIndexNumber")} E${o.optInt("IndexNumber")}" else "")
+                if (o.optString("Type") == "Episode") "S${o.optInt("ParentIndexNumber")} E${o.optInt("IndexNumber")}" else "",
+                o.optString("SeriesId"),o.optString("SeasonId"),o.optInt("ParentIndexNumber",-1),o.optInt("IndexNumber",-1))
         }
     }
 }

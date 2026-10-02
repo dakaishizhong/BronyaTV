@@ -27,7 +27,7 @@ class RealEmbyServerTest {
         app.sessions.save(session)
         app.settings.receiveBufferKb=0
         app.settings.streamConnections=InstrumentationRegistry.getArguments().getString("connections")?.toIntOrNull() ?: 1
-        assertEquals(session.userId,app.api.tokenLogin(session.server,session.token).userId)
+        app.api.validate(session)
         val folders=app.api.views(session); assertTrue(folders.isNotEmpty())
         val items=app.api.items(session,folders.first().id); assertEquals(1,items.total)
         var content=items.items.first()

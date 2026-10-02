@@ -15,9 +15,9 @@ object SeekPolicy {
         }
         return seconds*1000
     }
-    fun target(position: Long, duration: Long, direction: Int, repeat: Int, baseSeconds: Int): Long {
+    fun target(position: Long, duration: Long, direction: Int, repeat: Int, baseSeconds: Int, longSeconds: Int = 30): Long {
         require(direction==-1 || direction==1)
-        val seconds=(baseSeconds.coerceIn(5,60)*when { repeat>=12 -> 6;repeat>=5 -> 3;else -> 1 }).coerceAtMost(60)
+        val seconds=if(repeat>0) longSeconds.coerceIn(10,60) else baseSeconds.coerceIn(5,60)
         val delta=seconds*1000L*direction
         val next=if(delta>0 && position>Long.MAX_VALUE-delta) Long.MAX_VALUE else (position+delta).coerceAtLeast(0)
         return if(duration>0) next.coerceAtMost((duration-1).coerceAtLeast(0)) else next

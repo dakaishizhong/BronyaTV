@@ -71,18 +71,6 @@ class EmbyApi(private val client: OkHttpClient, private val deviceId: String) {
         val u = j.getJSONObject("User")
         return Session(server, j.getString("AccessToken"), u.getString("Id"), u.optString("Name", username))
     }
-    suspend fun tokenLogin(serverInput: String, token: String, userId: String = ""): Session {
-        val server = normalizeServer(serverInput)
-        require(token.isNotBlank()) { "请输入 Token" }
-        val resolvedId = if(userId.isNotBlank()) userId.trim() else {
-            val sessions = JSONArray(request(server, "Sessions", token.trim(), mapOf("DeviceId" to deviceId)))
-            sessions.objects().firstOrNull { it.optString("DeviceId") == deviceId && it.optString("UserId").isNotBlank() }
-                ?.getString("UserId") ?: throw IllegalArgumentException("该 Token 无法自动确定用户，请填写用户 ID（服务器 API Key 必须指定用户）")
-        }
-        val path = "Users/${HttpUrl.Builder().scheme("https").host("x").addPathSegment(resolvedId).build().encodedPath.trimStart('/')}"
-        val u = JSONObject(request(server, path, token.trim()))
-        return Session(server, token.trim(), u.getString("Id"), u.optString("Name", "Emby 用户"))
-    }
     suspend fun validate(s: Session) { request(s.server, "Users/${s.userId}", s.token) }
     suspend fun views(s: Session): List<VideoItem> = JSONObject(request(s.server, "Users/${s.userId}/Views", s.token)).optJSONArray("Items").objects().map(VideoItem::parse)
     suspend fun resume(s: Session): List<VideoItem> = JSONObject(request(s.server, "Users/${s.userId}/Items/Resume", s.token,
@@ -98,6 +86,13 @@ class EmbyApi(private val client: OkHttpClient, private val deviceId: String) {
         return ItemPage(j.optJSONArray("Items").objects().map(VideoItem::parse), j.optInt("TotalRecordCount"))
     }
     suspend fun detail(s: Session, id: String) = VideoItem.parse(JSONObject(request(s.server, "Users/${s.userId}/Items/$id", s.token)))
+    suspend fun adjacentEpisodes(s: Session, item: VideoItem): EpisodeNeighbors {
+        if(item.type!="Episode" || item.seriesId.isBlank()) return EpisodeNeighbors()
+        val j=JSONObject(request(s.server,"Shows/${item.seriesId}/Episodes",s.token,mapOf(
+            "UserId" to s.userId,"AdjacentTo" to item.id,"Fields" to "Overview,MediaSources",
+            "EnableUserData" to "true")))
+        return EpisodeNeighbors.from(item,j.optJSONArray("Items").objects().map(VideoItem::parse))
+    }
     suspend fun playbackInfo(s: Session, id: String, sourceId: String = ""): PlaybackInfo {
         val profile = JSONObject().put("Name", "BronyaTV Direct Play")
             .put("MaxStreamingBitrate", 1_000_000_000)

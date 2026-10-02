@@ -4,7 +4,7 @@ import android.content.Context
 
 enum class BufferMode(val label: String) { AUTO("自动"), LOW_LATENCY("低延迟"), BALANCED("平衡"), LARGE("大缓存") }
 enum class PlayerChoice(val label: String, val packages: List<String>) {
-    INTERNAL("内置 Media3", emptyList()), VLC("VLC", listOf("org.videolan.vlc")),
+    INTERNAL("内置播放器", emptyList()), VLC("VLC", listOf("org.videolan.vlc")),
     MX("MX Player", listOf("com.mxtech.videoplayer.pro", "com.mxtech.videoplayer.ad")),
     JUST("Just Player", listOf("com.brouken.player"))
 }
@@ -41,6 +41,18 @@ class PlaybackSettings(context: Context) {
     var seekSeconds: Int
         get()=p.getInt("seek_seconds",10).takeIf { it in listOf(5,10,20,30,60) } ?: 10
         set(v) { require(v in listOf(5,10,20,30,60));p.edit().putInt("seek_seconds",v).apply() }
+    var longSeekSeconds: Int
+        get()=p.getInt("long_seek_seconds",30).takeIf { it in listOf(10,15,20,30,45,60) } ?: 30
+        set(v) { require(v in listOf(10,15,20,30,45,60));p.edit().putInt("long_seek_seconds",v).apply() }
+    var introSeconds: Int
+        get()=p.getInt("intro_seconds",0).coerceIn(0,600)
+        set(v) { require(v in 0..600);p.edit().putInt("intro_seconds",v).apply() }
+    var outroSeconds: Int
+        get()=p.getInt("outro_seconds",0).coerceIn(0,600)
+        set(v) { require(v in 0..600);p.edit().putInt("outro_seconds",v).apply() }
+    var autoNextEpisode: Boolean
+        get()=p.getBoolean("auto_next_episode",true)
+        set(v) { p.edit().putBoolean("auto_next_episode",v).apply() }
     var audioLanguage: String
         get()=p.getString("audio_language","").orEmpty()
         set(v) { p.edit().putString("audio_language",v).apply() }

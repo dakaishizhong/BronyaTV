@@ -1,6 +1,6 @@
 <resources>
-    <color name="background">#080E18</color>
-    <color name="accent">#69E2CF</color>
+    <color name="background">#0D0F14</color>
+    <color name="accent">#7CB1FF</color>
     <style name="Theme.BronyaTV" parent="Theme.Leanback">
         <item name="android:fontFamily">sans-serif</item>
         <item name="android:alertDialogTheme">@style/Theme.BronyaTV.Dialog</item>
@@ -17,10 +17,16 @@
     <style name="Theme.BronyaTV.Dialog" parent="android:style/Theme.Material.Dialog.Alert">
         <item name="android:windowBackground">@drawable/dialog_surface</item>
         <item name="android:colorAccent">@color/accent</item>
-        <item name="android:textColorPrimary">#F1F7F9</item>
-        <item name="android:textColorSecondary">#9CB1BE</item>
+        <item name="android:textColorPrimary">#F5F6FA</item>
+        <item name="android:textColorSecondary">#A2A9B7</item>
         <item name="android:fontFamily">sans-serif</item>
-        <item name="android:windowMinWidthMajor">62%</item>
-        <item name="android:windowMinWidthMinor">76%</item>
+        <item name="android:windowMinWidthMajor">52%</item>
+        <item name="android:windowMinWidthMinor">68%</item>
+    </style>
+    <style name="BronyaTV.PlayerControl" parent="">
+        <item name="android:layout_width">52dp</item><item name="android:layout_height">52dp</item>
+        <item name="android:background">@drawable/player_button</item><item name="android:tint">@color/player_icon</item>
+        <item name="android:padding">14dp</item><item name="android:focusable">true</item>
+        <item name="android:focusableInTouchMode">true</item><item name="android:stateListAnimator">@null</item>
     </style>
 </resources>

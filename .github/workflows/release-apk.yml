@@ -51,10 +51,14 @@ jobs:
           assets=("$apk" "$release_dir/SHA256SUMS" --repo "$GITHUB_REPOSITORY")
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --title "BronyaTV $version" --notes-file "$release_dir/RELEASE-NOTES.md"
           else
             gh release create "$RELEASE_TAG" "${assets[@]}" --verify-tag --title "BronyaTV $version" --notes-file "$release_dir/RELEASE-NOTES.md"
           fi
           # Keep the existing release's display name consistent with the renamed app.
           if [[ "$RELEASE_TAG" != "v1.0.3" ]] && gh release view v1.0.3 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit v1.0.3 --repo "$GITHUB_REPOSITORY" --title "BronyaTV 1.0.3" --notes-file releases/v1.0.3/RELEASE-NOTES.md
+          fi
+          if [[ "$RELEASE_TAG" != "v1.1.0" ]] && gh release view v1.1.0 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit v1.1.0 --repo "$GITHUB_REPOSITORY" --title "BronyaTV 1.1.0" --notes-file releases/v1.1.0/RELEASE-NOTES.md
           fi

@@ -186,15 +186,15 @@ class TvIntegrationTest {
             await { playing() }
         }
     }
-    @Test fun tokenLoginWorksOnDevice() = runBlocking { assertEquals("u1", app.api.tokenLogin("http://10.0.2.2:8765", "fixture-token").userId) }
+    @Test fun restoredSessionValidatesOnDevice() = runBlocking { app.api.validate(app.sessions.load()!!) }
     @Test fun debugModeIsHiddenUntilSevenRemoteClicks() {
         ActivityScenario.launch(SettingsActivity::class.java).use { scenario ->
             scenario.onActivity { a ->
                 assertFalse(app.settings.debugEnabled)
-                val about=views(a).filterIsInstance<Button>().first { it.text.toString().startsWith("关于") }
-                repeat(7) { about.performClick() }
+                views(a).filterIsInstance<Button>().first { it.text=="信息与账号" }.performClick()
+                repeat(7) { a.window.decorView.findViewWithTag<View>("about").performClick() }
                 assertTrue(app.settings.debugEnabled)
-                assertTrue(views(a).filterIsInstance<Button>().any { it.text.toString().startsWith("高级调试") })
+                assertNotNull(a.window.decorView.findViewWithTag<View>("debug"))
             }
         }
     }

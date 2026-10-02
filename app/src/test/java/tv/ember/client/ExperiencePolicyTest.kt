@@ -18,10 +18,10 @@ class ExperiencePolicyTest {
         val tight=StreamPolicy.create(8,80_000_000,heap,heap-1024,false)
         assertEquals(1,tight.connections);assertEquals(128,tight.budgetBytes)
     }
-    @Test fun seekAcceleratesAndClampsToPlayableTimeline() {
+    @Test fun configuredShortAndLongSeekClampToPlayableTimeline() {
         assertEquals(20_000,SeekPolicy.target(10_000,100_000,1,0,10))
         assertEquals(40_000,SeekPolicy.target(10_000,100_000,1,5,10))
-        assertEquals(70_000,SeekPolicy.target(10_000,100_000,1,12,10))
+        assertEquals(55_000,SeekPolicy.target(10_000,100_000,1,12,10,45))
         assertEquals(99_999,SeekPolicy.target(90_000,100_000,1,12,60))
         assertEquals(0,SeekPolicy.target(5_000,100_000,-1,0,10))
         assertEquals(Long.MAX_VALUE,SeekPolicy.target(Long.MAX_VALUE-100,-1,1,12,60))
