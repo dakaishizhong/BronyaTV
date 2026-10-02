@@ -1,5 +1,7 @@
 package tv.ember.client.monitor
 
+import tv.ember.client.i18n.Tr
+import tv.ember.client.i18n.UiText
 import android.annotation.SuppressLint
 import android.content.Context
 import android.net.ConnectivityManager
@@ -28,12 +30,12 @@ class NetworkMonitor(context: Context) : TransferListener {
         val caps = manager.getNetworkCapabilities(manager.activeNetwork)
         val connected = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
         val kind = when {
-            caps == null -> "无网络"
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "以太网"
+            caps == null -> Tr.text(UiText.NO_NETWORK_032)
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> Tr.text(UiText.ETHERNET_033)
             caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
-            else -> "已连接"
+            else -> Tr.text(UiText.CONNECTED_034)
         }
-        val state = if(caps != null && !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) "$kind · 未验证互联网" else kind
+        val state = if(caps != null && !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) Tr.text(UiText.INTERNET_NOT_VERIFIED_035 ,(kind)) else kind
         return NetworkSample(s.rate,state,connected,s.average,s.peak,s.total,s.idleMs)
     }
     @SuppressLint("MissingPermission")
@@ -41,20 +43,20 @@ class NetworkMonitor(context: Context) : TransferListener {
     fun linkDetails():String {
         val active=manager.activeNetwork
         val caps=manager.getNetworkCapabilities(active)
-        val iface=manager.getLinkProperties(active)?.interfaceName ?: "未提供"
+        val iface=manager.getLinkProperties(active)?.interfaceName ?: Tr.text(UiText.NOT_PROVIDED_026)
         val wifi=if(caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)==true) {
             (if(Build.VERSION.SDK_INT>=29) caps.transportInfo as? WifiInfo else null)
                 ?: (context.getSystemService(Context.WIFI_SERVICE) as? WifiManager)?.connectionInfo
         } else null
-        val physical=if(wifi!=null) "Wi-Fi 链路 ${wifi.linkSpeed}Mbps · ${wifi.frequency}MHz · 信号 ${wifi.rssi}dBm" else {
+        val physical=if(wifi!=null) Tr.text(UiText.WI_FI_LINK_MBPS_MHZ_SIGNAL_036 ,(wifi.linkSpeed),(wifi.frequency),(wifi.rssi)) else {
             val speed=if(caps?.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)==true && iface.matches(Regex("[a-zA-Z0-9_.-]+")))
-                runCatching { File("/sys/class/net/$iface/speed").readText().trim().toInt() }.getOrNull()?.takeIf { it>0 } else null
-            "以太网链路 ${speed?.let { "${it}Mbps" } ?: "系统未提供"}"
+                runCatching { File("/sys/class/net/${iface}/speed").readText().trim().toInt() }.getOrNull()?.takeIf { it>0 } else null
+            Tr.text(UiText.ETHERNET_LINK_038 ,(speed?.let { "${it}Mbps" } ?: Tr.text(UiText.NOT_REPORTED_BY_SYSTEM_037)))
         }
         val kernel=listOf("ipv4/tcp_rmem","core/rmem_max","ipv4/tcp_moderate_rcvbuf","ipv4/tcp_window_scaling").joinToString("\n") { key ->
-            val value=runCatching { File("/proc/sys/net/$key").readText().trim().replace(Regex("\\s+")," ") }.getOrNull()
-            "${key.substringAfter('/')} ${value ?: "系统禁止读取/未提供"}"
+            val value=runCatching { File("/proc/sys/net/${key}").readText().trim().replace(Regex("\\s+")," ") }.getOrNull()
+            "${key.substringAfter('/')} ${value ?: Tr.text(UiText.RESTRICTED_OR_NOT_REPORTED_039)}"
         }
-        return "接口 $iface\n$physical（链路速率不是下载速率）\n$kernel"
+        return Tr.text(UiText.INTERFACE_LINK_SPEED_IS_NOT_DOWNLOAD_040 ,(iface),(physical),(kernel))
     }
 }

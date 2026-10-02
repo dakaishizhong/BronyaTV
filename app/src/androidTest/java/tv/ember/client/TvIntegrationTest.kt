@@ -27,18 +27,20 @@ import tv.ember.client.ui.*
 
 @RunWith(AndroidJUnit4::class)
 class TvIntegrationTest {
+    private val fixtureServer get()=InstrumentationRegistry.getArguments().getString("fixtureServer") ?: "http://10.0.2.2:8765"
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private val app get() = context.applicationContext as BronyaApp
     private fun children(view: View): List<View> = listOf(view) + if(view is ViewGroup) (0 until view.childCount).flatMap { children(view.getChildAt(it)) } else emptyList()
     private fun views(a: android.app.Activity) = children(a.window.decorView)
-    private fun fixture(url: String) { HttpClient.api.newCall(Request.Builder().url("http://10.0.2.2:8765$url").build()).execute().close() }
+    private fun fixture(url: String) { HttpClient.api.newCall(Request.Builder().url("$fixtureServer$url").build()).execute().close() }
     private fun await(timeout: Long = 30000, check: () -> Boolean) {
         val end = System.currentTimeMillis() + timeout
         while(System.currentTimeMillis() < end) { if(check()) return; Thread.sleep(200) }
         fail("Condition did not become true within $timeout ms")
     }
     @Before fun setup() {
-        app.sessions.save(Session("http://10.0.2.2:8765", "fixture-token", "u1", "Demo TV"))
+        tv.ember.client.i18n.AppLanguage.save(context,"zh")
+        app.sessions.save(Session(fixtureServer, "fixture-token", "u1", "Demo TV"))
         app.settings.osd = false; app.settings.debugEnabled = false; app.settings.receiveBufferKb = 0; app.settings.streamConnections=InstrumentationRegistry.getArguments().getString("connections")?.toIntOrNull() ?: 1
         fixture("/fixture/control?fail=0")
     }
@@ -59,7 +61,7 @@ class TvIntegrationTest {
         ActivityScenario.launch(LoginActivity::class.java).use { scenario ->
             scenario.onActivity { a ->
                 val fields=views(a).filterIsInstance<EditText>()
-                fields[0].setText("http://10.0.2.2:8765"); fields[1].setText("demo"); fields[2].setText("demo")
+                fields[0].setText(fixtureServer); fields[1].setText("demo"); fields[2].setText("demo")
                 views(a).filterIsInstance<Button>().first { it.text=="连接服务器" }.performClick()
             }
             await { app.sessions.load()?.userId=="u1" }
@@ -157,7 +159,7 @@ class TvIntegrationTest {
     }
     @Test fun rejectedHttp410UrlIsRefreshedAndPlaybackPositionIsPreserved() {
         playback("refreshurl")
-        val state=HttpClient.api.newCall(Request.Builder().url("http://10.0.2.2:8765/fixture/status").build()).execute().use { org.json.JSONObject(it.body!!.string()) }
+        val state=HttpClient.api.newCall(Request.Builder().url("$fixtureServer/fixture/status").build()).execute().use { org.json.JSONObject(it.body!!.string()) }
         assertEquals(2,state.getInt("url_generation"))
     }
     @Test fun rejectedStreamMp4FallsBackToTheSelectedOriginalMkvAndKeepsPosition() = playback("originalfallback")
@@ -167,7 +169,7 @@ class TvIntegrationTest {
         ActivityScenario.launch<PlaybackActivity>(intent).use { scenario ->
             await { var shown=false;scenario.onActivity { a -> shown=views(a).filterIsInstance<TextView>().any { it.text.toString().contains("HTTP 403") && it.text.toString().contains("拒绝访问") } };shown }
         }
-        val state=HttpClient.api.newCall(Request.Builder().url("http://10.0.2.2:8765/fixture/status").build()).execute().use { org.json.JSONObject(it.body!!.string()) }
+        val state=HttpClient.api.newCall(Request.Builder().url("$fixtureServer/fixture/status").build()).execute().use { org.json.JSONObject(it.body!!.string()) }
         assertEquals("One failed request followed by one refresh; no retry loop",8,state.getInt("fail"))
     }
     @Test fun inaccessibleExternalSubtitleDoesNotPreventVideoPlayback() {

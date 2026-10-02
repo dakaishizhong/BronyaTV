@@ -1,0 +1,9 @@
+<resources>
+    <string name="switch_source">Switch source</string>
+    <string name="rewind">Rewind</string>
+    <string name="play_pause">Play or pause</string>
+    <string name="forward">Forward</string>
+    <string name="subtitles">Subtitle tracks</string>
+    <string name="audio">Audio tracks</string>
+    <string name="playback_options">Playback options</string>
+</resources>

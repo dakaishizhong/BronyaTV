@@ -1,5 +1,7 @@
 package tv.ember.client.ui
 
+import tv.ember.client.i18n.Tr
+import tv.ember.client.i18n.UiText
 import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
@@ -15,7 +17,7 @@ import tv.ember.client.data.*
 import tv.ember.client.network.ApiException
 
 data class BrowserCommand(val name: String, val action: () -> Unit)
-private data class BrowserPage(val parent: String, val name: String, val search: String = "", val sort: String = "SortName")
+private data class BrowserPage(val parent: String, val name: String, val search: String = "", val sort: String = "SortName", val types: String = "", val favorite: Boolean = false)
 
 class MainActivity : TvActivity() {
     private lateinit var rows: RowsSupportFragment
@@ -24,6 +26,16 @@ class MainActivity : TvActivity() {
     private lateinit var description: TextView
     private lateinit var navLabel: TextView
     private lateinit var homeButton: Button
+    private lateinit var hero: LinearLayout
+    private lateinit var heroOverview: TextView
+    private lateinit var heroBadges: LinearLayout
+    private lateinit var heroActions: LinearLayout
+    private lateinit var searchArea: LinearLayout
+    private lateinit var backdrop: ImageView
+    private var backdropJob: Job?=null
+    private var heroItem: VideoItem?=null
+    private var searchField: EditText?=null
+    private var searchType=""
     private var loadedSession: Session? = null
     private var work: Job? = null
     private val history = ArrayDeque<BrowserPage>()
@@ -33,39 +45,56 @@ class MainActivity : TvActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val root = paddedColumn()
-        root.setPadding(TvUi.dp(root, 36), TvUi.dp(root, 16), TvUi.dp(root, 36), 0)
-        val nav = TvUi.row(this)
-        navLabel = TvUi.text(this, "BronyaTV", 22f, TvUi.text).apply { letterSpacing = .02f;maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END }
-        nav.addView(navLabel, LinearLayout.LayoutParams(0, -2, 1f))
-        homeButton = TvUi.button(this, "首页") { history.clear(); page = null; loadHome() }
-        listOf(homeButton, TvUi.button(this, "搜索") { searchDialog() },TvUi.button(this,"排序") { sortDialog() }, TvUi.button(this, "设置") { startActivity(Intent(this, SettingsActivity::class.java)) },
-            TvUi.button(this, "刷新") { if(page == null) loadHome(true) else loadPage(page!!) }).forEach {
-            nav.addView(it, LinearLayout.LayoutParams(-2, TvUi.dp(nav, 42)).apply { marginStart = TvUi.dp(nav, 8) })
-        }
-        TvUi.add(root, nav)
-        title = TvUi.text(this, "你的媒体库", 28f).apply { maxLines = 1 }
-        description = TvUi.text(this, "电影与剧集", 14f, TvUi.muted).apply { maxLines = 1;ellipsize=android.text.TextUtils.TruncateAt.END }
-        TvUi.add(root, title, bottom = 3); TvUi.add(root, description, height = TvUi.dp(root, 28), bottom = 2)
-        val frame = FrameLayout(this).apply { id = View.generateViewId() }
-        root.addView(frame, LinearLayout.LayoutParams(-1, 0, 1f)); setContentView(root)
+        val surface=TvUi.backdrop(this)
+        backdrop=surface.findViewWithTag("backdrop")
+        val root=TvUi.column(this).apply { setPadding(TvUi.dp(this,20),TvUi.dp(this,12),TvUi.dp(this,18),0) }
+        val nav=TvUi.row(this)
+        navLabel=TvUi.text(this,Tr.text(UiText.YOUR_LIBRARY_291),12f,TvUi.muted)
+        nav.addView(navLabel,LinearLayout.LayoutParams(0,-2,1f))
+        nav.addView(TvUi.button(this,Tr.text(UiText.SORT_292)) { sortDialog() }.apply { textSize=12f;setPadding(TvUi.dp(this,8),0,TvUi.dp(this,8),0) },LinearLayout.LayoutParams(TvUi.dp(nav,58),TvUi.dp(nav,32)))
+        nav.addView(TvUi.button(this,Tr.text(UiText.REFRESH_212)) { if(page==null) loadHome(true) else loadPage(page!!) }.apply { textSize=12f;setPadding(TvUi.dp(this,8),0,TvUi.dp(this,8),0) },LinearLayout.LayoutParams(TvUi.dp(nav,58),TvUi.dp(nav,32)).apply { marginStart=TvUi.dp(nav,6) })
+        nav.addView(TextClock(this).apply { format24Hour="HH:mm";format12Hour="HH:mm";textSize=12f;setTextColor(TvUi.text);setPadding(TvUi.dp(this,12),0,0,0) })
+        TvUi.add(root,nav,bottom=6)
+        hero=TvUi.column(this)
+        title=TvUi.text(this,Tr.text(UiText.YOUR_LIBRARY_291),36f).apply { typeface=android.graphics.Typeface.DEFAULT_BOLD;maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END }
+        description=TvUi.text(this,Tr.text(UiText.MOVIES_AND_SERIES_293),13f,TvUi.muted).apply { maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END }
+        heroOverview=TvUi.text(this,"",14f).apply { maxLines=2;ellipsize=android.text.TextUtils.TruncateAt.END;maxWidth=TvUi.dp(this,420) }
+        heroActions=TvUi.row(this);heroBadges=TvUi.row(this)
+        TvUi.add(hero,title,bottom=3);TvUi.add(hero,description,bottom=5);TvUi.add(hero,heroBadges,bottom=5);TvUi.add(hero,heroOverview,width=TvUi.dp(hero,440),bottom=8);TvUi.add(hero,heroActions,bottom=0)
+        TvUi.add(root,hero,height=TvUi.dp(root,180),bottom=6)
+        searchArea=TvUi.column(this).apply { visibility=View.GONE }
+        TvUi.add(root,searchArea,bottom=4)
+        val frame=FrameLayout(this).apply { id=View.generateViewId() }
+        root.addView(frame,LinearLayout.LayoutParams(-1,0,1f))
+        surface.addView(root,FrameLayout.LayoutParams(-1,-1))
+        val shell=TvUi.shell(this,Tr.text(UiText.HOME_267),::navigate,surface)
+        homeButton=shell.findViewWithTag(Tr.text(UiText.NAV_HOME_294))
+        setContentView(shell)
         rows = RowsSupportFragment()
         supportFragmentManager.beginTransaction().replace(frame.id, rows).commitNow()
-        adapter = ArrayObjectAdapter(ListRowPresenter().apply { shadowEnabled = false; selectEffectEnabled = false })
+        adapter = ArrayObjectAdapter(ListRowPresenter(FocusHighlight.ZOOM_FACTOR_NONE).apply {
+            shadowEnabled=false;selectEffectEnabled=false;headerPresenter=TvRowHeaderPresenter()
+            rowHeight=TvUi.dp(root,112);expandedRowHeight=rowHeight
+        })
         rows.adapter = adapter
+        rows.enableRowScaling(false)
+        frame.post {
+            rows.setAlignment(TvUi.dp(root,32))
+            rows.verticalGridView?.setVerticalSpacing(TvUi.dp(root,4))
+        }
         rows.setOnItemViewClickedListener { _, item, _, _ -> when(item) {
             is VideoItem -> if(item.isFolder) openPage(BrowserPage(item.id, item.name)) else startActivity(Intent(this, DetailActivity::class.java).putExtra("item_id", item.id))
             is BrowserCommand -> item.action()
         } }
         rows.setOnItemViewSelectedListener { _, item, _, _ -> when(item) {
-            is VideoItem -> { selectedItemId=item.id;title.text = item.name; description.text = item.subtitle.ifBlank { item.overview } }
-            is BrowserCommand -> { title.text = item.name; description.text = "使用遥控器确定键打开" }
+            is VideoItem -> { selectedItemId=item.id;if(page==null && !item.isFolder) updateHero(item) }
+            is BrowserCommand -> Unit
         } }
         homeButton.requestFocus()
         onBackPressedDispatcher.addCallback(this) {
             if(page != null) {
-                val prev = if(history.isEmpty()) BrowserPage("", "首页") else history.removeLast()
-                if(prev.name == "首页" && prev.parent.isBlank()) loadHome() else loadPage(prev)
+                val prev = if(history.isEmpty()) BrowserPage("", Tr.text(UiText.HOME_267)) else history.removeLast()
+                if(prev.name == Tr.text(UiText.HOME_267) && prev.parent.isBlank()) loadHome() else loadPage(prev)
             } else if(!homeButton.hasFocus()) homeButton.requestFocus() else finish()
         }
     }
@@ -83,10 +112,11 @@ class MainActivity : TvActivity() {
         }
         loadingLogin = false
         if(s != loadedSession) { loadedSession = s; history.clear(); page = null; loadHome() }
+        intent.getStringExtra("navigate")?.let { intent.removeExtra("navigate");navigate(it) }
     }
     private fun row(name: String, items: List<Any>) {
         if(items.isEmpty()) return
-        val a = ArrayObjectAdapter(CardPresenter()).apply { addAll(0, items) }
+        val a = ArrayObjectAdapter(LandscapeCardPresenter(app,lifecycleScope,if(page?.name?.startsWith(Tr.text(UiText.SEARCH_295))==true) 196 else 166)).apply { addAll(0, items) }
         adapter.add(ListRow(HeaderItem(name), a))
     }
     private fun loadHome(preserveFocus: Boolean=false) {
@@ -94,17 +124,20 @@ class MainActivity : TvActivity() {
         val selected=if(preserveFocus) rows.selectedPosition else 0
         val selectedId=if(preserveFocus) selectedItemId else null
         val restoreRows=!preserveFocus || rows.view?.hasFocus()==true
-        page = null; navLabel.text = "BronyaTV  /  ${s.userName}"; title.text = "正在连接服务器…"; description.text = ""
+        page = null; configureHeader(); navLabel.text = "BronyaTV  /  ${s.userName}"; title.text = Tr.text(UiText.CONNECTING_TO_SERVER_296); description.text = ""
         work?.cancel()
         work = lifecycleScope.launch {
             try {
-                val views = async { app.api.views(s) }
-                val resume = async { optional { app.api.resume(s) } }
-                val latest = async { optional { app.api.latest(s) } }
-                val v = views.await(); val r = resume.await(); val l = latest.await()
-                adapter.clear(); row("继续观看", r); row("最近添加", l); row("服务器分类", v)
-                if(adapter.size() == 0) row("暂无内容", listOf(BrowserCommand("刷新服务器") { loadHome() }))
-                title.text = "欢迎回来，${s.userName}"; description.text = "接着看喜欢的电影与剧集"
+                val (v,r,l)=coroutineScope {
+                    val views = async { app.api.views(s) }
+                    val resume = async { optional { app.api.resume(s) } }
+                    val latest = async { optional { app.api.latest(s) } }
+                    Triple(views.await(),resume.await(),latest.await())
+                }
+                adapter.clear(); row(Tr.text(UiText.CONTINUE_WATCHING_297), r); row(Tr.text(UiText.RECENTLY_ADDED_298), l); row(Tr.text(UiText.SERVER_LIBRARIES_299), v)
+                if(adapter.size() == 0) row(Tr.text(UiText.NO_CONTENT_YET_300), listOf(BrowserCommand(Tr.text(UiText.REFRESH_SERVER_301)) { loadHome() }))
+                val featured=r.firstOrNull { !it.isFolder } ?: l.firstOrNull { !it.isFolder }
+                if(featured!=null) updateHero(featured) else { title.text=Tr.text(UiText.WELCOME_BACK_302 ,(s.userName));description.text=Tr.text(UiText.CONTINUE_YOUR_FAVORITE_MOVIES_AND_SERIES_303) }
                 var restored=false
                 if(selectedId!=null) for(rowIndex in 0 until adapter.size()) {
                     val row=adapter.get(rowIndex) as? ListRow ?: continue
@@ -119,89 +152,115 @@ class MainActivity : TvActivity() {
         }
     }
     private suspend fun optional(block: suspend () -> List<VideoItem>): List<VideoItem> = try { block() } catch(e: CancellationException) { throw e } catch(e: Exception) { android.util.Log.w("BronyaTVBrowse", "Optional server row unavailable", e); emptyList() }
-    private fun openPage(next: BrowserPage) { history.addLast(page ?: BrowserPage("", "首页")); page = next; loadPage(next) }
+    private fun openPage(next: BrowserPage) { history.addLast(page ?: BrowserPage("", Tr.text(UiText.HOME_267))); page = next; loadPage(next) }
     private fun loadPage(next: BrowserPage) {
         val s = app.sessions.load() ?: return
-        page = next; work?.cancel(); title.text = "正在加载 ${next.name}…"; description.text = ""; navLabel.text = "BronyaTV  /  ${next.name}"
+        page = next; configureHeader(); work?.cancel(); title.text = Tr.text(UiText.LOADING_304 ,(next.name)); description.text = ""; navLabel.text = "BronyaTV  /  ${next.name}"
         work = lifecycleScope.launch {
             try {
-                val data = app.api.items(s, next.parent, search = next.search,sort=next.sort)
+                val data = app.api.items(s, next.parent, search = next.search,sort=next.sort,types=next.types,favorite=next.favorite)
                 adapter.clear(); appendPage(next, data, 0)
-                title.text = next.name; description.text = "共 ${data.total} 项 · 选择影片查看详情或打开分类"
+                title.text = next.name; description.text = Tr.text(UiText.ITEMS_SELECT_A_TITLE_FOR_DETAILS_305 ,(data.total))
                 rows.view?.requestFocus()
             } catch(e: CancellationException) { throw e } catch(e: Exception) { showError(e) }
         }
     }
     private fun appendPage(next: BrowserPage, data: ItemPage, start: Int) {
-        data.items.chunked(10).forEachIndexed { index, list -> row(if(index == 0) next.name else "继续浏览", list) }
+        data.items.chunked(if(next.name.startsWith(Tr.text(UiText.SEARCH_295))) 4 else 10).forEachIndexed { index, list -> row(if(index == 0) next.name else Tr.text(UiText.KEEP_BROWSING_306), list) }
         val end = start + data.items.size
-        if(end < data.total && data.items.isNotEmpty()) row("更多内容", listOf(BrowserCommand("加载更多（$end / ${data.total}）") {
+        if(end < data.total && data.items.isNotEmpty()) row(Tr.text(UiText.MORE_CONTENT_307), listOf(BrowserCommand(Tr.text(UiText.LOAD_MORE_308 ,(end),(data.total))) {
             work?.cancel(); work = lifecycleScope.launch {
                 try {
-                    val more = app.api.items(app.sessions.load() ?: return@launch, next.parent, end, next.search,next.sort)
+                    val more = app.api.items(app.sessions.load() ?: return@launch, next.parent, end, next.search,next.sort,next.types,next.favorite)
                     adapter.removeItems(adapter.size() - 1, 1); appendPage(next, more, end)
-                } catch(e: CancellationException) { throw e } catch(e: Exception) { message(e.message ?: "加载失败") }
+                } catch(e: CancellationException) { throw e } catch(e: Exception) { message(e.message ?: Tr.text(UiText.FAILED_TO_LOAD_247)) }
             }
         }))
-        if(data.items.isEmpty() && start == 0) row("没有结果", listOf(BrowserCommand("返回首页") { history.clear(); loadHome() }))
+        if(data.items.isEmpty() && start == 0) row(Tr.text(UiText.NO_RESULTS_309), listOf(BrowserCommand(Tr.text(UiText.BACK_TO_HOME_310)) { history.clear(); loadHome() }))
     }
     private fun showError(e: Exception) {
-        title.text = "暂时无法加载"; description.text = e.message ?: "请检查网络连接"
+        title.text = Tr.text(UiText.UNABLE_TO_LOAD_311); description.text = e.message ?: Tr.text(UiText.CHECK_YOUR_NETWORK_CONNECTION_312)
         adapter.clear()
-        row("连接选项", listOf(BrowserCommand("重试") { if(page == null) loadHome() else loadPage(page!!) }, BrowserCommand("重新登录") {
+        row(Tr.text(UiText.CONNECTION_OPTIONS_313), listOf(BrowserCommand(Tr.text(UiText.RETRY_248)) { if(page == null) loadHome() else loadPage(page!!) }, BrowserCommand(Tr.text(UiText.SIGN_IN_AGAIN_314)) {
             app.sessions.clear(); loadedSession = null; startActivity(Intent(this, LoginActivity::class.java))
         }))
-        if(e is ApiException && e.status == 401) description.text = "登录已失效，请选择重新登录"
+        if(e is ApiException && e.status == 401) description.text = Tr.text(UiText.SESSION_EXPIRED_PLEASE_SIGN_IN_AGAIN_315)
         rows.view?.requestFocus()
     }
-    private fun searchDialog() {
-        val field = TvUi.input(this,"影片或剧集名称").apply { setText(page?.search.orEmpty()) }
-        TvUi.dialog(this).setTitle("搜索服务器").setView(field).setPositiveButton("搜索") { _, _ ->
-            val q = field.text.toString().trim(); if(q.isNotBlank()) openPage(BrowserPage("", "搜索：$q", q))
-        }.setNegativeButton("取消", null).show()
+    private fun navigate(name: String) {
+        if(name==Tr.text(UiText.SETTINGS_268)) { startActivity(Intent(this,SettingsActivity::class.java));return }
+        listOf(Tr.text(UiText.HOME_267),Tr.text(UiText.MOVIES_316),Tr.text(UiText.SERIES_317),Tr.text(UiText.FAVORITES_318),Tr.text(UiText.SEARCH_295)).forEach { window.decorView.findViewWithTag<View>("nav_${it}")?.isSelected=it==name }
+        when(name) {
+            Tr.text(UiText.HOME_267) -> { history.clear();loadHome() }
+            Tr.text(UiText.MOVIES_316) -> openPage(BrowserPage("",Tr.text(UiText.MOVIES_316),types="Movie"))
+            Tr.text(UiText.SERIES_317) -> openPage(BrowserPage("",Tr.text(UiText.SERIES_317),types="Series"))
+            Tr.text(UiText.FAVORITES_318) -> openPage(BrowserPage("",Tr.text(UiText.FAVORITES_318),favorite=true))
+            Tr.text(UiText.SEARCH_295) -> { work?.cancel();page=BrowserPage("",Tr.text(UiText.SEARCH_295));adapter.clear();configureHeader();title.text=Tr.text(UiText.SEARCH_295);description.text=Tr.text(UiText.FIND_YOUR_MOVIES_AND_SERIES_BY_319);searchField?.requestFocus() }
+        }
+    }
+    private fun configureHeader() {
+        val searching=page?.name?.startsWith(Tr.text(UiText.SEARCH_295))==true
+        hero.layoutParams=hero.layoutParams.apply { height=TvUi.dp(hero,if(page==null) 180 else 64) }
+        title.textSize=if(page==null) 36f else 28f
+        heroOverview.visibility=if(page==null) View.VISIBLE else View.GONE
+        heroBadges.visibility=if(page==null) View.VISIBLE else View.GONE
+        heroActions.visibility=if(page==null) View.VISIBLE else View.GONE
+        searchArea.visibility=if(searching) View.VISIBLE else View.GONE
+        if(searching) renderSearch()
+        if(page==null) listOf(Tr.text(UiText.HOME_267),Tr.text(UiText.MOVIES_316),Tr.text(UiText.SERIES_317),Tr.text(UiText.FAVORITES_318),Tr.text(UiText.SEARCH_295)).forEach { window.decorView.findViewWithTag<View>("nav_${it}")?.isSelected=it==Tr.text(UiText.HOME_267) }
+    }
+    private fun renderSearch() {
+        searchArea.removeAllViews()
+        val query=page?.search.orEmpty()
+        val row=TvUi.row(this)
+        val field=TvUi.input(this,Tr.text(UiText.SEARCH_MOVIES_OR_SERIES_320)).apply { setText(query);imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH }
+        searchField=field
+        fun submit() {
+            val q=field.text.toString().trim()
+            if(q.isBlank()) return
+            (getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+                .hideSoftInputFromWindow(field.windowToken,0)
+            val prefs=getSharedPreferences("search_history",0)
+            val old=prefs.getString("queries","").orEmpty().split("\n").filter { it.isNotBlank() && it!=q }
+            prefs.edit().putString("queries",(listOf(q)+old).take(6).joinToString("\n")).apply()
+            loadPage(BrowserPage("",Tr.text(UiText.SEARCH_RESULTS_321),q,types=searchType))
+        }
+        field.setOnEditorActionListener { _,action,event ->
+            if(action==android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH || event?.keyCode==android.view.KeyEvent.KEYCODE_ENTER) { submit();true } else false
+        }
+        row.addView(field,LinearLayout.LayoutParams(0,TvUi.dp(row,44),1f))
+        row.addView(TvUi.button(this,Tr.text(UiText.SEARCH_295),true) { submit() },LinearLayout.LayoutParams(TvUi.dp(row,82),TvUi.dp(row,44)).apply { marginStart=TvUi.dp(row,8) })
+        TvUi.add(searchArea,row,bottom=6)
+        val filters=TvUi.row(this)
+        listOf(Tr.text(UiText.ALL_322) to "",Tr.text(UiText.MOVIES_316) to "Movie",Tr.text(UiText.SERIES_317) to "Series,Episode").forEach { (label,type) ->
+            filters.addView(TvUi.button(this,label) { searchType=type;if(field.text.isNotBlank()) submit() else renderSearch() }.apply { isSelected=searchType==type;textSize=13f;setPadding(TvUi.dp(this,8),0,TvUi.dp(this,8),0) },LinearLayout.LayoutParams(TvUi.dp(filters,86),TvUi.dp(filters,34)).apply { marginEnd=TvUi.dp(filters,7) })
+        }
+        TvUi.add(searchArea,filters,bottom=6)
+        val recent=TvUi.row(this)
+        getSharedPreferences("search_history",0).getString("queries","").orEmpty().split("\n").filter(String::isNotBlank).take(4).forEach { q ->
+            recent.addView(TvUi.button(this,q) { field.setText(q);submit() },LinearLayout.LayoutParams(-2,TvUi.dp(recent,32)).apply { marginEnd=TvUi.dp(recent,8) })
+        }
+        if(recent.childCount>0) TvUi.add(searchArea,recent,bottom=4)
+    }
+    private fun updateHero(video: VideoItem) {
+        title.text=video.name;description.text=MediaUi.metadata(video);heroOverview.text=video.overview
+        heroBadges.removeAllViews();heroBadges.addView(MediaUi.badgeRow(this,video))
+        if(heroItem?.id==video.id && heroActions.childCount>0) return
+        heroItem=video;MediaUi.backdropItem=video
+        heroActions.removeAllViews()
+        heroActions.addView(TvUi.button(this,if(video.resumeTicks>0) Tr.text(UiText.RESUME_323 ,(MediaUi.remaining(video))) else Tr.text(UiText.PLAY_252),true) {
+            startActivity(Intent(this,DetailActivity::class.java).putExtra("item_id",video.id).putExtra("auto_play",true))
+        },LinearLayout.LayoutParams(-2,TvUi.dp(hero,42)))
+        heroActions.addView(TvUi.button(this,Tr.text(UiText.DETAILS_324)) { startActivity(Intent(this,DetailActivity::class.java).putExtra("item_id",video.id)) },LinearLayout.LayoutParams(-2,TvUi.dp(hero,42)).apply { marginStart=TvUi.dp(hero,10) })
+        val s=app.sessions.load() ?: return
+        backdropJob?.cancel();backdropJob=PosterLoader.load(lifecycleScope,backdrop,app.api.landscapeUrl(s,video,true),s,true)
     }
     private fun sortDialog() {
-        val current=page ?: run { message("打开分类或搜索结果后可选择排序");return }
+        val current=page ?: run { message(Tr.text(UiText.OPEN_A_LIBRARY_OR_SEARCH_RESULTS_325));return }
         val values=listOf("SortName","DateCreated","PremiereDate","CommunityRating")
-        TvUi.dialog(this).setTitle("内容排序").setSingleChoiceItems(
-            arrayOf("名称","最近添加","上映时间","评分"),values.indexOf(current.sort)) { dialog,index ->
+        TvUi.dialog(this).setTitle(Tr.text(UiText.SORT_CONTENT_326)).setSingleChoiceItems(
+            arrayOf(Tr.text(UiText.NAME_327),Tr.text(UiText.RECENTLY_ADDED_298),Tr.text(UiText.RELEASE_DATE_328),Tr.text(UiText.SCORE_329)),values.indexOf(current.sort)) { dialog,index ->
             dialog.dismiss();loadPage(current.copy(sort=values[index]))
-        }.setNegativeButton("取消",null).show()
-    }
-    inner class CardPresenter : Presenter() {
-        inner class Holder(val card: LinearLayout,val image: ImageView,val label: TextView,val subtitle: TextView) : ViewHolder(card) { var job: Job?=null }
-        override fun onCreateViewHolder(parent: ViewGroup): ViewHolder {
-            val card=TvUi.column(parent.context).apply {
-                isFocusable=true;isFocusableInTouchMode=true
-                setPadding(TvUi.dp(this,5),TvUi.dp(this,5),TvUi.dp(this,5),TvUi.dp(this,7))
-                background=TvUi.box(TvUi.panel,20f)
-                layoutParams=ViewGroup.LayoutParams(TvUi.dp(this,134),ViewGroup.LayoutParams.WRAP_CONTENT)
-            }
-            val image=ImageView(parent.context).apply { scaleType=ImageView.ScaleType.CENTER_CROP;background=TvUi.box(TvUi.raised,14f);clipToOutline=true }
-            card.addView(image,LinearLayout.LayoutParams(-1,TvUi.dp(card,172)))
-            val label=TvUi.text(parent.context,"",14f).apply { maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END;setPadding(4,TvUi.dp(this,8),4,0) }
-            val sub=TvUi.text(parent.context,"",11f,TvUi.muted).apply { maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END;setPadding(4,2,4,0) }
-            card.addView(label);card.addView(sub)
-            TvUi.focusOnTouch(card)
-            card.setOnFocusChangeListener { _,focused ->
-                card.background=TvUi.box(if(focused) TvUi.text else TvUi.panel,20f)
-                label.setTextColor(if(focused) TvUi.bg else TvUi.text);sub.setTextColor(if(focused) TvUi.raised else TvUi.muted)
-                card.animate().scaleX(if(focused) 1.04f else 1f).scaleY(if(focused) 1.04f else 1f).setDuration(130).start()
-            }
-            return Holder(card,image,label,sub)
-        }
-        override fun onBindViewHolder(viewHolder: ViewHolder,item: Any?) {
-            val h=viewHolder as Holder;h.job?.cancel();h.image.setImageDrawable(null)
-            when(item) {
-                is VideoItem -> {
-                    h.label.text=item.name
-                    h.subtitle.text=if(item.resumeTicks>0) "续看 · ${tv.ember.client.player.SeekPolicy.time(item.resumeTicks/10000)}" else item.subtitle.ifBlank { if(item.isFolder) "打开分类" else "查看详情" }
-                    val s=app.sessions.load()
-                    if(s!=null) h.job=PosterLoader.load(lifecycleScope,h.image,app.api.imageUrl(s,item),s)
-                }
-                is BrowserCommand -> { h.label.text=item.name;h.subtitle.text="按确定键";h.image.setImageResource(tv.ember.client.R.drawable.ic_launcher) }
-            }
-        }
-        override fun onUnbindViewHolder(viewHolder: ViewHolder) { (viewHolder as Holder).job?.cancel();viewHolder.image.setImageDrawable(null) }
+        }.setNegativeButton(Tr.text(UiText.CANCEL_196),null).show()
     }
 }

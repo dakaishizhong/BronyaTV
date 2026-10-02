@@ -98,7 +98,7 @@ class ParallelRangeReaderTest {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody("whole file"))
             ParallelRangeReader(client(),server.url("/file").toString(),emptyMap(),0,-1,4,chunk) {}.use {
-                try { it.open();fail("must reject 200 as a range") } catch(e:RangeUnavailableException) { assertTrue(e.message!!.contains("单连接")) }
+                try { it.open();fail("must reject 200 as a range") } catch(e:RangeUnavailableException) { assertTrue(e.message!!.contains("one connection")) }
             }
         }
     }
@@ -116,7 +116,7 @@ class ParallelRangeReaderTest {
             server.dispatcher=object:Dispatcher() { override fun dispatch(request:RecordedRequest)=response(request,
                 etag=if(request.getHeader("Range")!!.startsWith("bytes=0-")) "\"v1\"" else "\"v2\"") }
             ParallelRangeReader(client(),server.url("/file").toString(),mapOf("X-Test-Signature" to "signed-value"),0,-1,4,chunk) {}.use {
-                it.open();try { readAll(it);fail("must reject changed file") } catch(e:IOException) { assertTrue(e.message!!.contains("版本发生变化")) }
+                it.open();try { readAll(it);fail("must reject changed file") } catch(e:IOException) { assertTrue(e.message!!.contains("version changed")) }
             }
         }
     }
@@ -128,7 +128,7 @@ class ParallelRangeReaderTest {
                 return r
             } }
             ParallelRangeReader(client(),server.url("/file").toString(),mapOf("X-Test-Signature" to "signed-value"),0,-1,4,chunk) {}.use {
-                it.open();try { readAll(it);fail("must reject wrong position") } catch(e:IOException) { assertTrue(e.message!!.contains("位置不匹配")) }
+                it.open();try { readAll(it);fail("must reject wrong position") } catch(e:IOException) { assertTrue(e.message!!.contains("position mismatch")) }
             }
         }
     }

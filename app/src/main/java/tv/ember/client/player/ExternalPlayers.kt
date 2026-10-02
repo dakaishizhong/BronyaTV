@@ -1,5 +1,7 @@
 package tv.ember.client.player
 
+import tv.ember.client.i18n.Tr
+import tv.ember.client.i18n.UiText
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -13,7 +15,7 @@ object ExternalPlayers {
     }
     fun available(context: Context, choice: PlayerChoice) = choice == PlayerChoice.INTERNAL || installedPackage(context, choice) != null
     fun launch(context: Context, choice: PlayerChoice, spec: PlaybackSpec, title: String, positionMs: Long) {
-        val pkg = installedPackage(context, choice) ?: throw ActivityNotFoundException("${choice.label} 尚未安装")
+        val pkg = installedPackage(context, choice) ?: throw ActivityNotFoundException(Tr.text(UiText.IS_NOT_INSTALLED_125 ,(choice.label)))
         val headers = spec.headers.flatMap { listOf(it.key, it.value) }.toTypedArray()
         val intent = Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(spec.url), "video/*").setPackage(pkg)
             .putExtra("title", title).putExtra("headers", headers)

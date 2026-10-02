@@ -1,5 +1,7 @@
 package tv.ember.client.network
 
+import tv.ember.client.i18n.Tr
+import tv.ember.client.i18n.UiText
 import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
@@ -7,7 +9,7 @@ import androidx.media3.datasource.*
 import okhttp3.OkHttpClient
 
 class RangePlaybackStatus(val requestedConnections:Int,val budgetBytes:Int) {
-    @Volatile var mode="等待片源"
+    @Volatile var mode=Tr.text(UiText.WAITING_FOR_SOURCE_120)
     @Volatile var reader:ParallelRangeReader?=null
     @Volatile var rangeUnsupported=false
     @Volatile var totalBytes=-1L
@@ -35,10 +37,10 @@ class RangePlaybackDataSource(private val singleFactory:DataSource.Factory,priva
             val r=ParallelRangeReader(client,videoUrl,headers+dataSpec.httpRequestHeaders,dataSpec.position,dataSpec.length,
                 status.requestedConnections,chunk,::transferred)
             reader=r;status.reader=r
-            try { val length=r.open();status.totalBytes=r.totalBytes;status.mode="独立 TCP ${status.requestedConnections} 路分段";return length }
-            catch(e:RangeUnavailableException) { r.close();reader=null;status.reader=null;status.rangeUnsupported=true;status.mode=e.message ?: "单连接回退" }
+            try { val length=r.open();status.totalBytes=r.totalBytes;status.mode=Tr.text(UiText.INDEPENDENT_TCP_RANGE_CONNECTIONS_121 ,(status.requestedConnections));return length }
+            catch(e:RangeUnavailableException) { r.close();reader=null;status.reader=null;status.rangeUnsupported=true;status.mode=e.message ?: Tr.text(UiText.SINGLE_CONNECTION_FALLBACK_122) }
             catch(e:RangeHttpException) { throw httpFailure(e,dataSpec) }
-        } else if(main && !status.rangeUnsupported) status.mode="单连接"
+        } else if(main && !status.rangeUnsupported) status.mode=Tr.text(UiText.SINGLE_CONNECTION_123)
         val s=singleFactory.createDataSource();single=s
         s.addTransferListener(object:TransferListener {
             override fun onTransferInitializing(source:DataSource,spec:DataSpec,network:Boolean) {}
@@ -54,7 +56,7 @@ class RangePlaybackDataSource(private val singleFactory:DataSource.Factory,priva
                 header("Content-Length")?.toLongOrNull()?.let { status.totalBytes=it }
                 if(dataSpec.position>0 || dataSpec.length!=C.LENGTH_UNSET.toLong()) {
                     status.rangeUnsupported=true
-                    status.mode="服务器忽略 Range，单连接"
+                    status.mode=Tr.text(UiText.SERVER_IGNORED_RANGE_SINGLE_CONNECTION_124)
                 }
             }
             if(dataSpec.length==C.LENGTH_UNSET.toLong() && length>=0) status.totalBytes=dataSpec.position+length

@@ -29,20 +29,20 @@ class EpisodeAndOutputTest {
         assertFalse(SkipPolicy.outro(2_000_000,2_000_000,90))
     }
     @Test fun dolbyFallbackAndUnrenderedInputAreNeverReportedAsActiveDolbyVision() {
-        assertEquals("等待实际画面输出",OutputLabels.video(6,true,"video/dolby-vision",false))
-        assertTrue(OutputLabels.video(6,true,"video/hevc",true).contains("兼容解码路径"))
-        assertTrue(OutputLabels.video(6,true,"video/dolby-vision",true).contains("Dolby Vision 解码路径"))
-        assertTrue(OutputLabels.video(6,true,"video/hevcdv",true).contains("Dolby Vision 解码路径"))
-        assertTrue(OutputLabels.video(6,true,"video/dv_hevc",true).contains("Dolby Vision 解码路径"))
+        assertEquals("Waiting for decoded video output",OutputLabels.video(6,true,"video/dolby-vision",false))
+        assertTrue(OutputLabels.video(6,true,"video/hevc",true).contains("compatible decoder path"))
+        assertTrue(OutputLabels.video(6,true,"video/dolby-vision",true).contains("Dolby Vision decoder path"))
+        assertTrue(OutputLabels.video(6,true,"video/hevcdv",true).contains("Dolby Vision decoder path"))
+        assertTrue(OutputLabels.video(6,true,"video/dv_hevc",true).contains("Dolby Vision decoder path"))
         assertEquals("SDR",OutputLabels.video(3,false,"video/avc",true))
-        assertTrue(OutputLabels.video(-1,false,"video/avc",true).contains("未提供"))
+        assertTrue(OutputLabels.video(-1,false,"video/avc",true).contains("not provided"))
     }
     @Test fun pcmOutputDoesNotInheritAtmosLabelFromInputOrTrueHdContainer() {
         assertEquals("PCM 16bit",OutputLabels.audio(2))
         assertFalse(OutputLabels.audio(2).contains("Atmos"))
-        assertTrue(OutputLabels.atmos(2,"audio/eac3-joc").contains("未确认"))
-        assertTrue(OutputLabels.atmos(14,"audio/true-hd").contains("不能证明"))
-        assertTrue(OutputLabels.atmos(18,"audio/eac3-joc").contains("已提交 JOC 码流"))
-        assertTrue(OutputLabels.atmos(18,"audio/eac3-joc").contains("接收设备模式未确认"))
+        assertTrue(OutputLabels.atmos(2,"audio/eac3-joc").contains("unconfirmed"))
+        assertTrue(OutputLabels.atmos(14,"audio/true-hd").contains("does not prove"))
+        assertTrue(OutputLabels.atmos(18,"audio/eac3-joc").contains("JOC bitstream submitted"))
+        assertTrue(OutputLabels.atmos(18,"audio/eac3-joc").contains("receiver mode unconfirmed"))
     }
 }

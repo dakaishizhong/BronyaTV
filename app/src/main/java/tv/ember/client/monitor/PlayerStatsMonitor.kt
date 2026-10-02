@@ -1,5 +1,7 @@
 package tv.ember.client.monitor
 
+import tv.ember.client.i18n.Tr
+import tv.ember.client.i18n.UiText
 import android.os.SystemClock
 import android.media.MediaFormat
 import android.view.Display
@@ -59,32 +61,32 @@ class PlayerStatsMonitor : AnalyticsListener, VideoFrameMetadataListener {
         val f=frameOutput
         val width=f.width.takeIf { it>0 } ?: videoSize.width
         val height=f.height.takeIf { it>0 } ?: videoSize.height
-        val size=if(width>0 && height>0) "${width}×${height}" else "等待尺寸"
+        val size=if(width>0 && height>0) "${width}×${height}" else Tr.text(UiText.WAITING_FOR_DIMENSIONS_058)
         val dolby=p.videoFormat?.sampleMimeType=="video/dolby-vision"
-        return "实际解码画面 $size · ${if(rendered) "已输出首帧" else "等待首帧"}\n"+
-            "色彩输出 ${OutputLabels.video(f.transfer,dolby,codecMimes[videoDecoder].orEmpty(),rendered)}"+
-            (if(f.hdr10Plus) " · HDR10+ 元数据" else "")+"\n系统音频输出 ${OutputLabels.audio(audioOutput?.encoding ?: 0)}"+
-            (audioOutput?.let { " · ${it.sampleRate}Hz · ${Integer.bitCount(it.channelConfig)} 声道" } ?: "")+
+        return Tr.text(UiText.DECODED_VIDEO_061 ,(size),(if(rendered) Tr.text(UiText.FIRST_FRAME_RENDERED_059) else Tr.text(UiText.WAITING_FOR_FIRST_FRAME_060)))+
+            Tr.text(UiText.COLOR_OUTPUT_062 ,(OutputLabels.video(f.transfer,dolby,codecMimes[videoDecoder].orEmpty(),rendered)))+
+            (if(f.hdr10Plus) Tr.text(UiText.HDR_METADATA_063) else "")+Tr.text(UiText.SYSTEM_AUDIO_OUTPUT_064 ,(OutputLabels.audio(audioOutput?.encoding ?: 0)))+
+            (audioOutput?.let { Tr.text(UiText.HZ_CHANNELS_065 ,(it.sampleRate),(Integer.bitCount(it.channelConfig))) } ?: "")+
             "\n"+OutputLabels.atmos(audioOutput?.encoding ?: 0,p.audioFormat?.sampleMimeType)
     }
     @Suppress("DEPRECATION")
     fun displaySummary(display:Display?):String {
-        if(display==null) return "显示模式：系统未提供"
+        if(display==null) return Tr.text(UiText.DISPLAY_MODE_NOT_REPORTED_BY_SYSTEM_066)
         val mode=display.mode
         val hdr=if(Build.VERSION.SDK_INT>=24) display.hdrCapabilities.supportedHdrTypes.map { when(it) {
-            1 -> "Dolby Vision";2 -> "HDR10";3 -> "HLG";4 -> "HDR10+";else -> "类型 $it"
-        } }.joinToString(" / ").ifBlank { "未报告 HDR 能力" } else "系统未提供"
-        return "显示模式 ${mode.physicalWidth}×${mode.physicalHeight} @ %.2fHz\n".format(mode.refreshRate)+
-            "显示器支持 $hdr（能力信息）\n屏幕当前 HDR / Dolby Vision 模式：系统未提供可靠确认"
+            1 -> "Dolby Vision";2 -> "HDR10";3 -> "HLG";4 -> "HDR10+";else -> Tr.text(UiText.TYPE_067 ,(it))
+        } }.joinToString(" / ").ifBlank { Tr.text(UiText.HDR_CAPABILITIES_NOT_REPORTED_068) } else Tr.text(UiText.NOT_REPORTED_BY_SYSTEM_037)
+        return Tr.text(UiText.DISPLAY_MODE_FHZ_069 ,(mode.physicalWidth),(mode.physicalHeight)).format(mode.refreshRate)+
+            Tr.text(UiText.DISPLAY_SUPPORTS_CAPABILITIES_CURRENT_SCREEN_HDR_070 ,(hdr))
     }
 
-    var videoDecoder="等待解码器";private set
-    var audioDecoder="等待解码器";private set
+    var videoDecoder=Tr.text(UiText.WAITING_FOR_DECODER_071);private set
+    var audioDecoder=Tr.text(UiText.WAITING_FOR_DECODER_071);private set
     var dropped=0;private set
     private var underruns=0
     private var offsetUs=0L
     private var offsetFrames=0
-    @Volatile var httpStatus="等待请求";private set
+    @Volatile var httpStatus=Tr.text(UiText.WAITING_FOR_REQUEST_072);private set
     @Volatile var resolvedUrl="";private set
     var sourceBitrate=0L
     private val codecs=ConcurrentHashMap<String,String>()
@@ -98,9 +100,9 @@ class PlayerStatsMonitor : AnalyticsListener, VideoFrameMetadataListener {
     private var bufferingCount=0
     fun registerCodec(info:MediaCodecInfo) {
         codecMimes[info.name]=info.codecMimeType
-        codecs[info.name]=when { info.softwareOnly -> "软件";info.hardwareAccelerated -> "硬件";else -> "系统未明确" }
+        codecs[info.name]=when { info.softwareOnly -> Tr.text(UiText.SOFTWARE_073);info.hardwareAccelerated -> Tr.text(UiText.HARDWARE_074);else -> Tr.text(UiText.UNSPECIFIED_BY_SYSTEM_075) }
     }
-    private fun decoderMode(name:String)=if(name.startsWith("ffmpeg")) "FFmpeg 软件音频" else codecs[name] ?: "等待确认"
+    private fun decoderMode(name:String)=if(name.startsWith("ffmpeg")) Tr.text(UiText.FFMPEG_SOFTWARE_AUDIO_076) else codecs[name] ?: Tr.text(UiText.AWAITING_CONFIRMATION_077)
     override fun onVideoDecoderInitialized(eventTime:AnalyticsListener.EventTime,decoderName:String,initializedTimestampMs:Long,initializationDurationMs:Long) { videoDecoder=decoderName }
     override fun onAudioDecoderInitialized(eventTime:AnalyticsListener.EventTime,decoderName:String,initializedTimestampMs:Long,initializationDurationMs:Long) { audioDecoder=decoderName }
     override fun onDroppedVideoFrames(eventTime:AnalyticsListener.EventTime,droppedFrames:Int,elapsedMs:Long) { dropped+=droppedFrames }
@@ -110,7 +112,7 @@ class PlayerStatsMonitor : AnalyticsListener, VideoFrameMetadataListener {
         if(mediaLoadData.dataType!=androidx.media3.common.C.DATA_TYPE_MEDIA ||
             mediaLoadData.trackType==androidx.media3.common.C.TRACK_TYPE_TEXT || resolvedUrl.isNotBlank()) return
         resolvedUrl=loadEventInfo.uri.toString()
-        if(httpStatus=="等待请求") httpStatus="2xx 成功"
+        if(httpStatus==Tr.text(UiText.WAITING_FOR_REQUEST_072)) httpStatus=Tr.text(UiText.XX_SUCCESS_078)
     }
     fun recordHttp(code:Int,url:String) { httpStatus=code.toString();resolvedUrl=url }
     override fun onLoadError(eventTime:AnalyticsListener.EventTime,loadEventInfo:LoadEventInfo,mediaLoadData:MediaLoadData,error:IOException,wasCanceled:Boolean) {
@@ -131,58 +133,58 @@ class PlayerStatsMonitor : AnalyticsListener, VideoFrameMetadataListener {
     }
     fun sourceSummary(version:MediaVersion):String {
         val v=version.streams.firstOrNull { it.type=="Video" }
-        return "片源 ${version.container.uppercase()} · ${v?.codec ?: "未知"}"+
+        return Tr.text(UiText.SOURCE_080 ,(version.container.uppercase()),(v?.codec ?: Tr.text(UiText.UNKNOWN_079)))+
             (v?.bitDepth?.takeIf { it>0 }?.let { " ${it}bit" } ?: "")+
             (v?.frameRate?.takeIf { it>0 }?.let { " %.2ffps".format(it) } ?: "")
     }
     fun summary(p:ExoPlayer):String {
         val v=p.videoFormat;val a=p.audioFormat
         val buffer=maxOf(0,p.bufferedPosition-p.currentPosition)
-        return "片源总码率 ${mbps(sourceBitrate)} · 缓冲 %.1fs\n".format(buffer/1000.0)+
+        return Tr.text(UiText.TOTAL_SOURCE_BITRATE_BUFFER_FS_081 ,(mbps(sourceBitrate))).format(buffer/1000.0)+
             outputSummary(p)+"\n"+
-            "解码输入 ${v?.sampleMimeType ?: "等待"} · ${v?.width ?: "—"}×${v?.height ?: "—"}${color(v)}\n"+
-            "视频 ${decoderMode(videoDecoder)} · $videoDecoder\n音频 ${a?.sampleMimeType ?: "等待"} · ${a?.channelCount?.takeIf { it>0 } ?: "—"} 声道\n"+
-            "输出 %.1ffps · 丢帧 $dropped · 缓冲 $bufferingCount 次".format(renderFps)
+            Tr.text(UiText.DECODER_INPUT_082 ,(v?.sampleMimeType ?: Tr.text(UiText.WAITING_029)),(v?.width ?: "—"),(v?.height ?: "—"),(color(v)))+
+            Tr.text(UiText.VIDEO_AUDIO_CHANNELS_083 ,(decoderMode(videoDecoder)),(videoDecoder),(a?.sampleMimeType ?: Tr.text(UiText.WAITING_029)),(a?.channelCount?.takeIf { it>0 } ?: "—"))+
+            Tr.text(UiText.OUTPUT_FFPS_DROPPED_BUFFERING_TIMES_084 ,(dropped),(bufferingCount)).format(renderFps)
     }
     fun details(p:ExoPlayer,version:MediaVersion):String {
         val v=p.videoFormat;val a=p.audioFormat;val counters=p.videoDecoderCounters
         val now=SystemClock.elapsedRealtime()
         val bufferingMs=bufferingTotal+if(bufferingAt>0) now-bufferingAt else 0
         val sourceVideo=version.streams.firstOrNull { it.type=="Video" }
-        return sourceSummary(version)+"\n片源名称 ${version.name}\n片源大小 ${version.sizeBytes.takeIf { it>0 }?.let { "%.1fMiB".format(it/1048576.0) } ?: "未提供"}"+
-            "\n片源视频 Profile ${sourceVideo?.profile?.ifBlank { "未提供" } ?: "未提供"}\n片源总码率 ${mbps(sourceBitrate)}（包含音频等）\n"+
-            "片源声明 ${sourceVideo?.width ?: 0}×${sourceVideo?.height ?: 0} · ${sourceVideo?.videoRange?.ifBlank { "未提供" } ?: "未提供"}\n"+
-            "实际视频输入 ${format(v)}${color(v)}\n实际音频输入 ${format(a)}\n"+
-            outputSummary(p)+"\nSurface ${surfaceWidth}×${surfaceHeight}（画布，不是片源分辨率）\n"+
-            "解码器 MIME ${codecMimes[videoDecoder] ?: "等待确认"}\n"+
-            (audioOutput?.let { "AudioTrack ${it.sampleRate}Hz · 声道掩码 0x${it.channelConfig.toString(16)} · ${if(it.offload) "Offload" else "标准输出"} · ${if(it.tunneling) "Tunneling" else "非隧道"}\n" } ?: "AudioTrack 等待初始化\n")+
+        return sourceSummary(version)+Tr.text(UiText.SOURCE_NAME_SOURCE_SIZE_085 ,(version.name),(version.sizeBytes.takeIf { it>0 }?.let { "%.1fMiB".format(it/1048576.0) } ?: Tr.text(UiText.NOT_PROVIDED_026)))+
+            Tr.text(UiText.SOURCE_VIDEO_PROFILE_TOTAL_SOURCE_BITRATE_086 ,(sourceVideo?.profile?.ifBlank { Tr.text(UiText.NOT_PROVIDED_026) } ?: Tr.text(UiText.NOT_PROVIDED_026)),(mbps(sourceBitrate)))+
+            Tr.text(UiText.SOURCE_DECLARES_087 ,(sourceVideo?.width ?: 0),(sourceVideo?.height ?: 0),(sourceVideo?.videoRange?.ifBlank { Tr.text(UiText.NOT_PROVIDED_026) } ?: Tr.text(UiText.NOT_PROVIDED_026)))+
+            Tr.text(UiText.ACTUAL_VIDEO_INPUT_ACTUAL_AUDIO_INPUT_088 ,(format(v)),(color(v)),(format(a)))+
+            outputSummary(p)+Tr.text(UiText.SURFACE_CANVAS_NOT_SOURCE_RESOLUTION_089 ,(surfaceWidth),(surfaceHeight))+
+            Tr.text(UiText.DECODER_MIME_090 ,(codecMimes[videoDecoder] ?: Tr.text(UiText.AWAITING_CONFIRMATION_077)))+
+            (audioOutput?.let { Tr.text(UiText.AUDIOTRACK_HZ_CHANNEL_MASK_X_093 ,(it.sampleRate),(it.channelConfig.toString(16)),(if(it.offload) "Offload" else Tr.text(UiText.STANDARD_OUTPUT_091)),(if(it.tunneling) "Tunneling" else Tr.text(UiText.NON_TUNNELED_092))) } ?: Tr.text(UiText.AUDIOTRACK_AWAITING_INITIALIZATION_094))+
             OutputLabels.atmos(audioOutput?.encoding ?: 0,a?.sampleMimeType)+"\n"+
-            "实际视频解码器 ${decoderMode(videoDecoder)} · $videoDecoder\n实际音频解码器 ${decoderMode(audioDecoder)} · $audioDecoder\n"+
-            "输出 %.1ffps · 已渲染 ${counters?.renderedOutputBufferCount ?: 0} 帧 · 跳过 ${counters?.skippedOutputBufferCount ?: 0} · 丢帧 $dropped\n".format(renderFps)+
-            "帧处理偏移 ${if(offsetFrames>0) "%.2fms".format(offsetUs/1000.0/offsetFrames) else "未测"} · 音频欠载 $underruns 次\n"+
-            "缓冲 $bufferingCount 次 · 累计 %.1fs（排除首次启动，含拖动后缓冲）\n".format(bufferingMs/1000.0)+
-            "状态 ${state(p.playbackState)} · loading=${p.isLoading} · playing=${p.isPlaying}\n缓冲趋势 ${history.joinToString(" → ") { "${it/1000}s" }}"
+            Tr.text(UiText.VIDEO_DECODER_AUDIO_DECODER_095 ,(decoderMode(videoDecoder)),(videoDecoder),(decoderMode(audioDecoder)),(audioDecoder))+
+            Tr.text(UiText.OUTPUT_FFPS_RENDERED_FRAMES_SKIPPED_DROPPED_096 ,(counters?.renderedOutputBufferCount ?: 0),(counters?.skippedOutputBufferCount ?: 0),(dropped)).format(renderFps)+
+            Tr.text(UiText.FRAME_PROCESSING_OFFSET_AUDIO_UNDERRUNS_098 ,(if(offsetFrames>0) "%.2fms".format(offsetUs/1000.0/offsetFrames) else Tr.text(UiText.NOT_MEASURED_097)),(underruns))+
+            Tr.text(UiText.BUFFERING_TIMES_TOTAL_FS_EXCLUDES_STARTUP_099 ,(bufferingCount)).format(bufferingMs/1000.0)+
+            Tr.text(UiText.STATE_LOADING_PLAYING_BUFFER_TREND_100 ,(state(p.playbackState)),(p.isLoading),(p.isPlaying),(history.joinToString(" → ") { "${it/1000}s" }))
     }
     fun debug(p:ExoPlayer,original:String,server:String):String {
         val actual=resolvedUrl.ifBlank { original }
         val host=runCatching { java.net.URI(actual).host }.getOrNull().orEmpty()
-        return "取流 $host / ${actual.substringBefore('?').substringAfterLast('/')}\nHTTP $httpStatus · ${state(p.playbackState)} · loading=${p.isLoading}\n"+
-            "缓冲趋势 ${history.joinToString(" → ") { "${it/1000}s" }}\n视频 $videoDecoder\n音频 $audioDecoder"
+        return Tr.text(UiText.STREAM_HTTP_LOADING_101 ,(host),(actual.substringBefore('?').substringAfterLast('/')),(httpStatus),(state(p.playbackState)),(p.isLoading))+
+            Tr.text(UiText.BUFFER_TREND_VIDEO_AUDIO_102 ,(history.joinToString(" → ") { "${it/1000}s" }),(videoDecoder),(audioDecoder))
     }
     companion object {
-        private fun mbps(value:Long)=if(value>0) "%.1fMbps".format(value/1_000_000.0) else "未知"
+        private fun mbps(value:Long)=if(value>0) "%.1fMbps".format(value/1_000_000.0) else Tr.text(UiText.UNKNOWN_079)
         private fun color(v:Format?):String {
             val info=v?.colorInfo ?: return ""
             val depth=info.lumaBitdepth.takeIf { it>0 }?.let { " · ${it}bit" } ?: ""
             return depth+when(info.colorTransfer) { 6 -> " · PQ / HDR";7 -> " · HLG";else -> "" }
         }
         private fun format(f:Format?):String {
-            if(f==null) return "等待轨道"
+            if(f==null) return Tr.text(UiText.WAITING_FOR_TRACKS_103)
             return listOfNotNull(f.containerMimeType,f.sampleMimeType,f.codecs,
                 if(f.width>0 && f.height>0) "${f.width}×${f.height}" else null,
                 f.frameRate.takeIf { it>0 }?.let { "%.2ffps".format(it) },
                 f.bitrate.takeIf { it>0 }?.let { mbps(it.toLong()) },
-                f.channelCount.takeIf { it>0 }?.let { "${it}声道" },
+                f.channelCount.takeIf { it>0 }?.let { Tr.text(UiText.CHANNELS_104 ,(it)) },
                 f.sampleRate.takeIf { it>0 }?.let { "${it}Hz" }).joinToString(" · ")
         }
         fun redact(url:String):String = url.replace(Regex("(?<=://)[^/@\\s]+@"),"***@")

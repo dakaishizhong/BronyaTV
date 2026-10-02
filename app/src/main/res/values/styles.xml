@@ -1,6 +1,6 @@
 <resources>
-    <color name="background">#0D0F14</color>
-    <color name="accent">#7CB1FF</color>
+    <color name="background">#030E14</color>
+    <color name="accent">#00E1E5</color>
     <style name="Theme.BronyaTV" parent="Theme.Leanback">
         <item name="android:fontFamily">sans-serif</item>
         <item name="android:alertDialogTheme">@style/Theme.BronyaTV.Dialog</item>

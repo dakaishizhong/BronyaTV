@@ -1,5 +1,7 @@
 package tv.ember.client.cache
 
+import tv.ember.client.i18n.Tr
+import tv.ember.client.i18n.UiText
 import android.os.SystemClock
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
@@ -25,7 +27,7 @@ class DiskPrefetcher(
     private var positioned = false
     private var stopped = false
     val hitBytes = AtomicLong()
-    @Volatile var state = "等待播放位置"; private set
+    @Volatile var state = Tr.text(UiText.WAITING_FOR_PLAYBACK_POSITION_001); private set
     val capacityBytes get() = handle.plan.capacityBytes
     val aheadBytes: Long get() = synchronized(lock) {
         if (!positioned || closed) 0 else handle.cache.getCachedLength(key, cursor, handle.plan.aheadBytes).coerceAtLeast(0)
@@ -50,7 +52,7 @@ class DiskPrefetcher(
                 val request = synchronized(lock) { if (!positioned || stopped) null else cursor to generation }
                 if (request == null) { waitForChange(500); continue }
                 if (handle.directory.usableSpace < 64 * DiskCachePlan.MIB) {
-                    state = "磁盘空间不足，停止提前写入"
+                    state = Tr.text(UiText.LOW_DISK_SPACE_READ_AHEAD_STOPPED_002)
                     synchronized(lock) { stopped = true }
                     continue
                 }
@@ -61,7 +63,7 @@ class DiskPrefetcher(
                 val knownLength = range.totalBytes.takeIf { it > 0 } ?: metadataLength
                 val ready = handle.cache.getCachedLength(key, position, handle.plan.aheadBytes).coerceAtLeast(0)
                 val window = PrefetchWindow.next(position, handle.plan.aheadBytes, knownLength, ready)
-                if (window == null) { state = "前向缓存已就绪"; waitForChange(500); continue }
+                if (window == null) { state = Tr.text(UiText.READ_AHEAD_CACHE_READY_003); waitForChange(500); continue }
                 val spec = DataSpec.Builder().setUri(url).setKey(key).setPosition(window.position).setLength(window.length)
                     .setFlags(DataSpec.FLAG_ALLOW_CACHE_FRAGMENTATION).build()
                 val next = CacheWriter(factory.createDataSource(), spec, buffer, null)
@@ -69,10 +71,10 @@ class DiskPrefetcher(
                     if (closed || epoch != generation) next.cancel()
                     writer = next
                 }
-                state = "正在提前缓存"
+                state = Tr.text(UiText.CACHING_AHEAD_004)
                 try { next.cache() } finally { synchronized(lock) { if (writer === next) writer = null } }
                 if (range.rangeUnsupported) {
-                    state = "服务器不支持 Range，使用播放网络缓冲"
+                    state = Tr.text(UiText.SERVER_DOES_NOT_SUPPORT_RANGE_USING_005)
                     synchronized(lock) { stopped = true }
                 }
                 failures = 0
@@ -80,7 +82,7 @@ class DiskPrefetcher(
                 if (closed) return
             } catch (e: Exception) {
                 if (closed) return
-                state = "预取暂缓，继续读取缓存或网络"
+                state = Tr.text(UiText.READ_AHEAD_PAUSED_READING_CACHE_OR_006)
                 failures = (failures + 1).coerceAtMost(5)
                 retryAt = SystemClock.elapsedRealtime() + (1000L shl failures).coerceAtMost(30_000)
             }

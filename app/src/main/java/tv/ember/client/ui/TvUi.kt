@@ -1,5 +1,7 @@
 package tv.ember.client.ui
 
+import tv.ember.client.i18n.Tr
+import tv.ember.client.i18n.UiText
 import android.app.AlertDialog
 import android.content.Context
 import android.content.res.ColorStateList
@@ -20,27 +22,31 @@ import androidx.fragment.app.FragmentActivity
 import tv.ember.client.BronyaApp
 
 object TvUi {
-    val bg=Color.rgb(13,15,20)
-    val panel=Color.rgb(29,32,40)
-    val raised=Color.rgb(43,47,58)
-    val accent=Color.rgb(124,177,255)
+    val bg=Color.rgb(3,14,20)
+    val panel=Color.rgb(12,28,38)
+    val raised=Color.rgb(24,44,56)
+    val accent=Color.rgb(0,225,229)
     val text=Color.rgb(245,246,250)
     val muted=Color.rgb(162,169,183)
     val error=Color.rgb(255,151,156)
     fun dp(v: View,n: Int)=(n*v.resources.displayMetrics.density).toInt()
-    fun canvas()=GradientDrawable(GradientDrawable.Orientation.TL_BR,intArrayOf(Color.rgb(25,29,40),bg,Color.rgb(18,20,28)))
+    fun canvas()=GradientDrawable(GradientDrawable.Orientation.TL_BR,intArrayOf(Color.rgb(8,30,43),bg,Color.rgb(2,12,18)))
     fun box(color: Int,radius: Float=16f,stroke: Int=0)=GradientDrawable().apply {
         setColor(color);cornerRadius=radius
         if(stroke!=0) setStroke(2,stroke)
     }
     fun focusBackground(primary: Boolean=false)=StateListDrawable().apply {
         addState(intArrayOf(-android.R.attr.state_enabled),box(0xFF242730.toInt(),32f))
-        addState(intArrayOf(android.R.attr.state_focused),box(Color.WHITE,32f))
-        addState(intArrayOf(android.R.attr.state_pressed),box(0xFFDCE7F8.toInt(),32f))
-        addState(intArrayOf(android.R.attr.state_selected),box(raised,32f,accent))
-        addState(intArrayOf(),box(if(primary) 0xFFE9EDF5.toInt() else panel,32f))
+        addState(intArrayOf(android.R.attr.state_focused),box(accent,14f,0xFF8FFFFF.toInt()))
+        addState(intArrayOf(android.R.attr.state_pressed),box(0xFF70FFFF.toInt(),14f))
+        addState(intArrayOf(android.R.attr.state_selected),box(raised,14f,accent))
+        addState(intArrayOf(),box(if(primary) accent else panel,14f,if(primary) 0 else 0xFF25404D.toInt()))
     }
     fun dialog(context: Context)=AlertDialog.Builder(context)
+    fun chooseLanguage(activity: TvActivity) {
+        if(activity.supportFragmentManager.findFragmentByTag("language_picker")==null)
+            LanguagePickerDialog().show(activity.supportFragmentManager,"language_picker")
+    }
     fun text(context: Context,value: String,size: Float=18f,color: Int=text)=TextView(context).apply {
         text=value;textSize=size;setTextColor(color);fontFeatureSettings="kern"
         setLineSpacing(0f,1.12f)
@@ -61,7 +67,7 @@ object TvUi {
         }
     }
     fun back(context: Context, action: ()->Unit)=button(context,"‹",action).apply {
-        textSize=26f;contentDescription="返回";setPadding(0,0,0,0)
+        textSize=26f;contentDescription=Tr.text(UiText.BACK_410);setPadding(0,0,0,0)
         layoutParams=LinearLayout.LayoutParams(dp(this,44),dp(this,44))
     }
     // Keep focus restoration available in touch mode while letting the platform dispatch the click.
@@ -91,14 +97,83 @@ object TvUi {
     fun add(parent: LinearLayout,child: View,width: Int=ViewGroup.LayoutParams.MATCH_PARENT,height: Int=ViewGroup.LayoutParams.WRAP_CONTENT,bottom: Int=10) {
         parent.addView(child,LinearLayout.LayoutParams(width,height).apply { bottomMargin=dp(parent,bottom) })
     }
+    fun sectionTitle(title: String)=android.text.SpannableString("▎ ${title.removePrefix("▎ ")}").apply {
+        setSpan(android.text.style.ForegroundColorSpan(accent),0,1,android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
     fun section(parent: LinearLayout,title: String) {
-        add(parent,text(parent.context,title,14f,accent).apply {
+        add(parent,text(parent.context,"",16f,text).apply {
+            text=sectionTitle(title)
             typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
-            setPadding(0,dp(this,18),0,dp(this,4))
+            setPadding(0,dp(this,8),0,dp(this,4))
         },bottom=8)
     }
+    fun sidebar(context: Context, selected: String, navigate: (String)->Unit)=column(context).apply {
+        background=box(0xF203121B.toInt(),0f)
+        setPadding(dp(this,7),dp(this,18),dp(this,7),dp(this,16))
+        add(this,text(context,"▶",28f,accent).apply { gravity=Gravity.CENTER;typeface=Typeface.DEFAULT_BOLD },bottom=0)
+        add(this,text(context,"BronyaTV",11f).apply { gravity=Gravity.CENTER;typeface=Typeface.DEFAULT_BOLD },bottom=22)
+        val symbols=mapOf(Tr.text(UiText.HOME_267) to "⌂", Tr.text(UiText.MOVIES_316) to "◉", Tr.text(UiText.SERIES_317) to "▣", Tr.text(UiText.FAVORITES_318) to "☆", Tr.text(UiText.SEARCH_295) to "⌕", Tr.text(UiText.SETTINGS_268) to "⚙")
+        for(name in listOf(Tr.text(UiText.HOME_267),Tr.text(UiText.MOVIES_316),Tr.text(UiText.SERIES_317),Tr.text(UiText.FAVORITES_318),Tr.text(UiText.SEARCH_295))) {
+            add(this,button(context,name) { navigate(name) }.apply {
+                tag="nav_${name}";isSelected=selected==name;textSize=if(Tr.language=="en") 11f else 12f
+                setPadding(dp(this,6),0,dp(this,6),0)
+                setCompoundDrawablesWithIntrinsicBounds(NavIcon(symbols.getValue(name),accent,dp(this,18)),null,null,null)
+                compoundDrawablePadding=dp(this,5)
+            },height=dp(this,38),bottom=8)
+        }
+        addView(View(context),LinearLayout.LayoutParams(1,0,1f))
+        val app=context.applicationContext as BronyaApp
+        add(this,text(context,app.sessions.load()?.userName ?: "Emby",11f,muted).apply { maxLines=1;gravity=Gravity.CENTER;ellipsize=android.text.TextUtils.TruncateAt.END },bottom=8)
+        add(this,button(context,Tr.text(UiText.SETTINGS_268)) { navigate(Tr.text(UiText.SETTINGS_268)) }.apply { tag=Tr.text(UiText.NAV_SETTINGS_411);isSelected=selected==Tr.text(UiText.SETTINGS_268);textSize=12f;setPadding(0,0,0,0) },height=dp(this,38),bottom=0)
+    }
+    fun shell(context: Context, selected: String, navigate: (String)->Unit, body: View)=row(context).apply {
+        background=canvas();gravity=Gravity.TOP
+        addView(sidebar(context,selected,navigate),LinearLayout.LayoutParams(dp(this,if(Tr.language=="en") 100 else 82),-1))
+        addView(body,LinearLayout.LayoutParams(0,-1,1f))
+    }
+    fun backdrop(context: Context): FrameLayout=FrameLayout(context).apply {
+        background=canvas()
+        addView(ImageView(context).apply { tag="backdrop";scaleType=ImageView.ScaleType.CENTER_CROP;alpha=.8f },FrameLayout.LayoutParams(-1,-1))
+        addView(View(context).apply { background=GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,intArrayOf(0xF0030E14.toInt(),0x8C030E14.toInt(),0x10030E14)) },FrameLayout.LayoutParams(-1,-1))
+        addView(View(context).apply { background=GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,intArrayOf(0x10030E14,0xD0030E14.toInt(),bg)) },FrameLayout.LayoutParams(-1,-1))
+    }
+    fun progress(context: Context, progress: Int)=ProgressBar(context,null,android.R.attr.progressBarStyleHorizontal).apply {
+        max=100;this.progress=progress.coerceIn(0,100);progressTintList=ColorStateList.valueOf(accent)
+        progressBackgroundTintList=ColorStateList.valueOf(raised)
+    }
+}
+private class NavIcon(private val symbol: String,private val color: Int,private val size: Int): android.graphics.drawable.Drawable() {
+    private val paint=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { this.color=this@NavIcon.color;textSize=size.toFloat();textAlign=android.graphics.Paint.Align.CENTER }
+    override fun draw(canvas: android.graphics.Canvas) {
+        paint.color=if(state.contains(android.R.attr.state_focused)) TvUi.bg else color
+        paint.style=android.graphics.Paint.Style.STROKE;paint.strokeWidth=1.8f;paint.strokeCap=android.graphics.Paint.Cap.ROUND
+        canvas.save();canvas.translate(bounds.left.toFloat(),bounds.top.toFloat());canvas.scale(bounds.width()/24f,bounds.height()/24f)
+        when(symbol) {
+            "⌂" -> { val p=android.graphics.Path();p.moveTo(3f,11f);p.lineTo(12f,3f);p.lineTo(21f,11f);p.moveTo(6f,9f);p.lineTo(6f,21f);p.lineTo(18f,21f);p.lineTo(18f,9f);p.moveTo(10f,21f);p.lineTo(10f,14f);p.lineTo(14f,14f);p.lineTo(14f,21f);canvas.drawPath(p,paint) }
+            "◉" -> { canvas.drawCircle(12f,12f,9f,paint);for((x,y) in listOf(8f to 8f,16f to 8f,8f to 16f,16f to 16f)) canvas.drawCircle(x,y,2f,paint) }
+            "▣" -> { canvas.drawRoundRect(3f,7f,21f,21f,2f,2f,paint);canvas.drawLine(8f,2f,12f,7f,paint);canvas.drawLine(16f,2f,12f,7f,paint) }
+            "☆" -> { val p=android.graphics.Path();for(i in 0..10) { val angle=-Math.PI/2+i*Math.PI/5;val r=if(i%2==0) 10.0 else 4.5;val x=(12+Math.cos(angle)*r).toFloat();val y=(12+Math.sin(angle)*r).toFloat();if(i==0) p.moveTo(x,y) else p.lineTo(x,y) };p.close();canvas.drawPath(p,paint) }
+            else -> { canvas.drawCircle(10f,10f,7f,paint);canvas.drawLine(15f,15f,22f,22f,paint) }
+        };canvas.restore()
+    }
+    override fun isStateful()=true
+    override fun onStateChange(state: IntArray): Boolean { invalidateSelf();return true }
+    override fun setAlpha(alpha: Int) { paint.alpha=alpha }
+    override fun setColorFilter(filter: android.graphics.ColorFilter?) { paint.colorFilter=filter }
+    @Deprecated("Deprecated in Java") override fun getOpacity()=android.graphics.PixelFormat.TRANSLUCENT
+    override fun getIntrinsicWidth()=size
+    override fun getIntrinsicHeight()=size
 }
 open class TvActivity: FragmentActivity() {
+    private var attachedLanguage="en"
+    override fun attachBaseContext(newBase: Context) {
+        attachedLanguage=tv.ember.client.i18n.AppLanguage.read(newBase)
+        super.attachBaseContext(tv.ember.client.i18n.AppLanguage.wrap(newBase))
+    }
+    override fun onResume() {
+        super.onResume()
+        if(tv.ember.client.i18n.AppLanguage.read(this)!=attachedLanguage) recreate()
+    }
     companion object { private val backKeys = BackKeyGate() }
     val app get()=application as BronyaApp
     // TV remote keys need repeat filtering. Accepted keys use the same dispatcher callbacks

@@ -25,7 +25,7 @@ python3 tests/mock_emby.py
 
 测试服务监听 8765，Android 模拟器通过 `10.0.2.2:8765` 访问。测试媒体由 FFmpeg 生成，账号是本地测试账号。官方 Emby 集成测试通过 `realEmby=true` 参数单独启用；默认跳过。
 
-`EpisodeDeviceTest` 验证跨季切集、首尾跳过、取消片尾倒计时、自然连播、长按合并跳转以及实际视频和音频输出。正式签名包的界面与覆盖升级使用 `scripts/modern_release_smoke.py` 验证。
+`EpisodeDeviceTest` 验证跨季切集、首尾跳过、取消片尾倒计时、自然连播、长按合并跳转以及实际视频和音频输出。`scripts/modern_release_smoke.py` 保留 1.2.0 的历史正式签名覆盖升级检查；1.4.0 使用新签名，需要卸载旧版。
 
 磁盘与 DTS 的专项模拟器检查无需 Emby 测试服务。`DiskCacheDeviceTest` 验证真实 SimpleCache / SQLite 索引、文件预取、缓存命中、跳转复用和清空，以及单连接服务器忽略 Range 时的回退。`DtsAudioDeviceTest` 使用本地 AVC / DTS 文件验证 FFmpeg PCM 输出及快进恢复；未提供 `dtsFixture` 时跳过。启动模拟器后运行：
 
@@ -60,8 +60,16 @@ PlaybackInfo 提供片源版本和地址。接收服务端 URL、签名参数及
 
 诊断从 MediaCodec 输出格式、VideoSize、首帧事件和 AudioTrack 初始化配置采集实际播放数据。逐帧回调只在输出格式变化时解析，避免每帧分配。解码器输出尺寸与 Surface、显示模式分开；色彩传递、Dolby Vision 解码路径及 JOC 码流与显示器能力、接收设备最终模式分开。参考 [Media3 AnalyticsListener](https://developer.android.com/reference/androidx/media3/exoplayer/analytics/AnalyticsListener)、[AudioTrackConfig](https://developer.android.com/reference/androidx/media3/exoplayer/audio/AudioSink.AudioTrackConfig) 和 [Android HDR 播放](https://developer.android.com/media/grow/hdr-playback)。
 
-界面使用克制的暗色层次、白色焦点、圆角按钮和一致的间距，参考 [Apple 按钮设计](https://developer.apple.com/design/human-interface-guidelines/buttons) 与 [焦点导航](https://developer.apple.com/documentation/uikit/focus-based-navigation)，并保留 Android TV 原生遥控器交互。
+界面使用深色影片背景、青色焦点、横向媒体卡片、固定导航侧栏和一致的间距，参考 [Apple 按钮设计](https://developer.apple.com/design/human-interface-guidelines/buttons) 与 [焦点导航](https://developer.apple.com/documentation/uikit/focus-based-navigation)，并保留 Android TV 原生遥控器交互。
 
 ## 源码
 
 `app/src/main/java/tv/ember/client/` 按职责组织：`data` 模型与加密会话，`emby` 服务器接口，`network` 取流，`cache` 磁盘预取与淘汰，`player` 播放与内存缓冲，`monitor` 诊断，`settings` 设置，`ui` 界面。生命周期停止时释放播放器、网络任务和缓冲；海报使用限制并发的请求与有界内存缓存。
+
+1.4.0 的导航与播放快捷入口检查见 `VisualNavigationDeviceTest`，搜索筛选和图片回退契约见 `BrowsePresentationTest`。可给 instrument 命令增加 `-e screenshots true`，将五个页面的实际截图保存在应用外部文件目录；内容来自本地测试服务器。
+
+界面默认英文。`i18n/UiText.kt` 集中维护英文、简体中文文案，`{0}` 等参数在两种语言中保持一致；服务器名称、简介和输入的搜索词不翻译。`AppLanguage` 保存语言并给 Activity 设置对应资源配置，返回旧页面时自动重建；枚举标签使用 getter，避免切换后保留旧语言。XML 控件的辅助描述使用 `values` / `values-zh` 资源。`LanguageTest` 检查参数、格式说明符与动态内容保留，设备测试实际操作语言选择窗口并检查保存结果。
+
+仅用于受限的软件模拟器：若系统 H.264 解码器出现 SSE 指令崩溃，可给 `VisualNavigationDeviceTest` 增加 `-e playbackSource vp8`，改用真实 VP8 / Vorbis 测试视频检查播放控制栏。默认仍使用 MP4 / H.264；此替代检查不能证明 H.264、HDR 或实体电视硬件输出已验证。
+
+模拟器无法访问 `10.0.2.2` 时，可运行 `adb reverse tcp:8765 tcp:8765`，给上述三个界面测试类增加 `-e fixtureServer http://127.0.0.1:8765`。默认地址保持不变。

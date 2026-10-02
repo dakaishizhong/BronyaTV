@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(AndroidJUnit4::class)
 class ExperienceDeviceTest {
+    private val fixtureServer get()=InstrumentationRegistry.getArguments().getString("fixtureServer") ?: "http://10.0.2.2:8765"
     private val context get()=InstrumentationRegistry.getInstrumentation().targetContext
     private val app get()=context.applicationContext as BronyaApp
     private fun children(view: View): List<View> = listOf(view)+if(view is ViewGroup) (0 until view.childCount).flatMap { children(view.getChildAt(it)) } else emptyList()
@@ -35,11 +36,12 @@ class ExperienceDeviceTest {
         fail("Condition did not become true")
     }
     @Before fun setup() {
-        app.sessions.save(Session("http://10.0.2.2:8765","fixture-token","u1","Demo TV"))
+        tv.ember.client.i18n.AppLanguage.save(context,"zh")
+        app.sessions.save(Session(fixtureServer,"fixture-token","u1","Demo TV"))
         app.settings.streamConnections=4;app.settings.seekSeconds=10
         app.settings.introSeconds=0;app.settings.outroSeconds=0;app.settings.autoNextEpisode=true
         app.settings.subtitleLanguage="zh";app.settings.audioLanguage=""
-        HttpClient.api.newCall(Request.Builder().url("http://10.0.2.2:8765/fixture/control?fail=0").build()).execute().close()
+        HttpClient.api.newCall(Request.Builder().url("$fixtureServer/fixture/control?fail=0").build()).execute().close()
     }
     @Test fun accountPasswordLoginHasOnlyThreeFieldsAndRetainsNonSecretHints() {
         app.sessions.clear()
@@ -47,7 +49,7 @@ class ExperienceDeviceTest {
             scenario.onActivity { a ->
                 val views=children(a.window.decorView)
                 val fields=views.filterIsInstance<EditText>()
-                assertEquals("http://10.0.2.2:8765",fields[0].text.toString())
+                assertEquals(fixtureServer,fields[0].text.toString())
                 assertEquals("Demo TV",fields[1].text.toString())
                 assertEquals(3,fields.size);assertTrue(fields[2].text.isEmpty())
                 assertFalse(views.filterIsInstance<Button>().any { it.text.toString().contains("Token") })

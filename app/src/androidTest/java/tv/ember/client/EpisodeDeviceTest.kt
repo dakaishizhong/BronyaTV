@@ -37,6 +37,7 @@ class EpisodeDeviceTest {
     }
     private fun launch(id:String="ep1")=ActivityScenario.launch<PlaybackActivity>(Intent(context,PlaybackActivity::class.java).putExtra("item_id",id).putExtra("source_id","mp4"))
     @Before fun setup() {
+        tv.ember.client.i18n.AppLanguage.save(context,"zh")
         app.sessions.save(Session("http://10.0.2.2:8765","fixture-token","u1","Demo TV"))
         app.settings.streamConnections=4;app.settings.introSeconds=0;app.settings.outroSeconds=0;app.settings.autoNextEpisode=true
         HttpClient.api.newCall(Request.Builder().url("http://10.0.2.2:8765/fixture/control?fail=0").build()).execute().close()

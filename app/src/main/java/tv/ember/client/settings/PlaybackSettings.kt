@@ -1,12 +1,18 @@
 package tv.ember.client.settings
 
+import tv.ember.client.i18n.Tr
+import tv.ember.client.i18n.UiText
 import android.content.Context
 
-enum class BufferMode(val label: String) { AUTO("自动"), LOW_LATENCY("低延迟"), BALANCED("平衡"), LARGE("大缓存") }
-enum class PlayerChoice(val label: String, val packages: List<String>) {
-    INTERNAL("内置播放器", emptyList()), VLC("VLC", listOf("org.videolan.vlc")),
+enum class BufferMode(private val text: UiText) {
+    AUTO(UiText.AUTO_220), LOW_LATENCY(UiText.LOW_LATENCY_242), BALANCED(UiText.BALANCED_243), LARGE(UiText.LARGE_BUFFER_244);
+    val label get()=Tr.text(text)
+}
+enum class PlayerChoice(private val nameLabel: String, val packages: List<String>) {
+    INTERNAL("", emptyList()), VLC("VLC", listOf("org.videolan.vlc")),
     MX("MX Player", listOf("com.mxtech.videoplayer.pro", "com.mxtech.videoplayer.ad")),
-    JUST("Just Player", listOf("com.brouken.player"))
+    JUST("Just Player", listOf("com.brouken.player"));
+    val label get()=if(this==INTERNAL) Tr.text(UiText.INTERNAL_PLAYER_245) else nameLabel
 }
 data class BufferPreferences(val mode: BufferMode = BufferMode.AUTO, val requestedMb: Int = 0, val prebufferSeconds: Int = 2, val backBufferSeconds: Int = 5)
 class PlaybackSettings(context: Context) {

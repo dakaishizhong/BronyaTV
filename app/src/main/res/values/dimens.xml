@@ -1,0 +1,10 @@
+<resources>
+    <!-- Rows already sit inside our hero/sidebar content padding. -->
+    <dimen name="lb_browse_padding_start">0dp</dimen>
+    <dimen name="lb_browse_padding_end">0dp</dimen>
+    <dimen name="lb_browse_padding_top">0dp</dimen>
+    <dimen name="lb_browse_padding_bottom">4dp</dimen>
+    <dimen name="lb_browse_expanded_row_no_hovercard_bottom_padding">8dp</dimen>
+    <dimen name="lb_browse_expanded_selected_row_top_padding">4dp</dimen>
+    <dimen name="lb_browse_selected_row_top_padding">4dp</dimen>
+</resources>

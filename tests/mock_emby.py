@@ -27,7 +27,7 @@ def sources(item_id='demo'):
 def video(i='demo'):
     item=dict(Id=i, Name='Ocean of light' if i=='demo' else 'After the horizon '+i,
                 Type='Movie', Overview='A journey through colour, motion and sound. This server fixture exercises Direct Play, version selection, audio and subtitle tracks.',
-                ProductionYear=2026, OfficialRating='TV', RunTimeTicks=900000000, ImageTags={'Primary':'fixture'},
+                ProductionYear=2026, OfficialRating='TV', CommunityRating=8.7, Genres=['Science fiction','Adventure'], BackdropImageTags=['fixture-scene'], People=[dict(Name='Demo Director',Type='Director'),dict(Name='Demo Actor',Type='Actor',Role='Explorer')], RunTimeTicks=900000000, ImageTags={'Primary':'fixture'},
                 UserData={'PlaybackPositionTicks':120000000 if i=='demo' else 0}, MediaSources=sources(i))
     if i.startswith('ep'):
         number=int(i[2:])
@@ -69,6 +69,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         state['url_generation']+=1; generation=state['url_generation']
                 extra['DirectStreamUrl']=f'/Videos/demo/stream.mp4?MediaSourceId={selected}&generation={generation}&Static=true'
                 media=[extra]
+            elif selected=='vp8':
+                media=[dict(Id='vp8',Name='VP8 emulator fixture',Container='webm',SupportsDirectPlay=True,Bitrate=300000,
+                    MediaStreams=[dict(Index=0,Type='Video',Codec='vp8',Width=320,Height=180,AverageFrameRate=12),
+                        dict(Index=1,Type='Audio',Codec='vorbis'),
+                        dict(Index=2,Type='Subtitle',Codec='srt',IsExternal=True,DeliveryUrl='/subtitle.srt')])]
             elif selected: media=[s for s in media if s['Id']==selected]
             self.respond({'MediaSources':media,'PlaySessionId':'fixture-session'})
         elif '/Sessions/Playing' in path:
@@ -100,8 +105,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path.endswith('/Items/Latest'): self.respond([video('ep1')]+[video('film'+str(i)) for i in range(7)]); return
         if path.endswith('/Users/u1/Items'):
             start=int(q.get('StartIndex',['0'])[0]); limit=int(q.get('Limit',['40'])[0]); all_items=[video('film'+str(i)) for i in range(45)]
+            query=q.get('SearchTerm',[''])[0].lower()
+            if query: all_items=[v for v in [video()]+all_items if query in v['Name'].lower()]
+            types=q.get('IncludeItemTypes',[''])[0].split(',')
+            if types!=['']: all_items=[v for v in all_items if v['Type'] in types]
+            if q.get('Filters',[''])[0]=='IsFavorite': all_items=all_items[:3]
             self.respond({'Items':all_items[start:start+limit],'TotalRecordCount':len(all_items)}); return
         if '/Users/u1/Items/' in path: self.respond(video(path.rsplit('/',1)[-1])); return
+        if '/Images/Backdrop/' in path: self.respond((ASSETS/'backdrop.jpg').read_bytes(),kind='image/jpeg'); return
+        if path.endswith('/Similar'): self.respond({'Items':[video('film'+str(i)) for i in range(6)]}); return
         if '/Images/Primary' in path: self.respond((ASSETS/'poster.jpg').read_bytes(),kind='image/jpeg'); return
         if 'Subtitles' in path or path=='/subtitle.srt':
             with lock: fail_subtitle=state['subtitle_fail']
@@ -119,7 +131,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if fail: state['fail']-=1; state['failures']+=1
                 code=state['status']
             if fail: self.respond({},code); return
-            file=ASSETS/({'mp4':'sample.mp4','mkv':'sample.mkv','hevc':'hevc.mkv','originalfallback':'sample.mkv'}.get(source,'sample.mp4'))
+            file=ASSETS/({'mp4':'sample.mp4','mkv':'sample.mkv','hevc':'hevc.mkv','vp8':'vp8.webm','originalfallback':'sample.mkv'}.get(source,'sample.mp4'))
             if not file.exists(): self.respond({},404); return
             size=file.stat().st_size; start=0; end=size-1
             header=self.headers.get('Range','') if source!='norange' else ''
@@ -127,7 +139,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 match=re.fullmatch(r'bytes=(\d+)-(\d*)',header)
                 if match: start=int(match[1]); end=min(end,int(match[2])) if match[2] else end
             if start>=size: self.respond({},416); return
-            self.send_response(206 if header else 200); self.send_header('Content-Type','video/x-matroska' if source in ('mkv','hevc','originalfallback') else 'video/mp4')
+            self.send_response(206 if header else 200); self.send_header('Content-Type','video/webm' if source=='vp8' else 'video/x-matroska' if source in ('mkv','hevc','originalfallback') else 'video/mp4')
             self.send_header('ETag',f'"fixture-{file.name}-v1"'); self.send_header('Accept-Ranges','bytes'); self.send_header('Content-Length',str(end-start+1))
             if header: self.send_header('Content-Range',f'bytes {start}-{end}/{size}')
             self.end_headers()

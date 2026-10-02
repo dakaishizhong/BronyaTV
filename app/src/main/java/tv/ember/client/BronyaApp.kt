@@ -16,6 +16,7 @@ class BronyaApp : Application() {
     val playbackCache by lazy { tv.ember.client.cache.PlaybackDiskCache(this) }
     override fun onCreate() {
         super.onCreate()
+        tv.ember.client.i18n.AppLanguage.wrap(this)
         sessions = SessionStore(this)
         settings = PlaybackSettings(this)
         api = EmbyApi(HttpClient.api, sessions.deviceId)

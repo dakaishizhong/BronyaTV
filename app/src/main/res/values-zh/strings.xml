@@ -1,0 +1,9 @@
+<resources>
+    <string name="switch_source">切换片源</string>
+    <string name="rewind">快退</string>
+    <string name="play_pause">播放或暂停</string>
+    <string name="forward">快进</string>
+    <string name="subtitles">字幕轨道</string>
+    <string name="audio">音频轨道</string>
+    <string name="playback_options">播放选项</string>
+</resources>

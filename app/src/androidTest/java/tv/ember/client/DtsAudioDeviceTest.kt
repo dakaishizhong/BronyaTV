@@ -25,6 +25,7 @@ class DtsAudioDeviceTest {
         assumeNotNull(fixture)
         val instrumentation=InstrumentationRegistry.getInstrumentation()
         val context=instrumentation.targetContext
+        tv.ember.client.i18n.AppLanguage.save(context,"zh")
         val file=File(requireNotNull(fixture))
         assertTrue("Generate an AVC/DTS MKV and copy it into the app cache first",file.isFile)
         assertTrue(FfmpegLibrary.isAvailable())

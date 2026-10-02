@@ -1,5 +1,7 @@
 package tv.ember.client.ui
 
+import tv.ember.client.i18n.Tr
+import tv.ember.client.i18n.UiText
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
@@ -18,10 +20,10 @@ object PosterLoader {
     private val cache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory()/32).coerceIn(2*1024*1024,12*1024*1024).toInt()) {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
-    fun load(scope: CoroutineScope, image: ImageView, url: String, session: Session): Job {
+    fun load(scope: CoroutineScope, image: ImageView, url: String, session: Session,large: Boolean=false): Job {
         image.setImageDrawable(null)
         return scope.launch {
-            val key = "${session.userId}:$url"
+            val key = "${session.userId}:${url}:${large}"
             val cached = cache.get(key)
             if (cached != null) { image.setImageBitmap(cached); return@launch }
             try {
@@ -40,7 +42,7 @@ object PosterLoader {
                         BitmapFactory.decodeByteArray(data, 0, data.size, bounds)
                         val options = BitmapFactory.Options().apply {
                             var sample = 1
-                            while(bounds.outWidth / sample > 480 || bounds.outHeight / sample > 720) sample *= 2
+                            while(bounds.outWidth / sample > (if(large) 1280 else 480) || bounds.outHeight / sample > 720) sample *= 2
                             inSampleSize = sample
                         }
                         BitmapFactory.decodeByteArray(data, 0, data.size, options)

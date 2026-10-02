@@ -1,5 +1,7 @@
 package tv.ember.client.monitor
 
+import tv.ember.client.i18n.Tr
+import tv.ember.client.i18n.UiText
 import android.os.SystemClock
 import okhttp3.*
 import tv.ember.client.network.ReceiveBufferSocketFactory
@@ -12,9 +14,9 @@ import java.util.concurrent.atomic.AtomicInteger
 /** Timings of real playback requests, never a ping/RTT estimate. */
 class HttpTransportMonitor(private val sockets: ReceiveBufferSocketFactory? = null,
                            private val clock: () -> Long = SystemClock::elapsedRealtime) : EventListener.Factory {
-    data class Snapshot(val protocol: String = "等待连接", val remote: String = "未提供", val dnsMs: Long? = null,
+    data class Snapshot(val protocol: String = Tr.text(UiText.WAITING_FOR_CONNECTION_025), val remote: String = Tr.text(UiText.NOT_PROVIDED_026), val dnsMs: Long? = null,
                         val connectMs: Long? = null, val tlsMs: Long? = null, val ttfbMs: Long? = null,
-                        val contentType: String = "未提供", val range: String = "未提供", val status: Int = 0)
+                        val contentType: String = Tr.text(UiText.NOT_PROVIDED_026), val range: String = Tr.text(UiText.NOT_PROVIDED_026), val status: Int = 0)
     @Volatile var latest=Snapshot(); private set
     val requests=AtomicInteger()
     val redirects=AtomicInteger()
@@ -32,7 +34,7 @@ class HttpTransportMonitor(private val sockets: ReceiveBufferSocketFactory? = nu
         return object : EventListener() {
         private var dnsAt=0L; private var connectAt=0L;private var tlsAt=0L;private var requestAt=0L
         private var dns:Long?=null;private var connect:Long?=null;private var tls:Long?=null
-        private var protocol="等待连接";private var remote="未提供"
+        private var protocol=Tr.text(UiText.WAITING_FOR_CONNECTION_025);private var remote=Tr.text(UiText.NOT_PROVIDED_026)
         override fun callStart(call:Call) { requests.incrementAndGet();activeRequests.incrementAndGet() }
         override fun dnsStart(call:Call,domainName:String) { dnsAt=clock() }
         override fun dnsEnd(call:Call,domainName:String,inetAddressList:List<InetAddress>) { dns=(clock()-dnsAt).coerceAtLeast(0) }
@@ -41,7 +43,7 @@ class HttpTransportMonitor(private val sockets: ReceiveBufferSocketFactory? = nu
         override fun secureConnectEnd(call:Call,handshake:Handshake?) { tls=(clock()-tlsAt).coerceAtLeast(0) }
         override fun connectEnd(call:Call,inetSocketAddress:InetSocketAddress,proxy:Proxy,protocol:Protocol?) { connect=(clock()-connectAt).coerceAtLeast(0) }
         override fun connectionAcquired(call:Call,connection:Connection) {
-            protocol=connection.protocol().toString();remote=connection.route().socketAddress.address?.hostAddress ?: "未提供"
+            protocol=connection.protocol().toString();remote=connection.route().socketAddress.address?.hostAddress ?: Tr.text(UiText.NOT_PROVIDED_026)
             sockets?.observeConnection(connection.socket())
             liveConnections.add(connection);recordPeak(liveConnections.size)
         }
@@ -51,16 +53,16 @@ class HttpTransportMonitor(private val sockets: ReceiveBufferSocketFactory? = nu
         override fun responseHeadersEnd(call:Call,response:Response) {
             if(response.code in 300..399) redirects.incrementAndGet()
             latest=Snapshot(protocol,remote,dns,connect,tls,(clock()-requestAt).coerceAtLeast(0),
-                response.header("Content-Type") ?: "未提供",response.header("Content-Range") ?: "未提供",response.code)
+                response.header("Content-Type") ?: Tr.text(UiText.NOT_PROVIDED_026),response.header("Content-Range") ?: Tr.text(UiText.NOT_PROVIDED_026),response.code)
         }
         override fun callFailed(call:Call,ioe:IOException) { failures.incrementAndGet();activeRequests.decrementAndGet() }
     }
     }
     fun summary():String {
         val s=latest
-        fun duration(value:Long?)=value?.let { "${it}ms" } ?: "复用/未测"
-        return "HTTP ${s.protocol} · IP ${s.remote}\nDNS ${duration(s.dnsMs)} · 连接含 TLS ${duration(s.connectMs)} · TLS ${duration(s.tlsMs)}\n"+
-            "请求至响应头 ${duration(s.ttfbMs)}（不是 RTT）\n响应 ${s.status.takeIf { it>0 } ?: "等待"} · ${s.contentType}\nContent-Range ${s.range}\n"+
-            "请求 ${requests.get()} · 重定向 ${redirects.get()} · 请求失败 ${failures.get()}\n活动请求 ${activeRequests.get()} · 同时连接峰值 ${peakConnections.get()}"
+        fun duration(value:Long?)=value?.let { "${it}ms" } ?: Tr.text(UiText.REUSED_NOT_MEASURED_027)
+        return Tr.text(UiText.HTTP_IP_DNS_CONNECT_INCL_TLS_028 ,(s.protocol),(s.remote),(duration(s.dnsMs)),(duration(s.connectMs)),(duration(s.tlsMs)))+
+            Tr.text(UiText.REQUEST_TO_RESPONSE_HEADERS_NOT_RTT_030 ,(duration(s.ttfbMs)),(s.status.takeIf { it>0 } ?: Tr.text(UiText.WAITING_029)),(s.contentType),(s.range))+
+            Tr.text(UiText.REQUESTS_REDIRECTS_FAILED_REQUESTS_ACTIVE_REQUESTS_031 ,(requests.get()),(redirects.get()),(failures.get()),(activeRequests.get()),(peakConnections.get()))
     }
 }

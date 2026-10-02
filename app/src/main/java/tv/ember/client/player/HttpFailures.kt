@@ -1,5 +1,7 @@
 package tv.ember.client.player
 
+import tv.ember.client.i18n.Tr
+import tv.ember.client.i18n.UiText
 import androidx.media3.datasource.HttpDataSource
 
 object HttpFailures {
@@ -7,16 +9,16 @@ object HttpFailures {
         generateSequence(error as Throwable?) { it.cause }.filterIsInstance<HttpDataSource.InvalidResponseCodeException>().firstOrNull()
 
     fun message(code: Int, subtitle: Boolean = false): String {
-        val source = if(subtitle) "字幕" else "视频"
+        val source = if(subtitle) Tr.text(UiText.SUBTITLE_126) else Tr.text(UiText.VIDEO_127)
         val reason = when(code) {
-            401 -> "登录凭证或播放地址认证已失效"
-            403 -> "服务器/CDN 拒绝访问，可能是播放权限、地址签名或请求头要求"
-            404, 410 -> "播放地址或片源不存在/已失效"
-            416 -> "服务器不接受当前续播位置的 Range 请求，请返回详情选择从头播放"
-            429 -> "服务器请求过多，请稍后重试"
-            in 500..599 -> "服务器/CDN 暂时异常"
-            else -> "服务器返回了错误响应"
+            401 -> Tr.text(UiText.SESSION_OR_PLAYBACK_URL_AUTHENTICATION_EXPIRED_128)
+            403 -> Tr.text(UiText.SERVER_CDN_DENIED_ACCESS_CHECK_PERMISSIONS_129)
+            404, 410 -> Tr.text(UiText.PLAYBACK_URL_OR_SOURCE_IS_MISSING_130)
+            416 -> Tr.text(UiText.SERVER_REJECTED_THE_RESUME_RANGE_REQUEST_131)
+            429 -> Tr.text(UiText.TOO_MANY_SERVER_REQUESTS_TRY_AGAIN_132)
+            in 500..599 -> Tr.text(UiText.SERVER_CDN_TEMPORARILY_UNAVAILABLE_133)
+            else -> Tr.text(UiText.SERVER_RETURNED_AN_ERROR_RESPONSE_134)
         }
-        return "$source 请求失败（HTTP $code）：$reason。按菜单键可重新获取播放地址或使用外部播放器。"
+        return Tr.text(UiText.REQUEST_FAILED_HTTP_PRESS_MENU_TO_135 ,(source),(code),(reason))
     }
 }
