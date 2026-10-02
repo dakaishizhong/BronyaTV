@@ -1,4 +1,4 @@
-# Ember TV
+# BronyaTV (Ember TV)
 
 轻量 Android TV Emby 播放客户端。Kotlin + Leanback + AndroidX Media3 ExoPlayer。最低 Android 6.0 / API 23，目标 API 36。Release 开启 R8 和资源压缩。
 
