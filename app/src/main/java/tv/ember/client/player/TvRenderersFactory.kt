@@ -17,7 +17,7 @@ class TvRenderersFactory(context: Context) : DefaultRenderersFactory(context) {
         enableDecoderFallback: Boolean, audioSink: AudioSink, eventHandler: Handler,
         eventListener: AudioRendererEventListener, out: ArrayList<Renderer>
     ) {
-        // Only TrueHD/MLP are compiled into this extension. Other audio stays on the system path.
+        // TrueHD/MLP and DTS are compiled into this extension. Other audio stays on the system path.
         // Media3's TrueHD decoder recreates its native context on seek rather than only flushing it.
         out.add(FfmpegAudioRenderer(eventHandler, eventListener, audioSink))
         super.buildAudioRenderers(context, EXTENSION_RENDERER_MODE_OFF, mediaCodecSelector,

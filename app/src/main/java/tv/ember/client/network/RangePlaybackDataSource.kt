@@ -10,6 +10,7 @@ class RangePlaybackStatus(val requestedConnections:Int,val budgetBytes:Int) {
     @Volatile var mode="等待片源"
     @Volatile var reader:ParallelRangeReader?=null
     @Volatile var rangeUnsupported=false
+    @Volatile var totalBytes=-1L
     val bufferedBytes:Long get()=reader?.bufferedBytes?.get() ?: 0
 }
 
@@ -34,7 +35,7 @@ class RangePlaybackDataSource(private val singleFactory:DataSource.Factory,priva
             val r=ParallelRangeReader(client,videoUrl,headers+dataSpec.httpRequestHeaders,dataSpec.position,dataSpec.length,
                 status.requestedConnections,chunk,::transferred)
             reader=r;status.reader=r
-            try { val length=r.open();status.mode="独立 TCP ${status.requestedConnections} 路分段";return length }
+            try { val length=r.open();status.totalBytes=r.totalBytes;status.mode="独立 TCP ${status.requestedConnections} 路分段";return length }
             catch(e:RangeUnavailableException) { r.close();reader=null;status.reader=null;status.rangeUnsupported=true;status.mode=e.message ?: "单连接回退" }
             catch(e:RangeHttpException) { throw httpFailure(e,dataSpec) }
         } else if(main && !status.rangeUnsupported) status.mode="单连接"
@@ -45,7 +46,20 @@ class RangePlaybackDataSource(private val singleFactory:DataSource.Factory,priva
             override fun onTransferEnd(source:DataSource,spec:DataSpec,network:Boolean) {}
             override fun onBytesTransferred(source:DataSource,spec:DataSpec,network:Boolean,bytes:Int) { if(network) transferred(bytes) }
         })
-        return s.open(dataSpec)
+        val length = s.open(dataSpec)
+        if(main) {
+            fun header(name:String)=s.responseHeaders.entries.firstOrNull { it.key.equals(name,true) }?.value?.firstOrNull()
+            header("Content-Range")?.substringAfterLast('/')?.toLongOrNull()?.let { status.totalBytes=it }
+            if(s is HttpDataSource && s.responseCode==200) {
+                header("Content-Length")?.toLongOrNull()?.let { status.totalBytes=it }
+                if(dataSpec.position>0 || dataSpec.length!=C.LENGTH_UNSET.toLong()) {
+                    status.rangeUnsupported=true
+                    status.mode="服务器忽略 Range，单连接"
+                }
+            }
+            if(dataSpec.length==C.LENGTH_UNSET.toLong() && length>=0) status.totalBytes=dataSpec.position+length
+        }
+        return length
     }
     private fun httpFailure(e:RangeHttpException,s:DataSpec)=HttpDataSource.InvalidResponseCodeException(
         e.code,e.responseMessage,e,e.headers,s,ByteArray(0))

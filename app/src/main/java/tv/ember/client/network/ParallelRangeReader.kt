@@ -24,6 +24,7 @@ class ParallelRangeReader(private val client:OkHttpClient, private val url:Strin
     var responseHeaders:Map<String,List<String>> = emptyMap();private set
     var resolvedUrl=url;private set
     private var total=0L
+    val totalBytes: Long get() = total
     private var endExclusive=0L
     private var next=0L
     @Volatile private var current:Chunk?=null

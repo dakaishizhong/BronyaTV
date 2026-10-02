@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rebuild the bundled TrueHD/MLP audio decoder from the corresponding source.
+# Rebuild the bundled TrueHD/MLP/DTS audio decoders from the corresponding source.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/env.sh
@@ -37,7 +37,7 @@ for BRONYA_ABI in armeabi-v7a arm64-v8a x86 x86_64; do
             --disable-autodetect --disable-everything --disable-programs --disable-doc \
             --disable-debug --disable-network --disable-shared --enable-static --enable-pic \
             --disable-avdevice --disable-avformat --disable-avfilter --disable-postproc \
-            --disable-swscale --enable-swresample --enable-decoder=truehd --enable-decoder=mlp \
+            --disable-swscale --enable-swresample --enable-decoder=truehd --enable-decoder=mlp --enable-decoder=dca \
             "${BRONYA_ARCH_FLAGS[@]}"
         make -j"${BRONYA_NATIVE_JOBS:-2}"
         "$BRONYA_TOOLCHAIN/$BRONYA_TARGET-clang++" -std=c++11 -O2 -fPIC \
@@ -49,6 +49,7 @@ for BRONYA_ABI in armeabi-v7a arm64-v8a x86 x86_64; do
             libswresample/libswresample.a libavcodec/libavcodec.a libavutil/libavutil.a \
             -llog -landroid -lm -latomic -o "$BRONYA_OUTPUT/libffmpegJNI.so"
         "$BRONYA_TOOLCHAIN/llvm-strip" --strip-unneeded "$BRONYA_OUTPUT/libffmpegJNI.so"
+        chmod 644 "$BRONYA_OUTPUT/libffmpegJNI.so"
     )
 done
 (cd decoder-ffmpeg/src/main/jniLibs && sha256sum */libffmpegJNI.so > SHA256SUMS)

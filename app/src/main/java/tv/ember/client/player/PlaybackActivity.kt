@@ -46,6 +46,9 @@ import tv.ember.client.network.RangePlaybackStatus
 import tv.ember.client.network.StreamPolicy
 import tv.ember.client.ui.TvActivity
 import tv.ember.client.ui.TvUi
+import tv.ember.client.cache.*
+import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.CacheDataSink
 
 @UnstableApi
 class PlaybackActivity : TvActivity(), Player.Listener {
@@ -76,6 +79,10 @@ class PlaybackActivity : TvActivity(), Player.Listener {
     private lateinit var memory: MemoryMonitor
     private var control: TvLoadControl? = null
     private var playbackHttp: okhttp3.OkHttpClient? = null
+    private var diskPrefetch: DiskPrefetcher? = null
+    private var diskMode = "未开始"
+    private var playerBuildJob: Job? = null
+    private var lastPlaybackFailure = "未记录"
     private var receiveSocketFactory: ReceiveBufferSocketFactory? = null
     private var transport:HttpTransportMonitor?=null
     private var rangeStatus:RangePlaybackStatus?=null
@@ -279,6 +286,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
                 val prepared=app.api.playbackSpec(s,video.id,source,playback.playSessionId)
                 if(!active) return@launch
                 if(startedReported) report("Stopped")
+                diskPrefetch?.close();diskPrefetch=null
                 startedReported=false;playerView.player=null;player?.removeListener(this@PlaybackActivity);player?.release();player=null
                 // Track overrides reference the old item's groups; language preferences carry to the new item.
                 position=0;wantedPlay=true;trackPreferences=null;softwareVideo=false;retryAttempt=0
@@ -333,13 +341,32 @@ class PlaybackActivity : TvActivity(), Player.Listener {
     }
     private fun createPlayer(preserveSeekRecovery: Boolean = false) {
         if(!active) return
-        val s = session ?: return; val current = spec ?: return
+        if(session == null) return
+        val current = spec ?: return
+        playerBuildJob?.cancel()
         if(!preserveSeekRecovery) seekRecovery.clear()
+        diskPrefetch?.close();diskPrefetch=null
         player?.let { position = it.currentPosition; wantedPlay = it.playWhenReady; trackPreferences = it.trackSelectionParameters; playerView.player = null; it.removeListener(this); it.release() }
+        player=null
         playbackHttp?.connectionPool?.evictAll()
+        playerBuildJob=lifecycleScope.launch {
+            val playlist=current.version.container.lowercase() in listOf("m3u8","hls","dash","mpd") ||
+                current.url.substringBefore('?').let { it.endsWith(".m3u8",true) || it.endsWith(".mpd",true) }
+            val disk=withContext(Dispatchers.IO) {
+                if(playlist) null
+                else app.playbackCache.configure(app.settings.diskCacheMb,current.version.bitrate,app.settings.diskAheadSeconds)
+            }
+            if(active && spec===current) {
+                diskMode=if(playlist) "当前流媒体列表使用播放缓冲" else app.playbackCache.mode
+                buildPlayer(current,disk)
+            }
+        }
+    }
+    private fun buildPlayer(current: PlaybackSpec,disk: PlaybackDiskCache.Handle?) {
+        val s=session ?: return
         val r = Runtime.getRuntime()
         val mem = ActivityManager.MemoryInfo().also { (getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(it) }
-        val policy = BufferPolicy.create(app.settings.snapshot(), r.maxMemory(), r.totalMemory() - r.freeMemory(), mem.lowMemory,current.version.bitrate)
+        val policy = BufferPolicy.create(app.settings.snapshot(), r.maxMemory(), r.totalMemory() - r.freeMemory(), mem.lowMemory,current.version.bitrate,disk!=null)
         control = TvLoadControl(policy)
         val currentStats=PlayerStatsMonitor().apply { sourceBitrate=current.version.bitrate };stats=currentStats
         val currentNetwork=NetworkMonitor(this);network=currentNetwork;lastNetwork=null
@@ -351,7 +378,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
         }
         val renderers = TvRenderersFactory(this).setEnableDecoderFallback(true).setMediaCodecSelector(selector)
         receiveSocketFactory = ReceiveBufferSocketFactory(app.settings.receiveBufferKb * 1024)
-        val streamPlan=StreamPolicy.create(app.settings.streamConnections,current.version.bitrate,r.maxMemory(),r.totalMemory()-r.freeMemory(),mem.lowMemory)
+        val streamPlan=StreamPolicy.create(app.settings.streamConnections,current.version.bitrate,r.maxMemory(),r.totalMemory()-r.freeMemory(),mem.lowMemory,disk!=null)
         val prefetchBudget=streamPlan.budgetBytes
         val connections=streamPlan.connections
         val transportMonitor=HttpTransportMonitor(receiveSocketFactory);transport=transportMonitor
@@ -369,8 +396,32 @@ class PlaybackActivity : TvActivity(), Player.Listener {
         val httpClient=builder.build();playbackHttp=httpClient
         val http=OkHttpDataSource.Factory(httpClient).setDefaultRequestProperties(current.headers)
         val range=RangePlaybackStatus(connections,prefetchBudget);rangeStatus=range
-        val dataSources=androidx.media3.datasource.DataSource.Factory {
+        val upstream=androidx.media3.datasource.DataSource.Factory {
             RangePlaybackDataSource(http,httpClient,current.url,current.headers,range).apply { addTransferListener(currentNetwork) }
+        }
+        val dataSources=if(disk==null) upstream else {
+            val prefetchClient=httpClient.newBuilder().dispatcher(okhttp3.Dispatcher()).build()
+            val prefetchRange=RangePlaybackStatus(connections,prefetchBudget)
+            val prefetchHttp=OkHttpDataSource.Factory(prefetchClient).setDefaultRequestProperties(current.headers)
+            val prefetchSource=androidx.media3.datasource.DataSource.Factory {
+                RangePlaybackDataSource(prefetchHttp,prefetchClient,current.url,current.headers,prefetchRange).apply { addTransferListener(currentNetwork) }
+            }
+            // Unique per player: signed URL changes or changed server files cannot merge stale spans.
+            val key="bronya-"+java.util.UUID.randomUUID().toString()
+            val writable=CacheDataSource.Factory().setCache(disk.cache).setUpstreamDataSourceFactory(prefetchSource)
+                .setCacheWriteDataSinkFactory(CacheDataSink.Factory().setCache(disk.cache).setFragmentSize(2*DiskCachePlan.MIB))
+                .setFlags(CacheDataSource.FLAG_BLOCK_ON_CACHE or CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+            val prefetch=DiskPrefetcher(disk,writable,prefetchClient,current.url,key,prefetchRange)
+            diskPrefetch=prefetch
+            // Foreground is read-only: an unlimited writer lock here would block all read-ahead.
+            val readable=CacheDataSource.Factory().setCache(disk.cache).setUpstreamDataSourceFactory(upstream)
+                .setCacheWriteDataSinkFactory(null)
+                .setFlags(CacheDataSource.FLAG_BLOCK_ON_CACHE or CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+                .setEventListener(object: CacheDataSource.EventListener {
+                    override fun onCacheIgnored(reason:Int) {}
+                    override fun onCachedBytesRead(cacheSizeBytes:Long,cachedBytesRead:Long) { prefetch.hitBytes.addAndGet(cachedBytesRead) }
+                })
+            androidx.media3.datasource.DataSource.Factory { DiskPlaybackDataSource(current.url,readable,upstream,prefetch) }
         }
         val errorPolicy = object : DefaultLoadErrorHandlingPolicy(3) {
             override fun getRetryDelayMsFor(info: LoadErrorHandlingPolicy.LoadErrorInfo): Long {
@@ -433,6 +484,10 @@ class PlaybackActivity : TvActivity(), Player.Listener {
     }
     override fun onPlayerError(error: PlaybackException) {
         val p = player ?: return
+        val failure=error as? ExoPlaybackException
+        val failedType=failure?.rendererIndex?.takeIf { it in 0 until p.rendererCount }?.let(p::getRendererType)
+        lastPlaybackFailure=listOf(error.errorCodeName,when(failedType) { C.TRACK_TYPE_AUDIO -> "音频";C.TRACK_TYPE_VIDEO -> "视频";else -> "取流或其他" },
+            failure?.rendererFormat?.sampleMimeType.orEmpty(),failure?.rendererName.orEmpty()).filter(String::isNotBlank).joinToString(" · ")
         position = p.currentPosition; wantedPlay = p.playWhenReady
         if(error.errorCode in 4000..4999 && error is ExoPlaybackException &&
             error.type==ExoPlaybackException.TYPE_RENDERER && error.rendererIndex in 0 until p.rendererCount &&
@@ -522,7 +577,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
                             "内存 已用 ${m.totalMb - m.availableMb} / ${m.totalMb}MB\n可用 ${m.availableMb}MB · APP ${m.appMb}MB\n" +
                             "网络 %.2f MB/s · 均值 %.2f MB/s\n".format(net.bytesPerSecond / 1_048_576.0,net.average / 1_048_576.0) +
                             stats.sourceSummary(spec!!.version)+"\n"+stats.summary(p) +
-                            "\n缓冲内存 ${(control?.allocatedBytes ?: 0) / 1_048_576} / ${(control?.policy?.targetBytes ?: 0) / 1_048_576}MB"
+                            "\n缓冲内存 ${(control?.allocatedBytes ?: 0) / 1_048_576} / ${(control?.policy?.targetBytes ?: 0) / 1_048_576}MB"+diskSummary(false)
                         osd.append("\n${net.state} · ${rangeStatus?.mode}\n预取 ${(rangeStatus?.bufferedBytes ?: 0)/1048576} / ${(rangeStatus?.budgetBytes ?: 0)/1048576}MB\nTCP 接收 ${receiveSocketFactory?.effectiveBytes?.takeIf { it > 0 }?.let { "${it / 1024}KB" } ?: "等待连接"}" +
                             if(app.settings.receiveBufferKb > 0) "（请求 ${app.settings.receiveBufferKb}KB）" else "（自动）")
                         osd.visibility = if(showOsd) View.VISIBLE else View.GONE
@@ -540,6 +595,13 @@ class PlaybackActivity : TvActivity(), Player.Listener {
         val s = session ?: return; val v = item ?: return; val current = spec ?: return
         val pos = player?.currentPosition ?: position; val paused = !(player?.playWhenReady ?: wantedPlay)
         reportScope.launch { withTimeoutOrNull(5000) { runCatching { app.api.report(s, event, v.id, current, pos, paused) } } }
+    }
+    private fun diskSummary(detailed:Boolean):String {
+        val disk=diskPrefetch ?: return "\n磁盘缓存 $diskMode"
+        val ahead=disk.aheadBytes
+        val seconds=spec?.version?.bitrate?.takeIf { it>0 }?.let { ahead*8.0/it }
+        return "\n磁盘前向 ${ahead/1048576}MB"+(seconds?.let { "（约 %.1fs）".format(it) } ?: "")+
+            " · ${disk.state}"+if(detailed) "\n磁盘占用 ${disk.usedBytes/1048576} / ${disk.capacityBytes/1048576}MiB · 命中读取 ${disk.hitBytes.get()/1048576}MiB" else ""
     }
     private fun setStatus(value: String) { status.text = value; status.visibility = if(value.isBlank()) View.GONE else View.VISIBLE }
     private fun showMenu() {
@@ -629,6 +691,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
                         try {
                             val next=app.api.playbackSpec(s,video.id,info.versions[index],info.playSessionId)
                             report("Stopped");startedReported=false;retryJob?.cancel()
+                            diskPrefetch?.close();diskPrefetch=null
                             player?.let { position=it.currentPosition;wantedPlay=it.playWhenReady;playerView.player=null;it.removeListener(this@PlaybackActivity);it.release() };player=null
                             trackPreferences=null;softwareVideo=false;forceOriginalRoute=false;refreshedRejectedUrl=false
                             skippedExternalSubtitles.clear();spec=next
@@ -660,6 +723,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
                 "接收方式 ${rangeStatus?.mode} · 设置 ${if(app.settings.streamConnections==0) "自动" else "${app.settings.streamConnections} 路"}\n"+
                 "分段预取 ${(rangeStatus?.bufferedBytes ?: 0)/1048576} / ${(rangeStatus?.budgetBytes ?: 0)/1048576}MiB\n"+
                 "播放缓冲 ${(control?.allocatedBytes ?: 0)/1048576} / ${(control?.policy?.targetBytes ?: 0)/1048576}MiB · 回退保留 ${(control?.policy?.backBufferMs ?: 0)/1000.0}s\n"+
+                diskSummary(true)+"\n最近播放故障 $lastPlaybackFailure\n"+
                 "TCP SO_RCVBUF $tcp · ${if(app.settings.receiveBufferKb>0) "请求 ${app.settings.receiveBufferKb}KB" else "系统自动"}\n"+
                 "SO_RCVBUF 是最近连接的系统报告值；不是服务端看到的 TCP 广告窗口，也不是全部连接总和。\n"+
                 (transport?.summary() ?: "等待 HTTP 请求")+"\n\n"+link+"\n\n"+
@@ -784,13 +848,14 @@ class PlaybackActivity : TvActivity(), Player.Listener {
     }
     override fun onStop() {
         cancelSeekPreview()
-        active=false;retryJob?.cancel();loadJob?.cancel();monitorJob?.cancel();neighborJob?.cancel();sourceJob?.cancel()
+        active=false;retryJob?.cancel();loadJob?.cancel();monitorJob?.cancel();neighborJob?.cancel();sourceJob?.cancel();playerBuildJob?.cancel()
         activeDialog?.dismiss();activeDialog=null;outroDeadline=0
         if(registered) { runCatching { connectivity.unregisterNetworkCallback(connectionCallback) }; registered = false }
         main.removeCallbacksAndMessages(null)
         player?.let { position = it.currentPosition; wantedPlay = it.playWhenReady; trackPreferences = it.trackSelectionParameters }
         if(startedReported) { report("Stopped"); startedReported = false }
         if(::playerView.isInitialized) playerView.player = null
+        diskPrefetch?.close();diskPrefetch=null
         player?.removeListener(this);player?.release(); player = null
         seekRecovery.clear()
         playbackHttp?.connectionPool?.evictAll(); playbackHttp = null; receiveSocketFactory = null

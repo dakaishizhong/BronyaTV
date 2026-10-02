@@ -6,9 +6,15 @@ import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.widget.*
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import tv.ember.client.cache.DiskCachePlan
 import tv.ember.client.player.ExternalPlayers
 import tv.ember.client.settings.*
 
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class SettingsActivity: TvActivity() {
     private var taps=0
     private var category=0
@@ -93,10 +99,32 @@ class SettingsActivity: TvActivity() {
                 setting("mode","缓冲模式",p.mode.label) { select("缓冲模式",BufferMode.entries.map { it.label },BufferMode.entries.indexOf(p.mode)) { p.mode=BufferMode.entries[it];render("mode") } }
                 val sizes=listOf(0,16,32,64,128,256,512,1024,2048)
                 fun size(n: Int)=when(n) { 0 -> "自动";1024 -> "1GB";2048 -> "2GB";else -> "${n}MB" }
-                setting("memory","缓存大小上限",size(p.bufferMb)) { select("缓存大小上限",sizes.map(::size),sizes.indexOf(p.bufferMb)) { p.bufferMb=sizes[it];render("memory") } }
+                setting("memory","内存缓存上限",size(p.bufferMb)) { select("内存缓存上限",sizes.map(::size),sizes.indexOf(p.bufferMb)) { p.bufferMb=sizes[it];render("memory") } }
+                fun diskSize(n:Int)=when(n) { 0 -> "关闭";-1 -> "自动（最多 512MB）";in 1024..8192 -> "${n/1024}GB";else -> "${n}MB" }
+                setting("disk_capacity","磁盘缓存容量",diskSize(p.diskCacheMb)) {
+                    select("磁盘缓存容量",DiskCachePlan.sizesMb.map(::diskSize),DiskCachePlan.sizesMb.indexOf(p.diskCacheMb)) {
+                        p.diskCacheMb=DiskCachePlan.sizesMb[it];render("disk_capacity")
+                    }
+                }
+                seconds("disk_ahead","磁盘提前缓存",p.diskAheadSeconds,DiskCachePlan.aheadSeconds) { p.diskAheadSeconds=it }
+                setting("disk_clear","清空磁盘缓存","清除已缓存视频") {
+                    TvUi.dialog(this).setTitle("清空磁盘缓存？").setMessage("不会删除账号和播放设置。")
+                        .setPositiveButton("清空") { _,_-> lifecycleScope.launch {
+                            runCatching { withContext(Dispatchers.IO) { app.playbackCache.clear() } }
+                                .onSuccess { message("磁盘缓存已清空");render("disk_clear") }
+                                .onFailure { message("清空失败，请稍后重试") }
+                        } }.setNegativeButton("取消",null).show()
+                }
+                val diskInfo=TvUi.text(this,"正在读取缓存用量…",13f,TvUi.muted)
+                TvUi.add(content,diskInfo)
+                lifecycleScope.launch {
+                    val snapshot=withContext(Dispatchers.IO) { app.playbackCache.snapshot() }
+                    diskInfo.text="磁盘已用 ${snapshot.usedBytes/1048576}MB · 可用 ${snapshot.availableBytes/1048576}MB"
+                }
+                hint("磁盘容量按可用空间限制，保留至少 256MB 系统空间。提前缓存秒数按片源码率估算，也受容量限制。")
                 seconds("prebuffer","预缓冲时间",p.prebuffer,listOf(2,5,10,15,30,60)) { p.prebuffer=it }
                 seconds("backbuffer","回退缓存",p.backBufferSeconds,listOf(0,5,15,30)) { p.backBufferSeconds=it }
-                hint("缓存按需占用内存，播放结束释放；系统会根据可用内存限制实际用量。")
+                hint("内存用于即时播放，磁盘用于较长的提前缓存和回退。高码率自动模式增加启动缓冲；实际用量受设备限制。")
             }
             3 -> {
                 val av=listOf("","zh","en","ja");val al=listOf("自动","中文","英语","日语")
