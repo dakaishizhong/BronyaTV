@@ -24,7 +24,6 @@ class MainActivity : TvActivity() {
     private lateinit var adapter: ArrayObjectAdapter
     private lateinit var title: TextView
     private lateinit var description: TextView
-    private lateinit var navLabel: TextView
     private lateinit var homeButton: Button
     private lateinit var hero: LinearLayout
     private lateinit var heroOverview: TextView
@@ -47,21 +46,22 @@ class MainActivity : TvActivity() {
         super.onCreate(savedInstanceState)
         val surface=TvUi.backdrop(this)
         backdrop=surface.findViewWithTag("backdrop")
-        val root=TvUi.column(this).apply { setPadding(TvUi.dp(this,20),TvUi.dp(this,12),TvUi.dp(this,18),0) }
+        val root=TvUi.column(this).apply { setPadding(TvUi.dp(this,TvUi.gutter(context)),TvUi.dp(this,TvUi.unit(context,10)),TvUi.dp(this,TvUi.gutter(context)),TvUi.dp(this,TvUi.unit(context,12))) }
         val nav=TvUi.row(this)
-        navLabel=TvUi.text(this,Tr.text(UiText.YOUR_LIBRARY_291),12f,TvUi.muted)
-        nav.addView(navLabel,LinearLayout.LayoutParams(0,-2,1f))
-        nav.addView(TvUi.button(this,Tr.text(UiText.SORT_292)) { sortDialog() }.apply { textSize=12f;setPadding(TvUi.dp(this,8),0,TvUi.dp(this,8),0) },LinearLayout.LayoutParams(TvUi.dp(nav,58),TvUi.dp(nav,32)))
-        nav.addView(TvUi.button(this,Tr.text(UiText.REFRESH_212)) { if(page==null) loadHome(true) else loadPage(page!!) }.apply { textSize=12f;setPadding(TvUi.dp(this,8),0,TvUi.dp(this,8),0) },LinearLayout.LayoutParams(TvUi.dp(nav,58),TvUi.dp(nav,32)).apply { marginStart=TvUi.dp(nav,6) })
+        nav.addView(View(this),LinearLayout.LayoutParams(0,1,1f))
+        nav.addView(TvUi.button(this,"⋯") { showBrowseMenu() }.apply { tag="browse_menu";contentDescription=Tr.text(UiText.BROWSE_MENU);textSize=22f;minimumHeight=0;setTextColor(TvUi.text);setPadding(0,0,0,0);background=android.graphics.drawable.StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_focused),FocusRingDrawable(this@MainActivity,0x4021E2E5));addState(intArrayOf(),TvUi.box(android.graphics.Color.TRANSPARENT))
+        } },LinearLayout.LayoutParams(TvUi.dp(nav,32),TvUi.dp(nav,22)))
         nav.addView(TextClock(this).apply { format24Hour="HH:mm";format12Hour="HH:mm";textSize=12f;setTextColor(TvUi.text);setPadding(TvUi.dp(this,12),0,0,0) })
         TvUi.add(root,nav,bottom=6)
-        hero=TvUi.column(this)
-        title=TvUi.text(this,Tr.text(UiText.YOUR_LIBRARY_291),36f).apply { typeface=android.graphics.Typeface.DEFAULT_BOLD;maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END }
-        description=TvUi.text(this,Tr.text(UiText.MOVIES_AND_SERIES_293),13f,TvUi.muted).apply { maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END }
-        heroOverview=TvUi.text(this,"",14f).apply { maxLines=2;ellipsize=android.text.TextUtils.TruncateAt.END;maxWidth=TvUi.dp(this,420) }
+        hero=TvUi.column(this).apply { setPadding(0,TvUi.dp(this,TvUi.unit(context,10)),0,0) }
+        title=TvUi.text(this,Tr.text(UiText.YOUR_LIBRARY_291),44f*TvUi.scale(this)).apply { tag="hero_title";typeface=android.graphics.Typeface.DEFAULT_BOLD;maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END;includeFontPadding=false }
+        description=TvUi.text(this,Tr.text(UiText.MOVIES_AND_SERIES_293),14f,TvUi.muted).apply { maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END;includeFontPadding=false }
+        heroOverview=TvUi.text(this,"",14f).apply { maxLines=2;ellipsize=android.text.TextUtils.TruncateAt.END;includeFontPadding=false }
         heroActions=TvUi.row(this);heroBadges=TvUi.row(this)
-        TvUi.add(hero,title,bottom=3);TvUi.add(hero,description,bottom=5);TvUi.add(hero,heroBadges,bottom=5);TvUi.add(hero,heroOverview,width=TvUi.dp(hero,440),bottom=8);TvUi.add(hero,heroActions,bottom=0)
-        TvUi.add(root,hero,height=TvUi.dp(root,180),bottom=6)
+        TvUi.add(hero,heroBadges,height=TvUi.dp(hero,24),bottom=5);TvUi.add(hero,title,bottom=5);TvUi.add(hero,description,bottom=10)
+        TvUi.add(hero,heroOverview,width=TvUi.dp(hero,TvUi.unit(this,390)),bottom=10);TvUi.add(hero,heroActions,bottom=0)
+        TvUi.add(root,hero,height=TvUi.dp(root,TvUi.unit(this,218)),bottom=4)
         searchArea=TvUi.column(this).apply { visibility=View.GONE }
         TvUi.add(root,searchArea,bottom=4)
         val frame=FrameLayout(this).apply { id=View.generateViewId() }
@@ -72,15 +72,25 @@ class MainActivity : TvActivity() {
         setContentView(shell)
         rows = RowsSupportFragment()
         supportFragmentManager.beginTransaction().replace(frame.id, rows).commitNow()
-        adapter = ArrayObjectAdapter(ListRowPresenter(FocusHighlight.ZOOM_FACTOR_NONE).apply {
+        adapter = ArrayObjectAdapter(object: ListRowPresenter(FocusHighlight.ZOOM_FACTOR_NONE) {
+            override fun initializeRowViewHolder(holder: RowPresenter.ViewHolder) {
+                super.initializeRowViewHolder(holder)
+                val grid=(holder as ListRowPresenter.ViewHolder).gridView
+                TvUi.keepVisibleItemsStill(grid)
+                grid.clipChildren=false;grid.clipToPadding=false
+                grid.setHorizontalSpacing(TvUi.dp(grid,TvUi.cardGap(this@MainActivity)))
+            }
+        }.apply {
             shadowEnabled=false;selectEffectEnabled=false;headerPresenter=TvRowHeaderPresenter()
-            rowHeight=TvUi.dp(root,112);expandedRowHeight=rowHeight
+            rowHeight=TvUi.dp(root,((TvUi.cardWidth(this@MainActivity)-6)/2.6f).toInt()+46);expandedRowHeight=rowHeight
         })
         rows.adapter = adapter
         rows.enableRowScaling(false)
         frame.post {
             rows.setAlignment(TvUi.dp(root,32))
             rows.verticalGridView?.setVerticalSpacing(TvUi.dp(root,4))
+            rows.verticalGridView?.clipChildren=false;rows.verticalGridView?.clipToPadding=false
+            TvUi.keepVisibleItemsStill(rows.verticalGridView)
         }
         rows.setOnItemViewClickedListener { _, item, _, _ -> when(item) {
             is VideoItem -> if(item.isFolder) openPage(BrowserPage(item.id, item.name)) else startActivity(Intent(this, DetailActivity::class.java).putExtra("item_id", item.id))
@@ -116,7 +126,7 @@ class MainActivity : TvActivity() {
     }
     private fun row(name: String, items: List<Any>) {
         if(items.isEmpty()) return
-        val a = ArrayObjectAdapter(LandscapeCardPresenter(app,lifecycleScope,if(page?.name?.startsWith(Tr.text(UiText.SEARCH_295))==true) 196 else 166)).apply { addAll(0, items) }
+        val a = ArrayObjectAdapter(LandscapeCardPresenter(app,lifecycleScope,TvUi.cardWidth(this))).apply { addAll(0, items) }
         adapter.add(ListRow(HeaderItem(name), a))
     }
     private fun loadHome(preserveFocus: Boolean=false) {
@@ -124,7 +134,7 @@ class MainActivity : TvActivity() {
         val selected=if(preserveFocus) rows.selectedPosition else 0
         val selectedId=if(preserveFocus) selectedItemId else null
         val restoreRows=!preserveFocus || rows.view?.hasFocus()==true
-        page = null; configureHeader(); navLabel.text = "BronyaTV  /  ${s.userName}"; title.text = Tr.text(UiText.CONNECTING_TO_SERVER_296); description.text = ""
+        page = null; configureHeader(); title.text = Tr.text(UiText.CONNECTING_TO_SERVER_296); description.text = ""
         work?.cancel()
         work = lifecycleScope.launch {
             try {
@@ -155,7 +165,7 @@ class MainActivity : TvActivity() {
     private fun openPage(next: BrowserPage) { history.addLast(page ?: BrowserPage("", Tr.text(UiText.HOME_267))); page = next; loadPage(next) }
     private fun loadPage(next: BrowserPage) {
         val s = app.sessions.load() ?: return
-        page = next; configureHeader(); work?.cancel(); title.text = Tr.text(UiText.LOADING_304 ,(next.name)); description.text = ""; navLabel.text = "BronyaTV  /  ${next.name}"
+        page = next; configureHeader(); work?.cancel(); title.text = Tr.text(UiText.LOADING_304 ,(next.name)); description.text = ""
         work = lifecycleScope.launch {
             try {
                 val data = app.api.items(s, next.parent, search = next.search,sort=next.sort,types=next.types,favorite=next.favorite)
@@ -166,7 +176,7 @@ class MainActivity : TvActivity() {
         }
     }
     private fun appendPage(next: BrowserPage, data: ItemPage, start: Int) {
-        data.items.chunked(if(next.name.startsWith(Tr.text(UiText.SEARCH_295))) 4 else 10).forEachIndexed { index, list -> row(if(index == 0) next.name else Tr.text(UiText.KEEP_BROWSING_306), list) }
+        data.items.chunked(if(next.name.startsWith(Tr.text(UiText.SEARCH_295))) 5 else 10).forEachIndexed { index, list -> row(if(index == 0) next.name else Tr.text(UiText.KEEP_BROWSING_306), list) }
         val end = start + data.items.size
         if(end < data.total && data.items.isNotEmpty()) row(Tr.text(UiText.MORE_CONTENT_307), listOf(BrowserCommand(Tr.text(UiText.LOAD_MORE_308 ,(end),(data.total))) {
             work?.cancel(); work = lifecycleScope.launch {
@@ -200,8 +210,9 @@ class MainActivity : TvActivity() {
     }
     private fun configureHeader() {
         val searching=page?.name?.startsWith(Tr.text(UiText.SEARCH_295))==true
-        hero.layoutParams=hero.layoutParams.apply { height=TvUi.dp(hero,if(page==null) 180 else 64) }
-        title.textSize=if(page==null) 36f else 28f
+        hero.setPadding(0,if(page==null) TvUi.dp(hero,TvUi.unit(this,10)) else 0,0,0)
+        hero.layoutParams=hero.layoutParams.apply { height=TvUi.dp(hero,TvUi.unit(this@MainActivity,if(page==null) 218 else 64)) }
+        title.textSize=(if(page==null) 44f else 32f)*TvUi.scale(this)
         heroOverview.visibility=if(page==null) View.VISIBLE else View.GONE
         heroBadges.visibility=if(page==null) View.VISIBLE else View.GONE
         heroActions.visibility=if(page==null) View.VISIBLE else View.GONE
@@ -243,15 +254,19 @@ class MainActivity : TvActivity() {
         if(recent.childCount>0) TvUi.add(searchArea,recent,bottom=4)
     }
     private fun updateHero(video: VideoItem) {
-        title.text=video.name;description.text=MediaUi.metadata(video);heroOverview.text=video.overview
-        heroBadges.removeAllViews();heroBadges.addView(MediaUi.badgeRow(this,video))
+        title.text=video.name;description.text=MediaUi.styledMetadata(video);heroOverview.text=video.overview
+        heroBadges.removeAllViews()
+        if(video.resumeTicks>0) heroBadges.addView(TvUi.text(this,Tr.text(UiText.RESUME_STATUS,MediaUi.remaining(video)),11f,TvUi.accent).apply {
+            background=TvUi.box(0x3021E2E5,7f,0xFF16868A.toInt());setPadding(TvUi.dp(this,8),TvUi.dp(this,4),TvUi.dp(this,8),TvUi.dp(this,4))
+        },LinearLayout.LayoutParams(-2,-2).apply { marginEnd=TvUi.dp(hero,8) })
+        heroBadges.addView(MediaUi.badgeRow(this,video))
         if(heroItem?.id==video.id && heroActions.childCount>0) return
         heroItem=video;MediaUi.backdropItem=video
         heroActions.removeAllViews()
-        heroActions.addView(TvUi.button(this,if(video.resumeTicks>0) Tr.text(UiText.RESUME_323 ,(MediaUi.remaining(video))) else Tr.text(UiText.PLAY_252),true) {
+        heroActions.addView(TvUi.button(this,if(video.resumeTicks>0) Tr.text(UiText.RESUME_251) else Tr.text(UiText.PLAY_252),true) {
             startActivity(Intent(this,DetailActivity::class.java).putExtra("item_id",video.id).putExtra("auto_play",true))
-        },LinearLayout.LayoutParams(-2,TvUi.dp(hero,42)))
-        heroActions.addView(TvUi.button(this,Tr.text(UiText.DETAILS_324)) { startActivity(Intent(this,DetailActivity::class.java).putExtra("item_id",video.id)) },LinearLayout.LayoutParams(-2,TvUi.dp(hero,42)).apply { marginStart=TvUi.dp(hero,10) })
+        },LinearLayout.LayoutParams(TvUi.dp(hero,TvUi.unit(this,152)),TvUi.dp(hero,TvUi.unit(this,38))))
+        heroActions.addView(TvUi.button(this,Tr.text(UiText.DETAILS_324)) { startActivity(Intent(this,DetailActivity::class.java).putExtra("item_id",video.id)) },LinearLayout.LayoutParams(TvUi.dp(hero,TvUi.unit(this,108)),TvUi.dp(hero,TvUi.unit(this,38))).apply { marginStart=TvUi.dp(hero,10) })
         val s=app.sessions.load() ?: return
         backdropJob?.cancel();backdropJob=PosterLoader.load(lifecycleScope,backdrop,app.api.landscapeUrl(s,video,true),s,true)
     }
@@ -262,5 +277,14 @@ class MainActivity : TvActivity() {
             arrayOf(Tr.text(UiText.NAME_327),Tr.text(UiText.RECENTLY_ADDED_298),Tr.text(UiText.RELEASE_DATE_328),Tr.text(UiText.SCORE_329)),values.indexOf(current.sort)) { dialog,index ->
             dialog.dismiss();loadPage(current.copy(sort=values[index]))
         }.setNegativeButton(Tr.text(UiText.CANCEL_196),null).show()
+    }
+    private fun showBrowseMenu() {
+        TvUi.dialog(this).setTitle(Tr.text(UiText.BROWSE_MENU)).setItems(arrayOf(Tr.text(UiText.SORT_292),Tr.text(UiText.REFRESH_212))) { _,which ->
+            if(which==0) sortDialog() else if(page==null) loadHome(true) else loadPage(page!!)
+        }.show()
+    }
+    override fun onKeyUp(keyCode: Int,event: android.view.KeyEvent): Boolean {
+        if(keyCode==android.view.KeyEvent.KEYCODE_MENU) { showBrowseMenu();return true }
+        return super.onKeyUp(keyCode,event)
     }
 }

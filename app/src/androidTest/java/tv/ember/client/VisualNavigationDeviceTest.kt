@@ -113,6 +113,74 @@ class VisualNavigationDeviceTest {
             scenario.onActivity { assertNotNull(it.currentFocus) }
         }
     }
+    @Test fun homeFitsFiveCardsAndRemoteFocusStaysOnArtwork() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            await { var ready=false;scenario.onActivity { ready=it.window.decorView.findViewWithTag<View>("media_film3")?.isShown==true };ready }
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            var width=0;var height=0
+            scenario.onActivity { a ->
+                listOf("nav_Home","nav_Movies","nav_Series","nav_Favorites","nav_Search","nav_Settings").forEach { tag ->
+                    val button=a.window.decorView.findViewWithTag<Button>(tag)
+                    assertEquals("Navigation label is clipped: $tag",0,button.layout.getEllipsisCount(0))
+                }
+                val cards=listOf("ep1","film0","film1","film2","film3").map { a.window.decorView.findViewWithTag<View>("media_$it") }
+                assertTrue(cards.all { it!=null })
+                cards.forEach { card ->
+                    val image=card.findViewWithTag<View>("card_image")
+                    val rect=android.graphics.Rect();assertTrue(image.getGlobalVisibleRect(rect))
+                    assertEquals(image.width,rect.width());assertEquals(image.height,rect.height())
+                    assertEquals(2.6,image.width.toDouble()/image.height,.06)
+                    assertNull(card.background)
+                }
+                val card=cards.first();width=card.width;height=card.height;card.requestFocus()
+            }
+            repeat(4) { InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_DPAD_RIGHT) }
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();Thread.sleep(200)
+            scenario.onActivity { a ->
+                val focused=a.currentFocus!!;assertEquals("media_film3",focused.tag)
+                assertEquals(width,focused.width);assertEquals(height,focused.height)
+                assertEquals(1f,focused.scaleX,0f);assertNull(focused.background)
+                val image=focused.findViewWithTag<FrameLayout>("card_image")
+                assertNotNull(image.foreground);assertTrue(image.scaleX>1f)
+                val rect=android.graphics.Rect();assertTrue(image.getGlobalVisibleRect(rect));assertTrue(rect.right<=a.window.decorView.width)
+                assertTrue("Focused artwork width is clipped",kotlin.math.abs(rect.width()-image.width*image.scaleX)<=1f)
+                assertTrue("Focused artwork height is clipped",kotlin.math.abs(rect.height()-image.height*image.scaleY)<=1f)
+                assertNull(a.window.decorView.findViewWithTag<View>("media_film2").findViewWithTag<FrameLayout>("card_image").foreground)
+            }
+            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_MENU)
+            await { InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow?.findAccessibilityNodeInfosByText("Refresh")?.isNotEmpty()==true }
+            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+            scenario.onActivity { a -> a.window.decorView.findViewWithTag<View>("media_demo").requestFocus() }
+            fun settledRowTop(): Int {
+                var last=Int.MIN_VALUE;var stable=0
+                await {
+                    var top=0
+                    scenario.onActivity { a -> val xy=IntArray(2);a.window.decorView.findViewWithTag<View>("media_ep1").getLocationOnScreen(xy);top=xy[1] }
+                    stable=if(top==last) stable+1 else 0;last=top
+                    stable>=4
+                }
+                return last
+            }
+            val rowTop=settledRowTop()
+            var before=""
+            fun geometry(view: View): String {
+                val parts=mutableListOf<String>();var v: View?=view
+                while(v!=null) { val xy=IntArray(2);v.getLocationOnScreen(xy);parts.add("${v.javaClass.simpleName} y=${xy[1]} h=${v.height} padding=${v.paddingTop}/${v.paddingBottom}");v=v.parent as? View }
+                return parts.joinToString("; ")
+            }
+            scenario.onActivity { a -> before=geometry(a.window.decorView.findViewWithTag<View>("media_ep1")) }
+            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_DPAD_DOWN)
+            settledRowTop()
+            scenario.onActivity { a ->
+                assertTrue(a.currentFocus?.tag.toString().startsWith("media_"));assertNotEquals("media_demo",a.currentFocus?.tag)
+                val xy=IntArray(2);a.window.decorView.findViewWithTag<View>("media_ep1").getLocationOnScreen(xy)
+                assertEquals("Moving to an already visible row must not shift its layout. Before: $before. After: ${geometry(a.window.decorView.findViewWithTag<View>("media_ep1"))}",rowTop,xy[1])
+            }
+            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_DPAD_UP)
+            scenario.onActivity { a -> assertEquals("media_demo",a.currentFocus?.tag) }
+            capture("home")
+        }
+    }
     @Test fun detailsAndSettingsKeepPrimaryActionsReachable() {
         ActivityScenario.launch<DetailActivity>(Intent(context,DetailActivity::class.java).putExtra("item_id","demo")).use { scenario ->
             await { var ready=false;scenario.onActivity { ready=children(it.window.decorView).filterIsInstance<Button>().any { it.text.toString().contains("Resume") } };ready }

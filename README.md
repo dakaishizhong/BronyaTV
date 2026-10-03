@@ -4,7 +4,7 @@
 
 An Emby playback client for Android TV. Dark movie backdrops, cyan remote focus indicators, and landscape media cards bring your movies and series to the big screen. Supports Android 6.0 and later, with English and Simplified Chinese interfaces.
 
-[Download BronyaTV 1.4.0](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.4.0/BronyaTV-1.4.0-release.apk) · [Release notes](https://github.com/dakaishizhong/BronyaTV/releases) · [Build and development guide (Chinese)](docs/DEVELOPMENT.md)
+[Download BronyaTV 1.4.1](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.4.1/BronyaTV-1.4.1-release.apk) · [Release notes](https://github.com/dakaishizhong/BronyaTV/releases) · [Build and development guide (Chinese)](docs/DEVELOPMENT.md)
 
 ## Features
 
@@ -28,7 +28,7 @@ An Emby playback client for Android TV. Dark movie backdrops, cyan remote focus 
 Version 1.4.0 uses a new signing key. When moving from 1.3.0 or earlier, uninstall the old version, install the new APK, and sign in again. Old application data will not be retained. Later releases using the 1.4.0 key can update this installation. You can also install with ADB:
 
 ```bash
-adb install -r BronyaTV-1.4.0-release.apk
+adb install -r BronyaTV-1.4.1-release.apk
 ```
 
 Enter your server URL, username, and password. HTTPS, custom ports, and reverse proxy paths are supported, for example `https://emby.example.com/emby`. URLs without a scheme use HTTPS. After a successful login, the encrypted session is saved; the password is not stored.
@@ -37,7 +37,7 @@ Enter your server URL, username, and password. HTTPS, custom ports, and reverse 
 
 Use **Settings → Interface & diagnostics → Interface language** to switch between English and Simplified Chinese. You can also choose **Language** on the sign-in screen. The choice persists across restarts; server-provided titles and descriptions keep their original language.
 
-Use the direction buttons to move focus and OK to open content or choose an action. During playback, the Menu button or **Playback options** opens audio, subtitle, speed, aspect ratio, and source controls. The bottom control bar also provides source, subtitle, and audio shortcuts.
+Use the direction buttons to move focus and OK to open content or choose an action. In the browser, press Menu or select **⋯** to access sorting and refresh. During playback, the Menu button or **Playback options** opens audio, subtitle, speed, aspect ratio, and source controls. The bottom control bar also provides source, subtitle, and audio shortcuts.
 
 When the control bar is hidden, briefly press Left / Right to preview a seek position. Hold a direction button to advance by the configured long-press step, then release to seek. Press Back to cancel. When the bar is visible, Left / Right selects controls. Fast-forward and rewind buttons are also supported. The defaults are 10 seconds for a short press and 30 seconds per long-press step; adjust them under **Settings → Remote control**.
 
@@ -53,17 +53,17 @@ Disk read-ahead applies to original-file playback such as MP4 and MKV. HLS / DAS
 
 ## Screenshots
 
-These screenshots show version 1.4.0 with a mock Emby server. Movies and metadata are test fixtures.
+These screenshots show version 1.4.1 with a mock Emby server. Movies and metadata are test fixtures.
 
 | Home | Details |
 | --- | --- |
-| ![BronyaTV home](docs/screenshots/1.4.0/home.png) | ![BronyaTV details](docs/screenshots/1.4.0/detail.png) |
+| ![BronyaTV home](docs/screenshots/1.4.1/home.png) | ![BronyaTV details](docs/screenshots/1.4.1/detail.png) |
 
 | Settings | Playback |
 | --- | --- |
-| ![BronyaTV settings](docs/screenshots/1.4.0/settings.png) | ![BronyaTV playback](docs/screenshots/1.4.0/player.png) |
+| ![BronyaTV settings](docs/screenshots/1.4.1/settings.png) | ![BronyaTV playback](docs/screenshots/1.4.1/player.png) |
 
-![BronyaTV search](docs/screenshots/1.4.0/search.png)
+![BronyaTV search](docs/screenshots/1.4.1/search.png)
 
 ## Development
 

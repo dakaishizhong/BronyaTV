@@ -66,7 +66,7 @@ PlaybackInfo 提供片源版本和地址。接收服务端 URL、签名参数及
 
 `app/src/main/java/tv/ember/client/` 按职责组织：`data` 模型与加密会话，`emby` 服务器接口，`network` 取流，`cache` 磁盘预取与淘汰，`player` 播放与内存缓冲，`monitor` 诊断，`settings` 设置，`ui` 界面。生命周期停止时释放播放器、网络任务和缓冲；海报使用限制并发的请求与有界内存缓存。
 
-1.4.0 的导航与播放快捷入口检查见 `VisualNavigationDeviceTest`，搜索筛选和图片回退契约见 `BrowsePresentationTest`。可给 instrument 命令增加 `-e screenshots true`，将五个页面的实际截图保存在应用外部文件目录；内容来自本地测试服务器。
+1.4.1 的导航、五列卡片边界、图片焦点、可见行位置及播放快捷入口检查见 `VisualNavigationDeviceTest`，搜索筛选和图片回退契约见 `BrowsePresentationTest`。可给 instrument 命令增加 `-e screenshots true`，将五个页面的实际截图保存在应用外部文件目录；内容来自本地测试服务器。
 
 界面默认英文。`i18n/UiText.kt` 集中维护英文、简体中文文案，`{0}` 等参数在两种语言中保持一致；服务器名称、简介和输入的搜索词不翻译。`AppLanguage` 保存语言并给 Activity 设置对应资源配置，返回旧页面时自动重建；枚举标签使用 getter，避免切换后保留旧语言。XML 控件的辅助描述使用 `values` / `values-zh` 资源。`LanguageTest` 检查参数、格式说明符与动态内容保留，设备测试实际操作语言选择窗口并检查保存结果。
 

@@ -4,7 +4,7 @@
 
 面向 Android TV 的 Emby 播放客户端。深色影片背景、青色遥控器焦点和横向媒体卡片，让电影与剧集更适合大屏观看。支持 Android 6.0 及以上系统。
 
-[下载 BronyaTV 1.4.0](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.4.0/BronyaTV-1.4.0-release.apk) · [版本发布说明](https://github.com/dakaishizhong/BronyaTV/releases) · [构建与开发](docs/DEVELOPMENT.md)
+[下载 BronyaTV 1.4.1](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.4.1/BronyaTV-1.4.1-release.apk) · [版本发布说明](https://github.com/dakaishizhong/BronyaTV/releases) · [构建与开发](docs/DEVELOPMENT.md)
 
 ## 功能
 
@@ -28,12 +28,14 @@
 1.4.0 使用新的签名密钥。从 1.3.0 或更早版本迁移时，需要先卸载旧版，再安装新版并重新登录；旧版应用数据不会保留。以后沿用 1.4.0 密钥的版本可覆盖升级。也可使用 ADB：
 
 ```bash
-adb install -r BronyaTV-1.4.0-release.apk
+adb install -r BronyaTV-1.4.1-release.apk
 ```
 
 输入服务器地址、账号和密码。地址支持 HTTPS、自定义端口和反向代理路径，例如 `https://emby.example.com/emby`。省略协议时使用 HTTPS。登录成功后会自动保存加密会话，密码不保存。
 
 ## 遥控器与设置
+
+浏览页面的排序与刷新位于右上角 **⋯** 菜单，也可通过遥控器菜单键打开。
 
 在“Settings → Interface & diagnostics → Interface language”选择“简体中文”；中文界面的入口是“设置 → 界面与诊断 → 界面语言”。登录页也提供语言选择。重启后保留选择，服务器影片名称和简介保持原文。
 
@@ -53,17 +55,17 @@ adb install -r BronyaTV-1.4.0-release.apk
 
 ## 界面
 
-以下截图来自 1.4.0 的模拟 Emby 测试服务器，影片和元数据为测试内容。
+以下截图来自 1.4.1 的模拟 Emby 测试服务器，影片和元数据为测试内容。
 
 | 首页 | 详情 |
 | --- | --- |
-| ![BronyaTV 首页](docs/screenshots/1.4.0/home.png) | ![BronyaTV 详情](docs/screenshots/1.4.0/detail.png) |
+| ![BronyaTV 首页](docs/screenshots/1.4.1/home.png) | ![BronyaTV 详情](docs/screenshots/1.4.1/detail.png) |
 
 | 设置 | 播放 |
 | --- | --- |
-| ![BronyaTV 设置](docs/screenshots/1.4.0/settings.png) | ![BronyaTV 播放](docs/screenshots/1.4.0/player.png) |
+| ![BronyaTV 设置](docs/screenshots/1.4.1/settings.png) | ![BronyaTV 播放](docs/screenshots/1.4.1/player.png) |
 
-![BronyaTV 搜索](docs/screenshots/1.4.0/search.png)
+![BronyaTV 搜索](docs/screenshots/1.4.1/search.png)
 
 ## 开发
 

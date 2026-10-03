@@ -51,13 +51,14 @@ class DetailActivity : TvActivity() {
         val surface=TvUi.backdrop(this)
         PosterLoader.load(lifecycleScope,surface.findViewWithTag("backdrop"),app.api.landscapeUrl(session,video,true),session,true)
         val scroll=ScrollView(this).apply { isFillViewport=true;clipToPadding=false }
-        val root=TvUi.column(this).apply { setPadding(TvUi.dp(this,24),TvUi.dp(this,18),TvUi.dp(this,20),TvUi.dp(this,20)) }
+        val root=TvUi.column(this).apply { setPadding(TvUi.dp(this,TvUi.gutter(context)),TvUi.dp(this,18),TvUi.dp(this,TvUi.gutter(context)),TvUi.dp(this,20)) }
         val top=TvUi.row(this)
         top.addView(TvUi.back(this) { onBackPressedDispatcher.onBackPressed() },LinearLayout.LayoutParams(TvUi.dp(root,32),TvUi.dp(root,32)))
-        top.addView(TvUi.text(this,Tr.text(UiText.MOVIE_DETAILS_249),12f,TvUi.muted),LinearLayout.LayoutParams(-2,-2).apply { marginStart=TvUi.dp(root,12) })
+        top.addView(View(this),LinearLayout.LayoutParams(0,1,1f))
+        top.addView(TextClock(this).apply { format24Hour="HH:mm";format12Hour="HH:mm";textSize=12f;setTextColor(TvUi.text) })
         TvUi.add(root,top,bottom=8)
-        TvUi.add(root,TvUi.text(this,video.name,38f).apply { typeface=Typeface.DEFAULT_BOLD;maxLines=2 },bottom=6)
-        TvUi.add(root,TvUi.text(this,MediaUi.metadata(video),14f),bottom=8)
+        TvUi.add(root,TvUi.text(this,video.name,44f*TvUi.scale(this)).apply { typeface=Typeface.DEFAULT_BOLD;maxLines=2;includeFontPadding=false },bottom=6)
+        TvUi.add(root,TvUi.text(this,"",14f).apply { text=MediaUi.styledMetadata(video) },bottom=8)
         val badges=MediaUi.badgeRow(this,video)
         if(badges.childCount>0) TvUi.add(root,badges,bottom=8)
         TvUi.add(root,TvUi.text(this,video.overview.ifBlank { Tr.text(UiText.NO_OVERVIEW_PROVIDED_BY_THE_SERVER_250) },14f).apply {
@@ -116,11 +117,11 @@ class DetailActivity : TvActivity() {
                 if(items.isNotEmpty()) {
                     TvUi.section(related,Tr.text(UiText.RELATED_TITLES_266))
                     val strip=TvUi.row(this@DetailActivity)
-                    val presenter=LandscapeCardPresenter(app,lifecycleScope)
+                    val presenter=LandscapeCardPresenter(app,lifecycleScope,TvUi.cardWidth(this@DetailActivity))
                     items.forEach { v ->
                         val holder=presenter.onCreateViewHolder(strip);presenter.onBindViewHolder(holder,v)
                         holder.view.setOnClickListener { startActivity(Intent(this@DetailActivity,DetailActivity::class.java).putExtra("item_id",v.id)) }
-                        strip.addView(holder.view,LinearLayout.LayoutParams(TvUi.dp(strip,166),-2).apply { marginEnd=TvUi.dp(strip,8) })
+                        strip.addView(holder.view,LinearLayout.LayoutParams(TvUi.dp(strip,TvUi.cardWidth(this@DetailActivity)),-2).apply { marginEnd=TvUi.dp(strip,TvUi.cardGap(this@DetailActivity)) })
                     }
                     related.addView(HorizontalScrollView(this@DetailActivity).apply { isHorizontalScrollBarEnabled=false;addView(strip) })
                 }

@@ -40,8 +40,9 @@ class SettingsActivity: TvActivity() {
         val body=TvUi.row(this).apply { gravity=Gravity.TOP }
         val side=TvUi.column(this)
         listOf(Tr.text(UiText.PLAYBACK_333),Tr.text(UiText.REMOTE_CONTROL_334),Tr.text(UiText.NETWORK_CACHE_335),Tr.text(UiText.AUDIO_SUBTITLES_336),Tr.text(UiText.ACCOUNT_INFO_337)).forEachIndexed { index,name ->
-            TvUi.add(side,TvUi.button(this,name) { category=index;scroll=null;render("tab${index}") }.apply {
+            TvUi.add(side,TvUi.navigationButton(this,name,index==category) { category=index;scroll=null;render("tab${index}") }.apply {
                 tag="tab${index}";isSelected=index==category;gravity=Gravity.START or Gravity.CENTER_VERTICAL
+                textSize=14f
             },bottom=8)
         }
         body.addView(side,LinearLayout.LayoutParams(TvUi.dp(root,180),-1).apply { marginEnd=TvUi.dp(root,32) })
@@ -174,8 +175,11 @@ class SettingsActivity: TvActivity() {
         val session=app.sessions.load();val item=MediaUi.backdropItem
         if(session!=null && item!=null) PosterLoader.load(lifecycleScope,surface.findViewWithTag("backdrop"),app.api.landscapeUrl(session,item,true),session,true)
         val scroll=ScrollView(this).apply { isFillViewport=true }
-        val root=TvUi.column(this).apply { setPadding(TvUi.dp(this,20),TvUi.dp(this,22),TvUi.dp(this,20),TvUi.dp(this,18)) }
-        TvUi.add(root,TvUi.text(this,Tr.text(UiText.SETTINGS_268),32f).apply { typeface=android.graphics.Typeface.DEFAULT_BOLD },bottom=16)
+        val root=TvUi.column(this).apply { setPadding(TvUi.dp(this,TvUi.gutter(context)),TvUi.dp(this,22),TvUi.dp(this,TvUi.gutter(context)),TvUi.dp(this,18)) }
+        val heading=TvUi.row(this)
+        heading.addView(TvUi.text(this,Tr.text(UiText.SETTINGS_268),32f).apply { typeface=android.graphics.Typeface.DEFAULT_BOLD },LinearLayout.LayoutParams(0,-2,1f))
+        heading.addView(TextClock(this).apply { format24Hour="HH:mm";format12Hour="HH:mm";textSize=12f;setTextColor(TvUi.text) })
+        TvUi.add(root,heading,bottom=16)
         val p=app.settings
         data class Tile(val title: String,val index: Int,val color: Int,val values: List<Pair<String,String>>)
         fun enabled(value: Boolean)=if(value) Tr.text(UiText.ON_186) else Tr.text(UiText.OFF_187)
@@ -192,7 +196,7 @@ class SettingsActivity: TvActivity() {
             val row=TvUi.row(this).apply { gravity=Gravity.TOP }
             group.forEach { tile ->
                 val card=TvUi.column(this).apply { background=TvUi.box(0xE00C1C26.toInt(),14f,0xFF244350.toInt());setPadding(TvUi.dp(this,12),TvUi.dp(this,10),TvUi.dp(this,12),TvUi.dp(this,12)) }
-                val button=TvUi.button(this,tile.title) { category=tile.index;this@SettingsActivity.scroll=null;render("tab${tile.index}") }.apply { gravity=Gravity.START or Gravity.CENTER_VERTICAL;textSize=17f
+                val button=TvUi.navigationButton(this,tile.title,false) { category=tile.index;this@SettingsActivity.scroll=null;render("tab${tile.index}") }.apply { gravity=Gravity.START or Gravity.CENTER_VERTICAL;textSize=17f
                     val icon=TvUi.box(tile.color,8f).apply { setBounds(0,0,TvUi.dp(this@SettingsActivity.window.decorView,18),TvUi.dp(this@SettingsActivity.window.decorView,18)) }
                     setCompoundDrawables(icon,null,null,null);compoundDrawablePadding=TvUi.dp(this,9)
                 }
