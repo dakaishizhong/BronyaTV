@@ -16,12 +16,18 @@ class RangeHttpException(val code: Int, val responseMessage: String, val headers
 class ParallelRangeReader(private val client:OkHttpClient, private val url:String, private val headers:Map<String,String>,
                           private val start:Long, private val requestedLength:Long, private val connections:Int,
                           private val chunkBytes:Int, private val onBytes:(Int)->Unit) : AutoCloseable {
-    private data class Chunk(val bytes:ByteArray)
+    private class Chunk(val bytes:ByteArray) {
+        val lock = Object()
+        var available = 0
+        var done = false
+        var failure: IOException? = null
+    }
     private val executor=Executors.newFixedThreadPool(connections) { task -> Thread(task,"BronyaTVRange").apply { isDaemon=true } }
     private val calls=java.util.Collections.newSetFromMap(ConcurrentHashMap<Call,Boolean>())
     private val closed=AtomicBoolean()
-    private val pending=ArrayDeque<Future<Chunk>>()
+    private val pending=ArrayDeque<Chunk>()
     private val queueLock=Any()
+    private val recycled=ArrayDeque<ByteArray>()
     val bufferedBytes=AtomicLong()
     var responseHeaders:Map<String,List<String>> = emptyMap();private set
     var resolvedUrl=url;private set
@@ -52,10 +58,19 @@ class ParallelRangeReader(private val client:OkHttpClient, private val url:Strin
         while(!closed.get() && pending.size<connections && next<endExclusive) {
             val position=next
             next=minOf(endExclusive,next+chunkBytes)
-            pending.addLast(executor.submit<Chunk> { fetch(position,initial=false) })
+            val length=(next-position).toInt()
+            val bytes=if(length==chunkBytes && recycled.isNotEmpty()) recycled.removeFirst() else ByteArray(length)
+            val chunk = Chunk(bytes)
+            adjustBuffered(chunk.bytes.size.toLong())
+            pending.addLast(chunk)
+            executor.execute {
+                try { fetch(position, initial=false, target=chunk) }
+                catch(e:Exception) { synchronized(chunk.lock) { chunk.failure=e as? IOException ?: IOException(Tr.text(UiText.RANGE_REQUEST_FAILED_117),e) } }
+                finally { synchronized(chunk.lock) { chunk.done=true;chunk.lock.notifyAll() } }
+            }
         }
     }
-    private fun fetch(position:Long,initial:Boolean):Chunk {
+    private fun fetch(position:Long,initial:Boolean,target:Chunk?=null):Chunk {
         if(closed.get()) throw InterruptedIOException(Tr.text(UiText.PARALLEL_RECEIVE_STOPPED_105))
         val limit=if(initial) {
             // Start with a small probe. Waiting for an entire multi-MiB chunk here
@@ -94,7 +109,9 @@ class ParallelRangeReader(private val client:OkHttpClient, private val url:Strin
                 }
                 val length=(to-from+1).toInt()
                 if(closed.get()) throw InterruptedIOException(Tr.text(UiText.PARALLEL_RECEIVE_STOPPED_105))
-                val bytes=ByteArray(length);allocated=length;adjustBuffered(length.toLong())
+                val chunk = target ?: Chunk(ByteArray(length)).also { allocated=length;adjustBuffered(length.toLong()) }
+                val bytes=chunk.bytes
+                check(bytes.size==length)
                 val body=response.body ?: throw IOException(Tr.text(UiText.EMPTY_RANGE_RESPONSE_114))
                 if(body.contentLength()>=0 && body.contentLength()!=length.toLong()) throw IOException(Tr.text(UiText.INCONSISTENT_RANGE_RESPONSE_LENGTH_115))
                 body.byteStream().use { input ->
@@ -105,9 +122,10 @@ class ParallelRangeReader(private val client:OkHttpClient, private val url:Strin
                         if(n<0) throw IOException(Tr.text(UiText.RANGE_RESPONSE_ENDED_EARLY_116))
                         if(n==0) continue
                         cursor+=n;onBytes(n)
+                        synchronized(chunk.lock) { chunk.available=cursor;chunk.lock.notifyAll() }
                     }
                 }
-                allocated=0;Chunk(bytes)
+                allocated=0;chunk.apply { synchronized(lock) { done=true;lock.notifyAll() } }
             }
         } finally {
             if(allocated>0) adjustBuffered(-allocated.toLong())
@@ -115,29 +133,41 @@ class ParallelRangeReader(private val client:OkHttpClient, private val url:Strin
         }
     }
     fun read(buffer:ByteArray,destination:Int,length:Int):Int {
+        require(destination>=0 && length>=0 && destination<=buffer.size-length)
         if(length==0) return 0
-        if(closed.get()) throw InterruptedIOException(Tr.text(UiText.PARALLEL_RECEIVE_STOPPED_105))
-        var chunk=current
-        while(chunk==null || offset==chunk.bytes.size) {
-            chunk?.let { consumed -> adjustBuffered(-consumed.bytes.size.toLong()) }
-            current=null;offset=0
-            val future=synchronized(queueLock) { if(pending.isEmpty()) null else pending.removeFirst() } ?: return -1
-            chunk=try { future.get() } catch(e:ExecutionException) { throw (e.cause as? IOException ?: IOException(Tr.text(UiText.RANGE_REQUEST_FAILED_117),e.cause)) }
-                catch(e:InterruptedException) { Thread.currentThread().interrupt();throw InterruptedIOException(Tr.text(UiText.PARALLEL_RECEIVE_INTERRUPTED_118)) }
-                catch(e:CancellationException) { throw InterruptedIOException(Tr.text(UiText.PARALLEL_RECEIVE_CANCELED_119)) }
+        while(true) {
             if(closed.get()) throw InterruptedIOException(Tr.text(UiText.PARALLEL_RECEIVE_STOPPED_105))
-            current=chunk;fill()
+            val chunk=current ?: return -1
+            synchronized(chunk.lock) {
+                while(offset==chunk.available && !chunk.done && !closed.get()) {
+                    try { chunk.lock.wait() } catch(e:InterruptedException) {
+                        Thread.currentThread().interrupt();throw InterruptedIOException(Tr.text(UiText.PARALLEL_RECEIVE_INTERRUPTED_118))
+                    }
+                }
+                if(closed.get()) throw InterruptedIOException(Tr.text(UiText.PARALLEL_RECEIVE_STOPPED_105))
+                if(offset<chunk.available) {
+                    val n=minOf(length,chunk.available-offset)
+                    chunk.bytes.copyInto(buffer,destination,offset,offset+n);offset+=n
+                    return n
+                }
+                chunk.failure?.let { throw it }
+            }
+            adjustBuffered(-chunk.bytes.size.toLong())
+            current=synchronized(queueLock) {
+                if(chunk.bytes.size==chunkBytes) recycled.addLast(chunk.bytes)
+                if(pending.isEmpty()) null else pending.removeFirst()
+            }
+            offset=0
+            fill()
         }
-        val n=minOf(length,chunk.bytes.size-offset)
-        chunk.bytes.copyInto(buffer,destination,offset,offset+n);offset+=n
-        return n
     }
 
     override fun close() {
         if(!closed.compareAndSet(false,true)) return
         calls.forEach { it.cancel() }
         synchronized(queueLock) {
-            pending.forEach { it.cancel(true) };pending.clear();executor.shutdownNow()
+            (pending.toList()+listOfNotNull(current)).forEach { chunk -> synchronized(chunk.lock) { chunk.lock.notifyAll() } }
+            pending.clear();recycled.clear();executor.shutdownNow()
         }
         current=null
         synchronized(bufferedBytes) { bufferedBytes.set(0) }

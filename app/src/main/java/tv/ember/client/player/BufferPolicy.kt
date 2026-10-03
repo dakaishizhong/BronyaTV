@@ -7,9 +7,14 @@ import tv.ember.client.settings.BufferPreferences
 data class BufferPolicy(val minMs: Int, val maxMs: Int, val startMs: Int, val rebufferMs: Int, val targetBytes: Int, val backBufferMs: Int = 0) {
     companion object {
         fun create(p: BufferPreferences, heapMax: Long, usedHeap: Long = 0, lowMemory: Boolean = false, bitrate: Long = 0, diskBuffering: Boolean = false): BufferPolicy {
-            val requested = if(p.requestedMb==0) (if(diskBuffering) 64L else 96L)*1024*1024 else p.requestedMb.toLong() * 1024 * 1024
+            val mib = 1024L * 1024
+            val requested = if(p.requestedMb==0) (if(bitrate >= 48_000_000) 128L else if(diskBuffering) 64L else 96L)*mib else p.requestedMb.toLong() * mib
             val remaining = (heapMax - usedHeap).coerceAtLeast(0)
-            val safety = minOf(heapMax / (if (lowMemory) 8 else 4), remaining / 3)
+            // Reserve space for UI/decoder growth, both range queues (at most 16 MiB),
+            // and allocator overshoot. The live heap already includes existing UI allocations.
+            val headroom = maxOf(48*mib, heapMax/5) + 16*mib + 8*mib
+            val safety = if(lowMemory) minOf(heapMax/8, (remaining-headroom).coerceAtLeast(0))
+                else minOf(heapMax*3/5, (remaining-headroom).coerceAtLeast(0))
             val bytes = minOf(requested, safety, (Int.MAX_VALUE - 65_536).toLong()).coerceAtLeast(1_048_576).toInt()
             val highBitrate = p.mode == BufferMode.AUTO && bitrate >= 24_000_000 && !lowMemory
             val pre = maxOf(p.prebufferSeconds.coerceIn(2, 60) * 1000, if(highBitrate) 5000 else 2000)

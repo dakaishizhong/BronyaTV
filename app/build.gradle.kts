@@ -1,7 +1,7 @@
 import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
+plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id("org.jetbrains.kotlin.plugin.compose") }
 
 val signingFile = rootProject.file("signing.properties")
 val signingValues = Properties().apply {
@@ -11,13 +11,13 @@ android {
     namespace = "tv.ember.client"
     compileSdk = 36
     buildToolsVersion = "36.0.0"
-    buildFeatures { buildConfig = true }
+    buildFeatures { buildConfig = true; compose = true }
     defaultConfig {
         applicationId = "tv.ember.client"
         minSdk = 23
         targetSdk = 36
-        versionCode = 10
-        versionName = "1.4.1"
+        versionCode = 11
+        versionName = "1.5.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
@@ -54,6 +54,12 @@ kotlin {
 }
 dependencies {
     implementation(project(":decoder-ffmpeg"))
+    implementation(platform("androidx.compose:compose-bom:2026.03.00"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.tv:tv-material:1.1.0")
+    androidTestImplementation(platform("androidx.compose:compose-bom:2026.03.00"))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     implementation("androidx.leanback:leanback:1.2.0")
     implementation("androidx.fragment:fragment-ktx:1.8.9")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.4")

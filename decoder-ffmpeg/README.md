@@ -1,8 +1,7 @@
 # BronyaTV audio decoders
 
-The Java audio renderer/decoder and JNI wrapper are vendored without functional
-changes from [AndroidX Media3 1.11.1](https://github.com/androidx/media/tree/1.11.1/libraries/decoder_ffmpeg),
-under Apache-2.0. The experimental video renderer is intentionally omitted.
+The Java audio renderer/decoder and JNI wrapper are vendored from [AndroidX Media3 1.11.1](https://github.com/androidx/media/tree/1.11.1/libraries/decoder_ffmpeg),
+under Apache-2.0. BronyaTV adds an explicit `audio/mlp` MIME mapping and initializes TrueHD/MLP with the source channel count and sample rate. TrueHD context recreation preserves those values after seeks. The experimental video renderer is intentionally omitted.
 `build.gradle.kts` integrates the audio sources with BronyaTV's Media3 dependencies;
 `consumer-rules.pro` preserves native method names and JNI callback descriptors.
 
@@ -23,7 +22,7 @@ API 23 libraries for armeabi-v7a, arm64-v8a, x86 and x86_64. ELF load segments u
 16 KiB alignment. Builds are staged in ignored `tools/native-audio/`; the stripped
 libraries and their hashes are retained under `src/main/jniLibs/`.
 
-TrueHD/MLP and DTS/DTS-HD use software audio decoding and PCM output. This
+TrueHD/MLP and DTS/DTS-HD prefer the device MediaCodec/vendor decoder and PCM output. Unsupported formats or runtime device decoder failures fall back to this FFmpeg audio renderer. This
 compatibility path does not preserve TrueHD Atmos or DTS:X object metadata and
 does not provide bitstream passthrough for these formats. It does not change E-AC-3/JOC handling. The official JNI wrapper
 recreates the TrueHD decoder context when seeking instead of only flushing it.

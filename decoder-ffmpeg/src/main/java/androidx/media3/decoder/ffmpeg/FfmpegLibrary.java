@@ -130,6 +130,8 @@ public final class FfmpegLibrary {
         return "eac3";
       case MimeTypes.AUDIO_TRUEHD:
         return "truehd";
+      case "audio/mlp":
+        return "mlp";
       case MimeTypes.AUDIO_DTS:
       case MimeTypes.AUDIO_DTS_EXPRESS:
       case MimeTypes.AUDIO_DTS_HD:

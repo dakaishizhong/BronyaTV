@@ -26,11 +26,11 @@ class TvLoadControl private constructor(
     fun markSeek() { seeking = true }
 
     // Explicit forwarding is essential: Kotlin delegation does not forward Java interface defaults.
-    override fun onPrepared(playerId: PlayerId) = delegate.onPrepared(playerId)
+    override fun onPrepared(playerId: PlayerId) { seeking = false; delegate.onPrepared(playerId) }
     override fun onTracksSelected(parameters: LoadControl.Parameters, trackGroups: TrackGroupArray, trackSelections: Array<out ExoTrackSelection?>) =
         delegate.onTracksSelected(parameters, trackGroups, trackSelections)
-    override fun onStopped(playerId: PlayerId) = delegate.onStopped(playerId)
-    override fun onReleased(playerId: PlayerId) = delegate.onReleased(playerId)
+    override fun onStopped(playerId: PlayerId) { seeking = false; delegate.onStopped(playerId) }
+    override fun onReleased(playerId: PlayerId) { seeking = false; delegate.onReleased(playerId) }
     override fun getAllocator(playerId: PlayerId) = delegate.getAllocator(playerId)
     override fun getBackBufferDurationUs(playerId: PlayerId) = policy.backBufferMs*1000L
     override fun retainBackBufferFromKeyframe(playerId: PlayerId) = policy.backBufferMs>0
@@ -38,7 +38,7 @@ class TvLoadControl private constructor(
     override fun shouldContinueLoading(parameters: LoadControl.Parameters): Boolean {
         // A seek can leave retained samples at the target while the new forward buffer is empty.
         // Allow only a small, bounded reserve to obtain playable audio and video at the new position.
-        if (allocator.totalBytesAllocated >= policy.targetBytes) {
+        if (seeking && allocator.totalBytesAllocated >= policy.targetBytes) {
             val reserve = minOf(policy.targetBytes / 4, 4 * 1024 * 1024)
             return parameters.bufferedDurationUs < 500_000L * parameters.playbackSpeed &&
                 allocator.totalBytesAllocated.toLong() < policy.targetBytes.toLong() + reserve
@@ -46,8 +46,9 @@ class TvLoadControl private constructor(
         return delegate.shouldContinueLoading(parameters)
     }
     override fun shouldStartPlayback(parameters: LoadControl.Parameters): Boolean {
+        if (!seeking) return delegate.shouldStartPlayback(parameters)
         // Don't declare a seek ready based on memory retained from the old position alone.
-        val enoughForSeek = seeking && parameters.bufferedDurationUs >= minOf(policy.startMs,1200)*1000L*parameters.playbackSpeed
+        val enoughForSeek = parameters.bufferedDurationUs >= minOf(policy.startMs,1200)*1000L*parameters.playbackSpeed
         val full = allocator.totalBytesAllocated >= policy.targetBytes
         val start = enoughForSeek || if(full) parameters.bufferedDurationUs >= 500_000L * parameters.playbackSpeed
             else delegate.shouldStartPlayback(parameters)

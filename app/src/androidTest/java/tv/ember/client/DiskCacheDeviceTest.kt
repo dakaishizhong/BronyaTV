@@ -27,6 +27,32 @@ import java.util.UUID
 @androidx.annotation.OptIn(UnstableApi::class)
 @RunWith(AndroidJUnit4::class)
 class DiskCacheDeviceTest {
+    @Test fun foregroundBypassesAHoleLockedByReadAheadWithoutBlocking() {
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val folder=File(context.cacheDir,"cache-lock-${UUID.randomUUID()}").apply { mkdirs() }
+        val isolated=object:ContextWrapper(context) {
+            override fun getCacheDir()=folder
+            override fun getApplicationContext():Context=this
+        }
+        val handle=requireNotNull(PlaybackDiskCache(isolated).configure(256,50_000_000,15))
+        val fixture=File(folder,"source.bin").apply { writeBytes(ByteArray(1024) { it.toByte() }) }
+        val key="locked-hole"
+        val hole=handle.cache.startReadWrite(key,0,1024)
+        val source=CacheDataSource.Factory().setCache(handle.cache).setUpstreamDataSourceFactory(FileDataSource.Factory())
+            .setCacheWriteDataSinkFactory(null).setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR).createDataSource()
+        val executor=java.util.concurrent.Executors.newSingleThreadExecutor()
+        try {
+            val result=executor.submit<ByteArray> {
+                source.open(DataSpec.Builder().setUri(Uri.fromFile(fixture)).setKey(key).setLength(1024).build())
+                val bytes=ByteArray(1024);var offset=0
+                while(offset<bytes.size) offset+=source.read(bytes,offset,bytes.size-offset)
+                bytes
+            }.get(2,java.util.concurrent.TimeUnit.SECONDS)
+            assertArrayEquals(fixture.readBytes(),result)
+        } finally {
+            handle.cache.releaseHoleSpan(hole);source.close();executor.shutdownNow();handle.cache.release();folder.deleteRecursively()
+        }
+    }
     @Test fun singleConnectionDetectsIgnoredRangesAndSubtitleLengthsDoNotReplaceVideoLength() {
         val url="https://example.test/video.mkv"
         fun upstream(code:Int,headers:Map<String,List<String>>)=DataSource.Factory {

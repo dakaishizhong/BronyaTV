@@ -12,6 +12,11 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
+import org.junit.Rule
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
 import org.junit.runner.RunWith
 import tv.ember.client.data.Session
 import tv.ember.client.ui.MainActivity
@@ -23,6 +28,7 @@ import androidx.media3.common.Player
 
 @RunWith(AndroidJUnit4::class)
 class VisualNavigationDeviceTest {
+    @get:Rule val compose=createEmptyComposeRule()
     private val fixtureServer get()=InstrumentationRegistry.getArguments().getString("fixtureServer") ?: "http://10.0.2.2:8765"
     private val context get()=InstrumentationRegistry.getInstrumentation().targetContext
     private val app get()=context.applicationContext as BronyaApp
@@ -58,7 +64,7 @@ class VisualNavigationDeviceTest {
         }
         try {
             ActivityScenario.launch(SettingsActivity::class.java).use { scenario ->
-                scenario.onActivity { a -> children(a.window.decorView).filterIsInstance<Button>().first { it.text=="Interface & diagnostics" }.performClick() }
+                compose.onNodeWithText("Interface & diagnostics").performSemanticsAction(SemanticsActions.OnClick) { it() }
                 scenario.onActivity { it.window.decorView.findViewWithTag<View>("interface_language").performClick() }
                 choose(scenario,1)
                 await { var ready=false;scenario.onActivity { a -> ready=children(a.window.decorView).filterIsInstance<TextView>().any { it.text=="界面语言" } };ready }
@@ -68,7 +74,7 @@ class VisualNavigationDeviceTest {
                 scenario.onActivity { a -> assertTrue(children(a.window.decorView).filterIsInstance<Button>().any { it.text=="首页" }) }
             }
             ActivityScenario.launch(SettingsActivity::class.java).use { scenario ->
-                scenario.onActivity { a -> children(a.window.decorView).filterIsInstance<Button>().first { it.text=="界面与诊断" }.performClick() }
+                compose.onNodeWithText("界面与诊断").performSemanticsAction(SemanticsActions.OnClick) { it() }
                 scenario.onActivity { it.window.decorView.findViewWithTag<View>("interface_language").performClick() }
                 choose(scenario,0)
                 await { var ready=false;scenario.onActivity { a -> ready=children(a.window.decorView).filterIsInstance<TextView>().any { it.text=="Interface language" } };ready }
@@ -189,8 +195,9 @@ class VisualNavigationDeviceTest {
         }
         ActivityScenario.launch(SettingsActivity::class.java).use { scenario ->
             capture("settings")
+            compose.onNodeWithText("Network & cache").performSemanticsAction(SemanticsActions.OnClick) { it() }
             scenario.onActivity { a ->
-                children(a.window.decorView).filterIsInstance<Button>().first { it.text=="Network & cache" }.performClick()
+                // The dashboard is Compose; the category editor retains its View controls.
                 a.window.decorView.findViewWithTag<View>("disk_capacity").performClick()
             }
             scenario.onActivity { a -> assertTrue(a.currentFocus!=null) }

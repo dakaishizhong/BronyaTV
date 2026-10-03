@@ -2,6 +2,7 @@ package tv.ember.client.i18n
 
 /** User-facing text. Server titles, descriptions and search queries remain unchanged. */
 enum class UiText(val english: String,val chinese: String) {
+    TOTAL_STREAM_CONNECTIONS("Total stream connections {0}/{1} · peak {2} (foreground + read-ahead)\n","取流总连接 {0}/{1} · 峰值 {2}（前台 + 预取）\n"),
     WAITING_FOR_PLAYBACK_POSITION_001("Waiting for playback position","等待播放位置"),
     LOW_DISK_SPACE_READ_AHEAD_STOPPED_002("Low disk space; read-ahead stopped","磁盘空间不足，停止提前写入"),
     READ_AHEAD_CACHE_READY_003("Read-ahead cache ready","前向缓存已就绪"),
@@ -350,7 +351,7 @@ enum class UiText(val english: String,val chinese: String) {
     CONNECTIONS_346("2 connections","2 路"),
     CONNECTIONS_347("4 connections","4 路"),
     CONNECTIONS_348("8 connections","8 路"),
-    MULTIPLE_CONNECTIONS_CAN_HELP_WITH_HIGH_349("Multiple connections can help with high-bitrate sources. Reopen the video after changing network or cache settings.","多路接收适合高码率片源。更改网络与缓存设置后，重新打开视频生效。"),
+    MULTIPLE_CONNECTIONS_CAN_HELP_WITH_HIGH_349("2 / 4 / 8 connections are shared by playback and disk read-ahead, with playback taking priority. Reopen the video after changing network or cache settings.","2 / 4 / 8 路为前台播放与磁盘预取共享的总并发，播放优先。更改网络与缓存设置后，重新打开视频生效。"),
     NETWORK_RECEIVE_BUFFER_350("Network receive buffer","网络接收缓冲"),
     SYSTEM_AUTO_RECOMMENDED_351("System auto (recommended)","系统自动（推荐）"),
     SYSTEM_AUTO_ALLOWS_NETWORK_WINDOW_TUNING_352("System auto allows network window tuning; manual sizes are limited by the device.","系统自动允许网络窗口自动调节；手动大小受设备限制。"),

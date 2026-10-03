@@ -4,7 +4,7 @@
 
 An Emby playback client for Android TV. Dark movie backdrops, cyan remote focus indicators, and landscape media cards bring your movies and series to the big screen. Supports Android 6.0 and later, with English and Simplified Chinese interfaces.
 
-[Download BronyaTV 1.4.1](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.4.1/BronyaTV-1.4.1-release.apk) · [Release notes](https://github.com/dakaishizhong/BronyaTV/releases) · [Build and development guide (Chinese)](docs/DEVELOPMENT.md)
+[Download BronyaTV 1.5.0](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.5.0/BronyaTV-1.5.0-release.apk) · [Release notes](https://github.com/dakaishizhong/BronyaTV/releases) · [Build and development guide (Chinese)](docs/DEVELOPMENT.md)
 
 ## Features
 
@@ -15,12 +15,12 @@ An Emby playback client for Android TV. Dark movie backdrops, cyan remote focus 
 - Movie details, posters, multiple source selection, and source switching during playback with progress preserved.
 - Original-source playback for MP4, MKV, H.264, and H.265, including HDR / Dolby Vision supported by the device.
 - Audio and subtitle selection, embedded and external SRT / ASS subtitles, subtitle size, and language preferences.
-- Built-in TrueHD / MLP / DTS software audio decoding with PCM output for compatibility. This path does not provide TrueHD Atmos or DTS:X passthrough.
+- TrueHD / MLP / DTS / DTS-HD: prefer device MediaCodec/vendor decoding to PCM, with built-in FFmpeg fallback for unsupported devices or decoder failures. PCM output does not retain TrueHD Atmos or DTS:X object metadata.
 - Configurable short-press and long-press seeking, seek preview, Back to cancel, and jumping to a specific time.
 - Previous / next episode, continuous playback across seasons, configurable intro / outro skipping, and a cancelable next-episode countdown.
 - Playback speed, aspect ratio, default player, and support for installed VLC, MX Player, and Just Player apps.
-- Automatic or 2 / 4 / 8 parallel range connections, prebuffering, back buffer, and memory cache limits.
-- Configurable disk read-ahead cache, cache-first playback, cache clearing, and usage diagnostics.
+- Automatic or 2 / 4 / 8 total stream connections shared by playback and disk read-ahead. Playback gets priority; ranges stream in order with bounded, reusable buffers.
+- Configurable disk read-ahead cache, immediate network fallback for unready cache spans, cache clearing, and usage diagnostics.
 - Performance overlay and playback diagnostics: decoded resolution, first frame, HDR / Dolby path, system audio output, network speed, frame rate, dropped frames, and memory.
 
 ## Installation and login
@@ -28,7 +28,7 @@ An Emby playback client for Android TV. Dark movie backdrops, cyan remote focus 
 Version 1.4.0 uses a new signing key. When moving from 1.3.0 or earlier, uninstall the old version, install the new APK, and sign in again. Old application data will not be retained. Later releases using the 1.4.0 key can update this installation. You can also install with ADB:
 
 ```bash
-adb install -r BronyaTV-1.4.1-release.apk
+adb install -r BronyaTV-1.5.0-release.apk
 ```
 
 Enter your server URL, username, and password. HTTPS, custom ports, and reverse proxy paths are supported, for example `https://emby.example.com/emby`. URLs without a scheme use HTTPS. After a successful login, the encrypted session is saved; the password is not stored.
@@ -43,7 +43,7 @@ When the control bar is hidden, briefly press Left / Right to preview a seek pos
 
 Under **Settings → Playback**, enable automatic next-episode playback and set intro / outro skip durations from 0 to 600 seconds; 0 disables skipping. These settings apply to episodes. Resuming past the intro does not move playback backward. Press Back during the outro countdown to cancel skipping.
 
-**Settings → Network & cache** controls parallel connections, receive buffers, memory cache limits, and disk cache without root access. Connection count and network receive buffers default to automatic. Memory usage is limited by the device's available memory.
+**Settings → Network & cache** controls parallel connections, receive buffers, memory cache limits, and disk cache without root access. Connection count and network receive buffers default to automatic. High-bitrate automatic buffering targets up to 128 MiB, typically 64–128 MiB when heap headroom allows. Smaller heaps and memory pressure reduce the budget. Startup and rebuffering use Media3 load control; the short recovery threshold applies only to seeks.
 
 Disk cache defaults to automatic capacity, up to 512 MiB, with 60 seconds of read-ahead. It can be disabled or set to 256 MiB–8 GiB, with 15 seconds–5 minutes of read-ahead. Read-ahead is estimated from the source bitrate and uses at most three quarters of capacity. Capacity shrinks with available storage, reserving 256 MiB; older data is evicted when full. Changes take effect when a video is reopened. Clearing disk cache removes playback cache only.
 
@@ -53,20 +53,20 @@ Disk read-ahead applies to original-file playback such as MP4 and MKV. HLS / DAS
 
 ## Screenshots
 
-These screenshots show version 1.4.1 with a mock Emby server. Movies and metadata are test fixtures.
+These screenshots show version 1.5.0 with a mock Emby server. Movies and metadata are test fixtures.
 
 | Home | Details |
 | --- | --- |
-| ![BronyaTV home](docs/screenshots/1.4.1/home.png) | ![BronyaTV details](docs/screenshots/1.4.1/detail.png) |
+| ![BronyaTV home](docs/screenshots/1.5.0/home.png) | ![BronyaTV details](docs/screenshots/1.5.0/detail.png) |
 
 | Settings | Playback |
 | --- | --- |
-| ![BronyaTV settings](docs/screenshots/1.4.1/settings.png) | ![BronyaTV playback](docs/screenshots/1.4.1/player.png) |
+| ![BronyaTV settings](docs/screenshots/1.5.0/settings.png) | ![BronyaTV playback](docs/screenshots/1.5.0/player.png) |
 
-![BronyaTV search](docs/screenshots/1.4.1/search.png)
+![BronyaTV search](docs/screenshots/1.5.0/search.png)
 
 ## Development
 
-Built with Kotlin, Leanback, and AndroidX Media3 using native TV views, recycled lists, and bounded memory caches. See the [development guide (Chinese)](docs/DEVELOPMENT.md) for build and test instructions and [releases](https://github.com/dakaishizhong/BronyaTV/releases) for changes and validation.
+Built with Kotlin, Compose for TV / TV Material, Leanback, and AndroidX Media3. The settings dashboard uses Compose with DPAD navigation; category editors, browsing, and the player retain their existing implementation during incremental migration. See the [development guide (Chinese)](docs/DEVELOPMENT.md) for build and test instructions and [releases](https://github.com/dakaishizhong/BronyaTV/releases) for changes and validation.
 
 Licensed under [GPL-3.0](LICENSE).

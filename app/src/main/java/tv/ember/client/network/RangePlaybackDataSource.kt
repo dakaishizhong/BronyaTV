@@ -33,7 +33,7 @@ class RangePlaybackDataSource(private val singleFactory:DataSource.Factory,priva
         if(main && !status.rangeUnsupported && status.requestedConnections>1 && dataSpec.httpMethod==DataSpec.HTTP_METHOD_GET && dataSpec.length!=0L &&
             status.budgetBytes >= 65536*(status.requestedConnections+1) &&
             !videoUrl.substringBefore('?').endsWith(".m3u8",true)) {
-            val chunk=(status.budgetBytes/(status.requestedConnections+1)/65536*65536).coerceIn(65536,2*1024*1024)
+            val chunk=(status.budgetBytes/(status.requestedConnections+1)/65536*65536).coerceIn(65536,512*1024)
             val r=ParallelRangeReader(client,videoUrl,headers+dataSpec.httpRequestHeaders,dataSpec.position,dataSpec.length,
                 status.requestedConnections,chunk,::transferred)
             reader=r;status.reader=r

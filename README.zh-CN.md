@@ -4,7 +4,7 @@
 
 面向 Android TV 的 Emby 播放客户端。深色影片背景、青色遥控器焦点和横向媒体卡片，让电影与剧集更适合大屏观看。支持 Android 6.0 及以上系统。
 
-[下载 BronyaTV 1.4.1](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.4.1/BronyaTV-1.4.1-release.apk) · [版本发布说明](https://github.com/dakaishizhong/BronyaTV/releases) · [构建与开发](docs/DEVELOPMENT.md)
+[下载 BronyaTV 1.5.0](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.5.0/BronyaTV-1.5.0-release.apk) · [版本发布说明](https://github.com/dakaishizhong/BronyaTV/releases) · [构建与开发](docs/DEVELOPMENT.md)
 
 ## 功能
 
@@ -15,12 +15,12 @@
 - 影片详情、海报、多片源选择，播放中切换片源并保留进度。
 - 原始片源播放，支持 MP4、MKV、H.264、H.265，以及设备支持的 HDR / Dolby Vision。
 - 音轨和字幕选择、内嵌与外置 SRT / ASS 字幕、字幕大小和语言偏好。
-- 内置 TrueHD / MLP / DTS 软件音频解码，使用 PCM 兼容输出；此路径不提供 TrueHD Atmos 或 DTS:X 直通。
+- TrueHD / MLP / DTS / DTS-HD 优先设备 MediaCodec / 厂商解码器输出 PCM；设备不支持或解码失败时回退内置 FFmpeg。PCM 输出不保留 TrueHD Atmos 或 DTS:X 对象元数据。
 - 短按、长按快进与快退，步长分别可调；跳转预览、返回取消、指定时间跳转。
 - 上一集、下一集、跨季连续播放；可调片头片尾秒数，片尾连播倒计时可取消。
 - 播放速度、画面比例、默认播放器；支持调用已安装的 VLC、MX Player、Just Player。
-- 自动或 2 / 4 / 8 路分段接收，预缓冲、回退缓存及内存缓存上限设置。
-- 可调容量的磁盘提前缓存，播放时优先读取缓存，支持清理和缓存占用诊断。
+- 自动或 2 / 4 / 8 路取流总并发由前台和磁盘预取共享，播放优先；分片按顺序边接收边输出，复用有界缓冲。
+- 可调容量的磁盘提前缓存；缓存未就绪时立即走网络，支持清理和缓存占用诊断。
 - 性能信息与播放诊断：实际解码分辨率、首帧、HDR / 杜比路径、系统音频输出、网络速度、帧率、丢帧和内存。
 
 ## 安装与登录
@@ -28,7 +28,7 @@
 1.4.0 使用新的签名密钥。从 1.3.0 或更早版本迁移时，需要先卸载旧版，再安装新版并重新登录；旧版应用数据不会保留。以后沿用 1.4.0 密钥的版本可覆盖升级。也可使用 ADB：
 
 ```bash
-adb install -r BronyaTV-1.4.1-release.apk
+adb install -r BronyaTV-1.5.0-release.apk
 ```
 
 输入服务器地址、账号和密码。地址支持 HTTPS、自定义端口和反向代理路径，例如 `https://emby.example.com/emby`。省略协议时使用 HTTPS。登录成功后会自动保存加密会话，密码不保存。
@@ -55,17 +55,17 @@ adb install -r BronyaTV-1.4.1-release.apk
 
 ## 界面
 
-以下截图来自 1.4.1 的模拟 Emby 测试服务器，影片和元数据为测试内容。
+以下截图来自 1.5.0 的模拟 Emby 测试服务器，影片和元数据为测试内容。
 
 | 首页 | 详情 |
 | --- | --- |
-| ![BronyaTV 首页](docs/screenshots/1.4.1/home.png) | ![BronyaTV 详情](docs/screenshots/1.4.1/detail.png) |
+| ![BronyaTV 首页](docs/screenshots/1.5.0/home.png) | ![BronyaTV 详情](docs/screenshots/1.5.0/detail.png) |
 
 | 设置 | 播放 |
 | --- | --- |
-| ![BronyaTV 设置](docs/screenshots/1.4.1/settings.png) | ![BronyaTV 播放](docs/screenshots/1.4.1/player.png) |
+| ![BronyaTV 设置](docs/screenshots/1.5.0/settings.png) | ![BronyaTV 播放](docs/screenshots/1.5.0/player.png) |
 
-![BronyaTV 搜索](docs/screenshots/1.4.1/search.png)
+![BronyaTV 搜索](docs/screenshots/1.5.0/search.png)
 
 ## 开发
 

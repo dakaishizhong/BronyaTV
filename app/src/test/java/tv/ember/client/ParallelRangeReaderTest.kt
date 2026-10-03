@@ -147,4 +147,59 @@ class ParallelRangeReaderTest {
             } finally { reader.close();executor.shutdownNow() }
         }
     }
+    @Test fun slowHeadEmitsAvailableBytesBeforeTheWholeRangeArrives() {
+        MockWebServer().use { server ->
+            server.dispatcher=object:Dispatcher() { override fun dispatch(request:RecordedRequest):MockResponse {
+                return response(request).apply {
+                    if(!request.getHeader("Range")!!.startsWith("bytes=0-")) throttleBody(8192,200,TimeUnit.MILLISECONDS)
+                }
+            } }
+            val executor=Executors.newSingleThreadExecutor()
+            ParallelRangeReader(client(),server.url("/file").toString(),mapOf("X-Test-Signature" to "signed-value"),0,400000,4,chunk) {}.use { reader ->
+                try {
+                    reader.open();val probe=ByteArray(65536);var consumed=0
+                    while(consumed<probe.size) consumed+=reader.read(probe,consumed,probe.size-consumed)
+                    assertArrayEquals(bytes.copyOfRange(0,65536),probe)
+                    val part=ByteArray(8192)
+                    val n=executor.submit<Int> { reader.read(part,0,part.size) }.get(2,TimeUnit.SECONDS)
+                    assertTrue(n>0);assertArrayEquals(bytes.copyOfRange(65536,65536+n),part.copyOf(n))
+                    assertTrue(reader.bufferedBytes.get()<=5L*chunk)
+                } finally { executor.shutdownNow() }
+            }
+        }
+    }
+    @Test fun fiftyMbpsConsumerRemainsOrderedAndBoundedOverRepeatedFourWayRanges() {
+        val source=ByteArray(48*1024*1024) { (it%251).toByte() }
+        MockWebServer().use { server ->
+            server.dispatcher=object:Dispatcher() { override fun dispatch(request:RecordedRequest):MockResponse {
+                val parts=request.getHeader("Range")!!.removePrefix("bytes=").split('-')
+                val start=parts[0].toInt();val end=minOf(parts[1].toInt(),source.lastIndex)
+                return MockResponse().setResponseCode(206).setHeader("Content-Range","bytes $start-$end/${source.size}")
+                    .setHeader("ETag","stable").setBody(Buffer().write(source,start,end-start+1))
+                    .throttleBody(65536,20,TimeUnit.MILLISECONDS)
+            } }
+            val budget=StreamTransferBudget(4)
+            val http=client().newBuilder().addInterceptor(budget.interceptor()).build()
+            ParallelRangeReader(http,server.url("/high-bitrate").toString(),emptyMap(),0,-1,4,512*1024) {}.use { reader ->
+                reader.open();Thread.sleep(200)
+                val digest=java.security.MessageDigest.getInstance("SHA-256")
+                val buffer=ByteArray(65536);var consumed=0L;var slowest=0L;var peak=0L
+                val clock=System.nanoTime()
+                while(true) {
+                    val before=System.nanoTime();val n=reader.read(buffer,0,buffer.size)
+                    slowest=maxOf(slowest,System.nanoTime()-before)
+                    if(n<0) break
+                    digest.update(buffer,0,n);consumed+=n;peak=maxOf(peak,reader.bufferedBytes.get())
+                    val due=clock+consumed*1_000_000_000L/6_250_000L
+                    val delay=due-System.nanoTime()
+                    if(delay>0) TimeUnit.NANOSECONDS.sleep(delay)
+                }
+                assertEquals(source.size.toLong(),consumed)
+                assertArrayEquals(java.security.MessageDigest.getInstance("SHA-256").digest(source),digest.digest())
+                assertTrue("No multi-second range stalls",slowest<TimeUnit.MILLISECONDS.toNanos(500))
+                assertTrue(peak<=5L*512*1024);assertEquals(4,budget.peakCount)
+                println("50 Mbps paced receive: ${consumed/1048576} MiB, longest read ${slowest/1000000} ms, queue peak ${peak/1024} KiB, connections ${budget.peakCount}")
+            }
+        }
+    }
 }

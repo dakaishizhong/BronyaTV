@@ -20,15 +20,16 @@ import tv.ember.client.settings.*
 class SettingsActivity: TvActivity() {
     private var taps=0
     private var category=-1
+    private var dashboardFocus=0
     private var scroll: ScrollView?=null
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         onBackPressedDispatcher.addCallback(this,object: androidx.activity.OnBackPressedCallback(true) {
             override fun handleOnBackPressed() { if(category>=0) { category=-1;scroll=null;render() } else finish() }
         })
-        category=savedInstanceState?.getInt("category") ?: -1;render()
+        category=savedInstanceState?.getInt("category") ?: -1;dashboardFocus=savedInstanceState?.getInt("dashboardFocus") ?: 0;render()
     }
-    override fun onSaveInstanceState(outState: Bundle) { outState.putInt("category",category);super.onSaveInstanceState(outState) }
+    override fun onSaveInstanceState(outState: Bundle) { outState.putInt("category",category);outState.putInt("dashboardFocus",dashboardFocus);super.onSaveInstanceState(outState) }
     private fun render(focus: String?=currentFocus?.tag as? String) {
         if(category<0) { renderDashboard();return }
         val oldScroll=if(focus?.startsWith("tab")!=true) scroll?.scrollY ?: 0 else 0
@@ -174,46 +175,32 @@ class SettingsActivity: TvActivity() {
         val surface=TvUi.backdrop(this)
         val session=app.sessions.load();val item=MediaUi.backdropItem
         if(session!=null && item!=null) PosterLoader.load(lifecycleScope,surface.findViewWithTag("backdrop"),app.api.landscapeUrl(session,item,true),session,true)
-        val scroll=ScrollView(this).apply { isFillViewport=true }
-        val root=TvUi.column(this).apply { setPadding(TvUi.dp(this,TvUi.gutter(context)),TvUi.dp(this,22),TvUi.dp(this,TvUi.gutter(context)),TvUi.dp(this,18)) }
-        val heading=TvUi.row(this)
-        heading.addView(TvUi.text(this,Tr.text(UiText.SETTINGS_268),32f).apply { typeface=android.graphics.Typeface.DEFAULT_BOLD },LinearLayout.LayoutParams(0,-2,1f))
-        heading.addView(TextClock(this).apply { format24Hour="HH:mm";format12Hour="HH:mm";textSize=12f;setTextColor(TvUi.text) })
-        TvUi.add(root,heading,bottom=16)
         val p=app.settings
-        data class Tile(val title: String,val index: Int,val color: Int,val values: List<Pair<String,String>>)
         fun enabled(value: Boolean)=if(value) Tr.text(UiText.ON_186) else Tr.text(UiText.OFF_187)
         fun language(value: String)=when(value) { "zh" -> Tr.text(UiText.CHINESE_370);"en" -> Tr.text(UiText.ENGLISH_371);"ja" -> Tr.text(UiText.JAPANESE_372);"off" -> Tr.text(UiText.OFF_BY_DEFAULT_374);"" -> Tr.text(UiText.AUTO_220);else -> value }
         val tiles=listOf(
-            Tile(Tr.text(UiText.PLAYBACK_333),0,TvUi.accent,listOf(Tr.text(UiText.DEFAULT_PLAYER_338) to p.player.label,Tr.text(UiText.ASPECT_RATIO_182) to when(p.resizeMode) { 4 -> Tr.text(UiText.CROP_TO_FILL_200);3 -> Tr.text(UiText.STRETCH_201);else -> Tr.text(UiText.FIT_199) },Tr.text(UiText.AUTO_PLAY_NEXT_EPISODE_340) to enabled(p.autoNextEpisode),Tr.text(UiText.INTRO_OUTRO_SKIP_385) to Tr.text(UiText.SEC_386 ,(p.introSeconds),(p.outroSeconds)))),
-            Tile(Tr.text(UiText.AUDIO_SUBTITLES_336),3,0xFFFF4B86.toInt(),listOf(Tr.text(UiText.PREFERRED_AUDIO_373) to language(p.audioLanguage),Tr.text(UiText.SUBTITLE_PREFERENCE_375) to language(p.subtitleLanguage),Tr.text(UiText.SUBTITLE_SIZE_183) to "${p.subtitleScale}%",Tr.text(UiText.AUDIO_AND_SUBTITLES_387) to Tr.text(UiText.CHANGE_DURING_PLAYBACK_388))),
-            Tile(Tr.text(UiText.NETWORK_CACHE_335),2,0xFF35A2FF.toInt(),listOf(Tr.text(UiText.PARALLEL_RECEIVE_345) to if(p.streamConnections==0) Tr.text(UiText.AUTO_220) else Tr.text(UiText.CONNECTIONS_221 ,(p.streamConnections)),Tr.text(UiText.MEMORY_CACHE_389) to if(p.bufferMb==0) Tr.text(UiText.AUTO_220) else "${p.bufferMb} MB",Tr.text(UiText.DISK_CACHE_390) to when(p.diskCacheMb) { -1 -> Tr.text(UiText.AUTO_220);0 -> Tr.text(UiText.OFF_187);else -> "${p.diskCacheMb} MB" },Tr.text(UiText.READ_AHEAD_391) to Tr.text(UiText.SEC_013 ,(p.diskAheadSeconds)))),
-            Tile(Tr.text(UiText.REMOTE_CONTROL_334),1,0xFF80D13A.toInt(),listOf(Tr.text(UiText.SHORT_PRESS_SEEK_392) to Tr.text(UiText.SEC_013 ,(p.seekSeconds)),Tr.text(UiText.LONG_PRESS_STEP_393) to Tr.text(UiText.SEC_013 ,(p.longSeekSeconds)),Tr.text(UiText.LEFT_RIGHT_394) to Tr.text(UiText.PREVIEW_SEEK_395),Tr.text(UiText.BACK_BUTTON_396) to Tr.text(UiText.CANCEL_PREVIEW_397))),
-            Tile(Tr.text(UiText.INTERFACE_DIAGNOSTICS_398),4,0xFFFF983D.toInt(),listOf(Tr.text(UiText.INTERFACE_LANGUAGE) to if(tv.ember.client.i18n.AppLanguage.read(this)=="zh") "简体中文" else "English",Tr.text(UiText.PERFORMANCE_OVERLAY_399) to enabled(p.osd),Tr.text(UiText.MOVIE_BACKDROP_401) to Tr.text(UiText.SERVER_IMAGES_402),Tr.text(UiText.VERSION_403) to tv.ember.client.BuildConfig.VERSION_NAME)),
-            Tile(Tr.text(UiText.ACCOUNT_INFO_337),4,0xFFAE59FF.toInt(),listOf(Tr.text(UiText.ACCOUNT_279) to session?.userName.orEmpty(),Tr.text(UiText.SERVICE_404) to "Emby",Tr.text(UiText.APPLICATION_405) to "BronyaTV",Tr.text(UiText.VERSION_403) to tv.ember.client.BuildConfig.VERSION_NAME))
+            SettingsTile(Tr.text(UiText.PLAYBACK_333),0,TvUi.accent,listOf(Tr.text(UiText.DEFAULT_PLAYER_338) to p.player.label,Tr.text(UiText.ASPECT_RATIO_182) to when(p.resizeMode) { 4 -> Tr.text(UiText.CROP_TO_FILL_200);3 -> Tr.text(UiText.STRETCH_201);else -> Tr.text(UiText.FIT_199) },Tr.text(UiText.AUTO_PLAY_NEXT_EPISODE_340) to enabled(p.autoNextEpisode),Tr.text(UiText.INTRO_OUTRO_SKIP_385) to Tr.text(UiText.SEC_386 ,(p.introSeconds),(p.outroSeconds)))),
+            SettingsTile(Tr.text(UiText.AUDIO_SUBTITLES_336),3,0xFFFF4B86.toInt(),listOf(Tr.text(UiText.PREFERRED_AUDIO_373) to language(p.audioLanguage),Tr.text(UiText.SUBTITLE_PREFERENCE_375) to language(p.subtitleLanguage),Tr.text(UiText.SUBTITLE_SIZE_183) to "${p.subtitleScale}%",Tr.text(UiText.AUDIO_AND_SUBTITLES_387) to Tr.text(UiText.CHANGE_DURING_PLAYBACK_388))),
+            SettingsTile(Tr.text(UiText.NETWORK_CACHE_335),2,0xFF35A2FF.toInt(),listOf(Tr.text(UiText.PARALLEL_RECEIVE_345) to if(p.streamConnections==0) Tr.text(UiText.AUTO_220) else Tr.text(UiText.CONNECTIONS_221 ,(p.streamConnections)),Tr.text(UiText.MEMORY_CACHE_389) to if(p.bufferMb==0) Tr.text(UiText.AUTO_220) else "${p.bufferMb} MB",Tr.text(UiText.DISK_CACHE_390) to when(p.diskCacheMb) { -1 -> Tr.text(UiText.AUTO_220);0 -> Tr.text(UiText.OFF_187);else -> "${p.diskCacheMb} MB" },Tr.text(UiText.READ_AHEAD_391) to Tr.text(UiText.SEC_013 ,(p.diskAheadSeconds)))),
+            SettingsTile(Tr.text(UiText.REMOTE_CONTROL_334),1,0xFF80D13A.toInt(),listOf(Tr.text(UiText.SHORT_PRESS_SEEK_392) to Tr.text(UiText.SEC_013 ,(p.seekSeconds)),Tr.text(UiText.LONG_PRESS_STEP_393) to Tr.text(UiText.SEC_013 ,(p.longSeekSeconds)),Tr.text(UiText.LEFT_RIGHT_394) to Tr.text(UiText.PREVIEW_SEEK_395),Tr.text(UiText.BACK_BUTTON_396) to Tr.text(UiText.CANCEL_PREVIEW_397))),
+            SettingsTile(Tr.text(UiText.INTERFACE_DIAGNOSTICS_398),4,0xFFFF983D.toInt(),listOf(Tr.text(UiText.INTERFACE_LANGUAGE) to if(tv.ember.client.i18n.AppLanguage.read(this)=="zh") "简体中文" else "English",Tr.text(UiText.PERFORMANCE_OVERLAY_399) to enabled(p.osd),Tr.text(UiText.MOVIE_BACKDROP_401) to Tr.text(UiText.SERVER_IMAGES_402),Tr.text(UiText.VERSION_403) to tv.ember.client.BuildConfig.VERSION_NAME)),
+            SettingsTile(Tr.text(UiText.ACCOUNT_INFO_337),4,0xFFAE59FF.toInt(),listOf(Tr.text(UiText.ACCOUNT_279) to session?.userName.orEmpty(),Tr.text(UiText.SERVICE_404) to "Emby",Tr.text(UiText.APPLICATION_405) to "BronyaTV",Tr.text(UiText.VERSION_403) to tv.ember.client.BuildConfig.VERSION_NAME))
         )
-        tiles.chunked(3).forEach { group ->
-            val row=TvUi.row(this).apply { gravity=Gravity.TOP }
-            group.forEach { tile ->
-                val card=TvUi.column(this).apply { background=TvUi.box(0xE00C1C26.toInt(),14f,0xFF244350.toInt());setPadding(TvUi.dp(this,12),TvUi.dp(this,10),TvUi.dp(this,12),TvUi.dp(this,12)) }
-                val button=TvUi.navigationButton(this,tile.title,false) { category=tile.index;this@SettingsActivity.scroll=null;render("tab${tile.index}") }.apply { gravity=Gravity.START or Gravity.CENTER_VERTICAL;textSize=17f
-                    val icon=TvUi.box(tile.color,8f).apply { setBounds(0,0,TvUi.dp(this@SettingsActivity.window.decorView,18),TvUi.dp(this@SettingsActivity.window.decorView,18)) }
-                    setCompoundDrawables(icon,null,null,null);compoundDrawablePadding=TvUi.dp(this,9)
-                }
-                TvUi.add(card,button,height=TvUi.dp(card,38),bottom=10)
-                tile.values.forEach { (label,value) ->
-                    val setting=TvUi.row(this)
-                    setting.addView(TvUi.text(this,label,12f,TvUi.muted),LinearLayout.LayoutParams(0,-2,1f))
-                    setting.addView(TvUi.text(this,value,12f,if(value==Tr.text(UiText.ON_186)) TvUi.accent else TvUi.text).apply { maxLines=1;maxWidth=TvUi.dp(this,105);ellipsize=android.text.TextUtils.TruncateAt.END })
-                    TvUi.add(card,setting,height=TvUi.dp(card,27),bottom=2)
-                }
-                row.addView(card,LinearLayout.LayoutParams(0,-2,1f).apply { marginEnd=TvUi.dp(row,9) })
+        val compose=androidx.compose.ui.platform.ComposeView(this).apply {
+            setViewCompositionStrategy(androidx.compose.ui.platform.ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                SettingsDashboard(tiles,dashboardFocus,TvUi.scale(this@SettingsActivity),
+                    onFocused={ dashboardFocus=it },
+                    onOpen={ index -> category=index;this@SettingsActivity.scroll=null;render("tab$index") },
+                    onFocusSidebar={ window.decorView.findViewWithTag<View>("nav_${Tr.text(UiText.SETTINGS_268)}")?.requestFocus() })
             }
-            TvUi.add(root,row,bottom=10)
         }
-        scroll.addView(root);surface.addView(scroll);setContentView(TvUi.shell(this,Tr.text(UiText.SETTINGS_268),::navigate,surface))
-        root.post { root.findFocus() ?: (root.getChildAt(1) as? LinearLayout)?.getChildAt(0)?.let { (it as? LinearLayout)?.getChildAt(0)?.requestFocus() } }
+        surface.addView(compose,FrameLayout.LayoutParams(-1,-1))
+        // Horizontal LinearLayout's baseline probe measures weighted children with infinite height.
+        // Compose scrolling requires a bounded viewport even during that preliminary measurement.
+        setContentView(TvUi.shell(this,Tr.text(UiText.SETTINGS_268),::navigate,surface).apply { isBaselineAligned=false })
     }
+
     private fun duration(title: String,value: Int,save: (Int)->Unit) {
         val input=TvUi.input(this,Tr.text(UiText.SEC_406)).apply { inputType=InputType.TYPE_CLASS_NUMBER;setText("${value}");selectAll() }
         val dialog=TvUi.dialog(this).setTitle(title).setMessage(Tr.text(UiText.ENTER_SECONDS_DISABLES_SKIPPING_MAXIMUM_407))

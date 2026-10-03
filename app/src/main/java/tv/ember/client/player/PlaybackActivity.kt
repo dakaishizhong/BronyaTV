@@ -89,6 +89,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
     private var receiveSocketFactory: ReceiveBufferSocketFactory? = null
     private var transport:HttpTransportMonitor?=null
     private var rangeStatus:RangePlaybackStatus?=null
+    private var transferBudget:tv.ember.client.network.StreamTransferBudget?=null
     private var lastNetwork:NetworkSample?=null
     private var session: Session? = null
     private var item: VideoItem? = null
@@ -96,6 +97,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
     private var position = 0L
     private var wantedPlay = true
     private var softwareVideo = false
+    private var softwareAudio = false
     private val seekRecovery = SeekRecovery()
     private var trackPreferences: TrackSelectionParameters? = null
     private val skippedExternalSubtitles = mutableSetOf<Int>()
@@ -306,7 +308,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
                 diskPrefetch?.close();diskPrefetch=null
                 startedReported=false;playerView.player=null;player?.removeListener(this@PlaybackActivity);player?.release();player=null
                 // Track overrides reference the old item's groups; language preferences carry to the new item.
-                position=0;wantedPlay=true;trackPreferences=null;softwareVideo=false;retryAttempt=0
+                position=0;wantedPlay=true;trackPreferences=null;softwareVideo=false;softwareAudio=false;retryAttempt=0
                 forceOriginalRoute=false;refreshedRejectedUrl=false;lastRejectedUrlRefresh=0;lastProgressReport=0
                 skippedExternalSubtitles.clear();introHandled=false;outroHandled=false
                 neighbors=EpisodeNeighbors();neighborsForId="";item=video;spec=prepared
@@ -388,16 +390,17 @@ class PlaybackActivity : TvActivity(), Player.Listener {
         val currentStats=PlayerStatsMonitor().apply { sourceBitrate=current.version.bitrate };stats=currentStats
         val currentNetwork=NetworkMonitor(this);network=currentNetwork;lastNetwork=null
         val selector = MediaCodecSelector { mime, secure, tunnel ->
-            val codecs = MediaCodecSelector.DEFAULT.getDecoderInfos(mime, secure, tunnel)
+            val codecs = DeviceAudioCodecs.query(mime, secure, tunnel)
             codecs.forEach(currentStats::registerCodec)
             if(softwareVideo && MimeTypes.isVideo(mime)) codecs.filter { it.softwareOnly }
             else codecs.sortedBy { if(it.hardwareAccelerated) 0 else 1 }
         }
-        val renderers = TvRenderersFactory(this).setEnableDecoderFallback(true).setMediaCodecSelector(selector)
+        val renderers = TvRenderersFactory(this,softwareAudio).setEnableDecoderFallback(true).setMediaCodecSelector(selector)
         receiveSocketFactory = ReceiveBufferSocketFactory(app.settings.receiveBufferKb * 1024)
         val streamPlan=StreamPolicy.create(app.settings.streamConnections,current.version.bitrate,r.maxMemory(),r.totalMemory()-r.freeMemory(),mem.lowMemory,disk!=null)
         val prefetchBudget=streamPlan.budgetBytes
         val connections=streamPlan.connections
+        val transferBudget=tv.ember.client.network.StreamTransferBudget(connections).also { this.transferBudget=it }
         val transportMonitor=HttpTransportMonitor(receiveSocketFactory);transport=transportMonitor
         val builder=HttpClient.playback.newBuilder().socketFactory(receiveSocketFactory!!)
             .connectionPool(okhttp3.ConnectionPool(connections,30,java.util.concurrent.TimeUnit.SECONDS))
@@ -410,14 +413,16 @@ class PlaybackActivity : TvActivity(), Player.Listener {
             }
         // HTTP/2 multiplexing shares one TCP receive window. Range workers need independent TCP connections.
         if(connections>1) builder.protocols(listOf(okhttp3.Protocol.HTTP_1_1))
-        val httpClient=builder.build();playbackHttp=httpClient
+        val transportClient=builder.build()
+        val httpClient=transportClient.newBuilder().addInterceptor(transferBudget.interceptor()).build();playbackHttp=httpClient
         val http=OkHttpDataSource.Factory(httpClient).setDefaultRequestProperties(current.headers)
         val range=RangePlaybackStatus(connections,prefetchBudget);rangeStatus=range
         val upstream=androidx.media3.datasource.DataSource.Factory {
             RangePlaybackDataSource(http,httpClient,current.url,current.headers,range).apply { addTransferListener(currentNetwork) }
         }
         val dataSources=if(disk==null) upstream else {
-            val prefetchClient=httpClient.newBuilder().dispatcher(okhttp3.Dispatcher()).build()
+            val prefetchClient=transportClient.newBuilder().dispatcher(okhttp3.Dispatcher())
+                .addInterceptor(transferBudget.interceptor(background=true)).build()
             val prefetchRange=RangePlaybackStatus(connections,prefetchBudget)
             val prefetchHttp=OkHttpDataSource.Factory(prefetchClient).setDefaultRequestProperties(current.headers)
             val prefetchSource=androidx.media3.datasource.DataSource.Factory {
@@ -433,7 +438,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
             // Foreground is read-only: an unlimited writer lock here would block all read-ahead.
             val readable=CacheDataSource.Factory().setCache(disk.cache).setUpstreamDataSourceFactory(upstream)
                 .setCacheWriteDataSinkFactory(null)
-                .setFlags(CacheDataSource.FLAG_BLOCK_ON_CACHE or CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+                .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
                 .setEventListener(object: CacheDataSource.EventListener {
                     override fun onCacheIgnored(reason:Int) {}
                     override fun onCachedBytesRead(cacheSizeBytes:Long,cachedBytesRead:Long) { prefetch.hitBytes.addAndGet(cachedBytesRead) }
@@ -510,6 +515,11 @@ class PlaybackActivity : TvActivity(), Player.Listener {
             error.type==ExoPlaybackException.TYPE_RENDERER && error.rendererIndex in 0 until p.rendererCount &&
             p.getRendererType(error.rendererIndex)==C.TRACK_TYPE_VIDEO && !softwareVideo) {
             softwareVideo = true; createPlayer(); return
+        }
+        if(LosslessAudioPolicy.shouldRetryWithFfmpeg(
+                failure?.type==ExoPlaybackException.TYPE_RENDERER && failedType==C.TRACK_TYPE_AUDIO,
+                failure?.rendererFormat?.sampleMimeType ?: p.audioFormat?.sampleMimeType, softwareAudio)) {
+            softwareAudio=true;createPlayer();return
         }
         val http = HttpFailures.find(error)
         if(http != null && http.responseCode in listOf(401, 403, 404, 410)) {
@@ -710,7 +720,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
                             report("Stopped");startedReported=false;retryJob?.cancel()
                             diskPrefetch?.close();diskPrefetch=null
                             player?.let { position=it.currentPosition;wantedPlay=it.playWhenReady;playerView.player=null;it.removeListener(this@PlaybackActivity);it.release() };player=null
-                            trackPreferences=null;softwareVideo=false;forceOriginalRoute=false;refreshedRejectedUrl=false
+                            trackPreferences=null;softwareVideo=false;softwareAudio=false;forceOriginalRoute=false;refreshedRejectedUrl=false
                             skippedExternalSubtitles.clear();spec=next;updateMediaInfo()
                             intent.putExtra("source_id",next.version.id);createPlayer();dialog.dismiss()
                         } catch(e: Exception) { message(e.message ?: Tr.text(UiText.CANNOT_SWITCH_SOURCE_209)) }
@@ -738,6 +748,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
                 Tr.text(UiText.CURRENT_F_MB_S_LAST_S_217).format((net?.bytesPerSecond ?: 0)/1048576.0,(net?.average ?: 0)/1048576.0,(net?.peak ?: 0)/1048576.0)+
                 Tr.text(UiText.TOTAL_F_MIB_TIME_SINCE_DATA_219 ,(net?.idleMs?.let { "${it}ms" } ?: Tr.text(UiText.NONE_RECEIVED_218))).format((net?.total ?: 0)/1048576.0)+
                 Tr.text(UiText.RECEIVE_MODE_SETTING_222 ,(rangeStatus?.mode),(if(app.settings.streamConnections==0) Tr.text(UiText.AUTO_220) else Tr.text(UiText.CONNECTIONS_221 ,(app.settings.streamConnections))))+
+                Tr.text(UiText.TOTAL_STREAM_CONNECTIONS,transferBudget?.activeCount ?: 0,transferBudget?.limit ?: 1,transferBudget?.peakCount ?: 0)+
                 Tr.text(UiText.RANGE_PREFETCH_MIB_223 ,((rangeStatus?.bufferedBytes ?: 0)/1048576),((rangeStatus?.budgetBytes ?: 0)/1048576))+
                 Tr.text(UiText.PLAYBACK_BUFFER_MIB_BACK_BUFFER_S_224 ,((control?.allocatedBytes ?: 0)/1048576),((control?.policy?.targetBytes ?: 0)/1048576),((control?.policy?.backBufferMs ?: 0)/1000.0))+
                 diskSummary(true)+Tr.text(UiText.LAST_PLAYBACK_FAILURE_225 ,(lastPlaybackFailure))+

@@ -2,7 +2,7 @@
 
 ## 构建
 
-Linux x86_64、JDK 17、Android SDK 36 / Build Tools 36.0.0。使用 Kotlin、Leanback、Media3 和 OkHttp。
+Linux x86_64、JDK 17、Android SDK 36 / Build Tools 36.0.0。使用 Kotlin、Compose for TV、Leanback、Media3 和 OkHttp。
 
 ```bash
 bash scripts/bootstrap.sh
@@ -54,7 +54,7 @@ PlaybackInfo 提供片源版本和地址。接收服务端 URL、签名参数及
 
 提前量按服务器码率和设置的秒数计算，最多占磁盘容量的四分之三；未知码率使用 64 MiB。自动容量最多 512 MiB，按可回收缓存与剩余空间缩减，配置时保留 256 MiB，写入时空间低于 64 MiB 停止预取。预取失败会退避，播放仍可读取缓存或原网络；不支持 Range 的服务不持续预取。HLS / DASH 列表不使用此原文件缓存。
 
-磁盘模式将自动内存目标降至最多 64 MiB，分别限制前台与预取的分段接收队列，避免各自占用一整份原先的内存预算。自动连接数在高码率原文件上可选 8 路；手动设置仍优先。自动预缓冲与重缓冲在高码率、非低内存状态下提高至至少 5 秒。每次创建播放器使用独立缓存标识，标识不包含账号或签名链接；不跨播放器重建复用文件，旧缓存由 LRU 或手动清理移除。
+磁盘模式下普通码率的自动内存目标为最多 64 MiB，48 Mbps 及以上为最多 128 MiB，均受堆余量限制。分别限制前台与预取的分段接收队列，避免各自占用一整份内存预算。自动连接数在高码率原文件上可选 8 路；手动设置仍优先。自动预缓冲与重缓冲在高码率、非低内存状态下提高至至少 5 秒。每次创建播放器使用独立缓存标识，标识不包含账号或签名链接；不跨播放器重建复用文件，旧缓存由 LRU 或手动清理移除。
 
 剧集相邻项从服务器的 Shows/{id}/Episodes 接口获取，保留服务端顺序并支持跨季，不使用影片名称猜测下一集。[Emby 剧集接口](https://dev.emby.media/reference/RestAPI/TvShowsService/getShowsByIdEpisodes.html)
 
@@ -73,3 +73,31 @@ PlaybackInfo 提供片源版本和地址。接收服务端 URL、签名参数及
 仅用于受限的软件模拟器：若系统 H.264 解码器出现 SSE 指令崩溃，可给 `VisualNavigationDeviceTest` 增加 `-e playbackSource vp8`，改用真实 VP8 / Vorbis 测试视频检查播放控制栏。默认仍使用 MP4 / H.264；此替代检查不能证明 H.264、HDR 或实体电视硬件输出已验证。
 
 模拟器无法访问 `10.0.2.2` 时，可运行 `adb reverse tcp:8765 tcp:8765`，给上述三个界面测试类增加 `-e fixtureServer http://127.0.0.1:8765`。默认地址保持不变。
+
+
+## 1.5.0 播放与 Compose 迁移
+
+`TvLoadControl` 仅在 `markSeek()` 后使用短恢复阈值和有界 reserve，正常播放与 rebuffer 转发给 `DefaultLoadControl`。前台 `CacheDataSource` 为只读，不使用 `FLAG_BLOCK_ON_CACHE`；磁盘预取仍独占写入锁。`StreamTransferBudget` 在 HTTP 应用拦截器中统一限制前台、预取及单连接回退的总在途请求，前台等待时取消后台请求，后台按原重试策略恢复。
+
+`ParallelRangeReader` 保留 Content-Range、长度及版本校验，按顺序输出已经接收的字节。生产分片最多 512 KiB，队列最多 N 个分片加一个正在消费的分片；完整分片缓冲循环复用，避免每次下载都分配大数组。两个取流队列仍共享原来最多 16 MiB 的内存预算。
+
+高码率自动 allocator 目标为最多 128 MiB。预算从实际堆剩余空间扣除至少 48 MiB（或堆上限的 20%）的界面/解码器余量、16 MiB 取流队列及 8 MiB allocator 增长余量，并保留低内存降级。未启用 `android:largeHeap`：正常堆已可支持目标；增加堆标志不保证更多物理内存，且会改变低内存设备上的 GC 和进程回收行为。
+
+音频 renderer 默认顺序为 MediaCodec、FFmpeg；TrueHD/MLP/DTS/DTS-HD 通过 sink 能力包装禁用该格式的 passthrough/offload，输出 PCM。厂商等价 MIME 名称加入查询，硬件 decoder 排在软件 decoder 前。音频 renderer 运行失败时保留播放位置/音轨设置，以 FFmpeg 优先重建一次；片源或剧集切换重置回退状态。诊断使用实际 decoder 初始化和 AudioTrack 输出事件，不根据源标签宣称硬解或 Atmos 输出。
+
+`SettingsDashboard.kt` 是首个 Compose for TV 页面，使用 TV Material 按钮、显式三列 DPAD 焦点及 View 侧栏互操作。`SettingsActivity` 继续管理原有设置分类编辑页及持久化；返回总览恢复原卡片焦点。承载 Compose 的横向 LinearLayout 关闭 baseline 探测，避免首次测量产生无限高度。后续新增 TV 页面沿用 Compose，逐页替换现有 View/Leanback 页面，不改写播放器核心。
+
+TrueHD/MLP 软件回退的 JNI 初始化会传入片源声道数与采样率；TrueHD seek 重建保留已解码的声道与采样率，避免单声道/立体声第一子流缺少 layout 而被丢弃。原有 Matroska 输入和 FFmpeg packet 读取逻辑保留。四种 ABI 均从现有 FFmpeg 6.1.4 源码重建。
+
+`LosslessAudioDeviceTest` 强制设备 decoder 查询返回空，使用本地 TrueHD/DTS 音频验证 FFmpeg PCM 输出与 seek 后继续播放。安装上述调试 APK 后准备两个 12 秒测试文件；它们输出到被 Git 忽略的目录：
+
+```bash
+mkdir -p tests/assets
+ffmpeg -y -f lavfi -i sine=frequency=440:sample_rate=48000 -t 12 -ac 2 -c:a truehd -strict -2 tests/assets/truehd.mka
+ffmpeg -y -f lavfi -i sine=frequency=440:sample_rate=48000 -t 12 -ac 2 -c:a dca -strict -2 -b:a 1536k tests/assets/dts.mka
+adb shell mkdir -p /sdcard/Android/data/tv.ember.client/files
+adb push tests/assets/truehd.mka tests/assets/dts.mka /sdcard/Android/data/tv.ember.client/files/
+adb shell am instrument -w -r -e class tv.ember.client.LosslessAudioDeviceTest tv.ember.client.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+如设备的外部目录访问策略不同，可通过 `-e losslessFixtureBase <目录或 URL>` 指定包含两个文件的位置。此检查不代替 DTS-HD MA 或厂商硬解的真机验证。

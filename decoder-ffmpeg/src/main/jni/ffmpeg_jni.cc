@@ -196,6 +196,8 @@ jlong ffmpegReset(JNIEnv* env, jobject thiz, jlong jContext,
   if (codecId == AV_CODEC_ID_TRUEHD) {
     jboolean outputFloat =
         (jboolean)(context->request_sample_fmt == OUTPUT_FORMAT_PCM_FLOAT);
+    const int sampleRate = context->sample_rate;
+    const int channelCount = context->ch_layout.nb_channels;
     // Release and recreate the context if the codec is TrueHD.
     // TODO: Figure out why flushing doesn't work for this codec.
     releaseContext(context);
@@ -205,8 +207,7 @@ jlong ffmpegReset(JNIEnv* env, jobject thiz, jlong jContext,
       return 0L;
     }
     return (jlong)createContext(env, codec, extraData, outputFloat,
-                                /* rawSampleRate= */ -1,
-                                /* rawChannelCount= */ -1);
+                                sampleRate, channelCount);
   }
 
   avcodec_flush_buffers(context);
@@ -255,6 +256,12 @@ AVCodecContext* createContext(JNIEnv* env, const AVCodec* codec,
       context->codec_id == AV_CODEC_ID_PCM_ALAW) {
     context->sample_rate = rawSampleRate;
     av_channel_layout_default(&context->ch_layout, rawChannelCount);
+  }
+  // TrueHD uses the declared channel count when mapping its first substream.
+  // Leaving the layout unset can silently discard mono/stereo frames as invalid.
+  if (context->codec_id == AV_CODEC_ID_TRUEHD || context->codec_id == AV_CODEC_ID_MLP) {
+    if (rawSampleRate > 0) context->sample_rate = rawSampleRate;
+    if (rawChannelCount > 0) av_channel_layout_default(&context->ch_layout, rawChannelCount);
   }
   context->err_recognition = AV_EF_IGNORE_ERR;
   int result = avcodec_open2(context, codec, NULL);

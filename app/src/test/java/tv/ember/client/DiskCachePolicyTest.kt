@@ -16,7 +16,7 @@ class DiskCachePolicyTest {
         assertEquals(375_000_000L,disk.aheadBytes)
         val ram = BufferPolicy.create(BufferPreferences(),256*mib,32*mib,bitrate=50_000_000,diskBuffering=true)
         assertTrue(disk.aheadBytes>256*mib)
-        assertTrue(ram.targetBytes<=64*mib)
+        assertTrue(ram.targetBytes in (64*mib).toInt()..(128*mib).toInt())
         assertEquals(0,ram.backBufferMs)
         assertEquals(5000,ram.startMs)
         assertEquals(5000,ram.rebufferMs)
