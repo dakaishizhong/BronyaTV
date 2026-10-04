@@ -17,6 +17,7 @@ class ImageCache(private val context: Context,capacity: ()->Long) {
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
     private val requests=Semaphore(3)
     private val pending=SharedRequests<String,Bitmap?>(scope)
+    private val encoded=SharedRequests<String,ByteArray?>(scope)
     private val downloads=java.util.concurrent.atomic.AtomicInteger()
     private val active=java.util.concurrent.atomic.AtomicInteger()
     private val peak=java.util.concurrent.atomic.AtomicInteger()
@@ -27,19 +28,25 @@ class ImageCache(private val context: Context,capacity: ()->Long) {
     private val memory=object: LruCache<String,Bitmap>(normal) { override fun sizeOf(key:String,value:Bitmap)=value.byteCount }
     @Volatile private var generation=0L
     suspend fun load(session: Session,url: String,width: Int,height: Int): Bitmap? {
-        val key=BoundedDiskStore.namespace(session.server,session.userId)+":"+url+":${width}x$height"
+        val diskKey=BoundedDiskStore.namespace(session.server,session.userId)+":"+url
+        val key="$diskKey:${width}x$height"
         memory.get(key)?.let { return it }
         return pending.get(key) {
             val epoch=generation
             requests.withPermit {
                 val count=active.incrementAndGet();synchronized(peak) { peak.set(maxOf(peak.get(),count)) }
                 try {
-                    val cached=disk.read(key)?.also { diskHits.incrementAndGet() }
-                    val bytes=cached ?: run { downloads.incrementAndGet(); HttpClient.api.newCall(Request.Builder().url(url).header("X-Emby-Token",session.token).build()).awaitResponse().use { response ->
-                        if(!response.isSuccessful) null else response.body?.source()?.let { source ->
-                            if(source.request(4L*1024*1024+1)) null else source.readByteArray()
+                    // Encoded data is shared across display sizes; decoded bitmaps remain size-specific.
+                    val bytes=encoded.get(diskKey) {
+                        disk.read(diskKey)?.also { diskHits.incrementAndGet() } ?: run {
+                            downloads.incrementAndGet()
+                            HttpClient.api.newCall(Request.Builder().url(url).header("X-Emby-Token",session.token).build()).awaitResponse().use { response ->
+                                if(!response.isSuccessful) null else response.body?.source()?.let { source ->
+                                    if(source.request(4L*1024*1024+1)) null else source.readByteArray()
+                                }
+                            }?.also { synchronized(this@ImageCache) { if(epoch==generation) runCatching { disk.write(diskKey,it) } } }
                         }
-                    } }?.also { synchronized(this@ImageCache) { if(epoch==generation) runCatching { disk.write(key,it) } } }
+                    }
                     if(bytes==null) null else withContext(Dispatchers.Default) {
                         val bounds=BitmapFactory.Options().apply { inJustDecodeBounds=true }
                         BitmapFactory.decodeByteArray(bytes,0,bytes.size,bounds)
@@ -55,7 +62,7 @@ class ImageCache(private val context: Context,capacity: ()->Long) {
     suspend fun usedBytes()=withContext(Dispatchers.IO) { disk.usedBytes() }
     suspend fun resize()=withContext(Dispatchers.IO) { disk.trim() }
     suspend fun clear() {
-        synchronized(this) { generation++ };pending.cancel()
+        synchronized(this) { generation++ };pending.cancel();encoded.cancel()
         memory.evictAll();withContext(Dispatchers.IO) { disk.clear() }
     }
     fun playback(active: Boolean) {

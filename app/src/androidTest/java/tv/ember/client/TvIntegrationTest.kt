@@ -56,7 +56,7 @@ class TvIntegrationTest {
     }
     @Test fun homeDisplaysServerContentAndHasRemoteFocus() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            await { text("Ocean of light") && text("After the horizon") }
+            await { text("A Trip to the Moon") && text("The Great Train Robbery") }
             compose.onNodeWithTag("nav_首页").assertIsFocused();compose.onNodeWithTag("nav_设置").assertExists()
         }
     }

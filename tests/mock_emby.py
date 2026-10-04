@@ -5,8 +5,12 @@ import http.server, json, pathlib, re, threading, urllib.parse, time
 ROOT = pathlib.Path(__file__).resolve().parent
 ASSETS = ROOT/'assets'
 LOG = ROOT.parent/'logs/fixture-requests.jsonl'
+FILMS = json.loads((ROOT/'media/SOURCES.json').read_text())
+def movie_art(item_id):
+    index=int(item_id[4:])%5+1 if item_id.startswith('film') else 0
+    return FILMS[index]
 lock = threading.Lock()
-state = {'fail': 0, 'status': 503, 'streams': 0, 'failures': 0, 'reports': [], 'playback': [], 'url_generation': 0, 'subtitle_fail': 0, 'expose_original_case': False, 'missing_source': '', 'view_type': 'CollectionFolder'}
+state = {'fail': 0, 'status': 503, 'streams': 0, 'failures': 0, 'reports': [], 'playback': [], 'url_generation': 0, 'subtitle_fail': 0, 'expose_original_case': False, 'missing_source': '', 'view_type': 'CollectionFolder', 'searches': [], 'slow_search': '', 'facet_requests': 0, 'view_requests': 0, 'small_catalog': False}
 
 def sources(item_id='demo'):
     media = [dict(Id='mp4', Name='H.264 MP4', Container='mp4', SupportsDirectPlay=True,
@@ -29,9 +33,10 @@ def sources(item_id='demo'):
     return media
 
 def video(i='demo'):
-    item=dict(Id=i, Name='Ocean of light' if i=='demo' else 'After the horizon '+i,
-                Type='Movie', Overview='A journey through colour, motion and sound. This server fixture exercises Direct Play, version selection, audio and subtitle tracks.',
-                ProductionYear=2026, OfficialRating='TV', CommunityRating=8.7, Genres=['Science fiction','Adventure'], BackdropImageTags=['fixture-scene'], People=[dict(Name='Demo Director',Type='Director'),dict(Name='Demo Actor',Type='Actor',Role='Explorer')], RunTimeTicks=900000000, ImageTags={'Primary':'fixture'},
+    film=movie_art(i)
+    item=dict(Id=i, Name=film['title'], SortName=film['title'].lower() if state['small_catalog'] else i[4:].zfill(3) if i.startswith('film') else film['title'],
+                Type='Movie', Overview=film['summary'],
+                ProductionYear=film['year'], Genres=film['genres'], BackdropImageTags=['public-domain-films-v1'], People=[dict(Name=film['credit'],Type='Director')], RunTimeTicks=900000000, ImageTags={'Primary':'public-domain-films-v1'},
                 UserData={'PlaybackPositionTicks':120000000 if i=='demo' else 0}, MediaSources=sources(i))
     if i.startswith('ep'):
         number=int(i[2:])
@@ -97,6 +102,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 state['expose_original_case']=q.get('expose_original_case',['0'])[0]=='1'
                 state['missing_source']=q.get('missing_source',[''])[0]
                 state['view_type']=q.get('view_type',['CollectionFolder'])[0]
+                state['small_catalog']=q.get('small_catalog',['0'])[0]=='1'
+                state['slow_search']=q.get('slow_search',[''])[0]
+                if q.get('reset_search',['0'])[0]=='1': state['searches']=[]
             self.respond({'ok':True}); return
         if path=='/fixture/status':
             with lock: result=json.loads(json.dumps(state))
@@ -108,30 +116,37 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path.endswith('/Shows/series/Episodes'):
             all_items=[video('ep'+str(i)) for i in range(1,4)]
             self.respond({'Items':all_items,'TotalRecordCount':3}); return
-        if path.endswith('/Views'): self.respond({'Items':[dict(Id='movies',Name='Cinema',Type=state['view_type'],CollectionType='movies',ImageTags={'Primary':'fixture'}),dict(Id='tv',Name='Television',Type=state['view_type'],CollectionType='tvshows',ImageTags={'Primary':'fixture'})]}); return
+        if path.endswith('/Views'):
+            with lock: state['view_requests']+=1
+            self.respond({'Items':[dict(Id='movies',Name='Cinema',Type=state['view_type'],CollectionType='movies',ImageTags={'Primary':'fixture'}),dict(Id='tv',Name='Television',Type=state['view_type'],CollectionType='tvshows',ImageTags={'Primary':'fixture'})]}); return
         if path.endswith('/Items/Resume'): self.respond({'Items':[video()]}); return
         if path.endswith('/Items/Latest'):
             parent=q.get('ParentId',[''])[0]
-            items=[video('ep'+str(i)) for i in range(1,4)] if parent=='tv' else [video('film'+str(i)) for i in range(8)] if parent=='movies' else [video('ep1')]+[video('film'+str(i)) for i in range(7)]
+            items=[video('ep'+str(i)) for i in range(1,4)] if parent=='tv' else [video('film'+str(i)) for i in range(5 if state['small_catalog'] else 8)] if parent=='movies' else [video('ep1')]+[video('film'+str(i)) for i in range(7)]
             self.respond(items); return
         if path.endswith('/Genres') or path.endswith('/Years'):
-            names=['Science fiction','Fantasy','Adventure'] if path.endswith('/Genres') else ['2024','2026']
+            with lock: state['facet_requests']+=1
+            names=(sorted({g for film in FILMS for g in film['genres']}) if state['small_catalog'] else ['Science fiction','Fantasy','Adventure']) if path.endswith('/Genres') else sorted({str(film['year']) for film in FILMS})
             self.respond({'Items':[dict(Id='facet-'+str(i),Name=name) for i,name in enumerate(names)],'TotalRecordCount':len(names)}); return
         if path.endswith('/Users/u1/Items'):
             start=int(q.get('StartIndex',['0'])[0]); limit=int(q.get('Limit',['40'])[0])
             all_items=[]
-            for i in range(45):
-                item=video('film'+str(i));item['ProductionYear']=2026 if i%2==0 else 2024
-                item['Genres']=['Science fiction','Adventure'] if i%2==0 else ['Fantasy']
+            for i in range(5 if state['small_catalog'] else 45):
+                item=video('film'+str(i))
+                if not state['small_catalog']: item['Genres']=['Science fiction','Adventure'] if i%2==0 else ['Fantasy']
                 item['UserData']['Played']=i%2==1;item['DateCreated']=str(datetime.date(2026,8,1)+datetime.timedelta(days=i));all_items.append(item)
+            if state['small_catalog']: all_items.insert(0,video())
             parent=q.get('ParentId',[''])[0]
             if parent=='tv' or q.get('IncludeItemTypes',[''])[0]=='Series': all_items=[dict(video('series'),Type='Series',Name='The horizon')]
             if parent=='series': all_items=[dict(Id='season1',Name='Season 1',Type='Season'),dict(Id='season2',Name='Season 2',Type='Season')]
             if parent=='season1': all_items=[video('ep1'),video('ep2')]
             if parent=='season2': all_items=[video('ep3')]
-            if parent=='movies' and q.get('Recursive',['false'])[0]!='true': all_items=[dict(Id='collection',Name='Collections',Type='Folder')]+all_items
+            if parent=='movies' and q.get('Recursive',['false'])[0]!='true': all_items=[dict(Id='collection',Name='Collections',SortName='Collections',Type='Folder')]+all_items
             query=q.get('SearchTerm',[''])[0].lower()
-            if query: all_items=[v for v in [video()]+all_items if query in v['Name'].lower()]
+            if query:
+                with lock: state['searches'].append({'term':query,'time':time.monotonic(),'types':q.get('IncludeItemTypes',[''])[0]})
+                if query==state['slow_search']: time.sleep(2)
+                all_items=[v for v in {v['Id']:v for v in [video()]+all_items}.values() if query in v['Name'].lower() or (query=='月球' and v['Id']=='demo')]
             if 'IsFavorite' in q.get('Filters',[''])[0]: all_items=[video()]
             types=q.get('IncludeItemTypes',[''])[0].split(',')
             if types[0]: all_items=[v for v in all_items if v['Type'] in types]
@@ -139,14 +154,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if genre: all_items=[v for v in all_items if genre in v.get('Genres',[])]
             if year: all_items=[v for v in all_items if str(v.get('ProductionYear'))==year]
             if 'IsPlayed' in q: all_items=[v for v in all_items if v.get('UserData',{}).get('Played',False)==(q['IsPlayed'][0]=='true')]
-            sort=q.get('SortBy',['SortName'])[0]
-            field={'SortName':'Name','DateCreated':'DateCreated','PremiereDate':'ProductionYear','CommunityRating':'CommunityRating'}[sort]
-            all_items.sort(key=lambda v:str(v.get(field,'')),reverse=q.get('SortOrder',['Ascending'])[0]=='Descending')
+            sort=q.get('SortBy',[''])[0]
+            if sort:
+                field={'SortName':'SortName','DateCreated':'DateCreated','PremiereDate':'ProductionYear','CommunityRating':'CommunityRating'}[sort]
+                all_items.sort(key=lambda v:str(v.get(field,'')),reverse=q.get('SortOrder',['Ascending'])[0]=='Descending')
             self.respond({'Items':all_items[start:start+limit],'TotalRecordCount':len(all_items)}); return
         if '/Users/u1/Items/' in path: self.respond(video(path.rsplit('/',1)[-1])); return
-        if '/Images/Backdrop/' in path: self.respond((ASSETS/'backdrop.jpg').read_bytes(),kind='image/jpeg'); return
+        if '/Images/Backdrop/' in path or '/Images/Primary' in path:
+            item=path.split('/Items/')[-1].split('/')[0]
+            resource=movie_art(item)['file'].removesuffix('.jpg')
+            image=ASSETS/(resource+('-backdrop.jpg' if '/Backdrop/' in path else '-poster.jpg'))
+            self.respond(image.read_bytes(),kind='image/jpeg'); return
         if path.endswith('/Similar'): self.respond({'Items':[video('film'+str(i)) for i in range(6)]}); return
-        if '/Images/Primary' in path: self.respond((ASSETS/'poster.jpg').read_bytes(),kind='image/jpeg'); return
         if 'Subtitles' in path or path=='/subtitle.srt':
             with lock: fail_subtitle=state['subtitle_fail']
             if fail_subtitle:self.respond({},fail_subtitle);return

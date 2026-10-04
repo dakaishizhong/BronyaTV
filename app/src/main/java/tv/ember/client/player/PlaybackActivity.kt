@@ -163,6 +163,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
             PlaybackAction("player_rewind",Tr.text(UiText.REWIND_CONTROL)) { seekControls(-1,0) },
             PlaybackAction("play_pause","▶") { player?.let { it.playWhenReady=!it.playWhenReady } },
             PlaybackAction("player_forward",Tr.text(UiText.FORWARD_CONTROL)) { seekControls(1,0) },
+            PlaybackAction("player_diagnostics",Tr.text(UiText.PLAYBACK_DIAGNOSTICS_191)) { showDiagnostics() },
             PlaybackAction("player_subtitles",Tr.text(UiText.SUBTITLE_TRACKS_180)) { chooseTrack(C.TRACK_TYPE_TEXT) },
             PlaybackAction("player_more",Tr.text(UiText.PLAYBACK_OPTIONS_138)) { showMenu() }
         )

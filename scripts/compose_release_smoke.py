@@ -43,7 +43,7 @@ def no_header_back():
 def field(n,text):
     click(n);key(123)
     for _ in n.get('text',''):key(67)
-    adb('shell','input','text',text);key(4)
+    adb('shell','input','text',text.replace(' ','%s'));key(4)
 def state():return json.load(urllib.request.urlopen('http://127.0.0.1:8765/fixture/status'))
 def wait_playback_report(paused,after):
     until=time.monotonic()+15
@@ -51,7 +51,7 @@ def wait_playback_report(paused,after):
         if any(r.get('ItemId')=='demo' and r.get('MediaSourceId')=='vp8' and r.get('IsPaused')==paused for r in state()['reports'][after:]):return
         time.sleep(.2)
     raise AssertionError('Remote OK did not change actual playback pause state')
-urllib.request.urlopen('http://127.0.0.1:8765/fixture/control?fail=0').close()
+urllib.request.urlopen('http://127.0.0.1:8765/fixture/control?fail=0&small_catalog=1').close()
 for package in (() if a.skip_install or a.from_home or a.from_player else ('tv.ember.client.test','tv.ember.client')):
     if 'package:'+package in adb('shell','pm','list','packages',package).decode().splitlines():adb('uninstall',package)
 if not (a.skip_install or a.from_home or a.from_player):
@@ -62,8 +62,8 @@ if not (a.from_home or a.from_player):
     find('Sign in');shot('login')
     fields=[n for n in nodes() if n.get('class')=='android.widget.EditText'];assert len(fields)==3,len(fields)
     for n,value in zip(fields,['http://127.0.0.1:8765','demo','demo']):field(n,value)
-    click(find('Connect'));find('Ocean of light');find('Continue watching');find('Cinema');shot('home')
-    click(find('Movies'));find('Filter & sort');find('After the horizon');shot('category');key(4)
+    click(find('Connect'));find('A Trip to the Moon');find('Continue watching');find('Cinema');shot('home')
+    click(find('Movies'));find('Filter & sort');find('The Great Train Robbery');shot('category');key(4)
 if not a.from_player:
     click(find('Details'));find('Video versions');find('1.4 Mbps');no_header_back();shot('detail')
     # Focus above the initial primary action, move through real version controls, then return to Play.
@@ -119,5 +119,7 @@ else:raise AssertionError('Back did not return to Details')
 find('Video versions');key(4);find('Continue watching')
 click(find('Settings'));find('Interface & diagnostics');shot('settings')
 click(find('Network & cache'));find('Parallel receive');no_header_back();shot('settings-editor');key(4)
-key(4);click(find('Search'));find('Search movies');shot('search')
+key(4);click(find('Search'));find('Search movies')
+search_fields=[n for n in nodes() if n.get('class')=='android.widget.EditText'];assert len(search_fields)==1
+field(search_fields[0],'Trip');find('A Trip to the Moon');find('1 min remaining');shot('search')
 print(json.dumps({'signed_release':a.version,'english_login':True,'home_rows':True,'category_facets':True,'inline_versions':True,'fresh_selected_source':'vp8','compose_player_controls':True,'play_pause_center_x':center_x,'remote_ok_pause_resume':True,'speaker_shortcut_absent':True,'header_back_absent':True,'remote_menu_back':True,'settings':True,'settings_editor':True,'search':True}),flush=True)

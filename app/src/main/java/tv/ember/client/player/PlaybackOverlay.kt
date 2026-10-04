@@ -65,7 +65,7 @@ internal data class PlaybackAction(val key: String,val label: String,val enabled
     requests: MutableMap<String,FocusRequester>,onFocus: (String)->Unit,onSeek: (Int,Int)->Unit,modifier: Modifier) {
     val scale=LocalTvScale.current
     val timeline=remember { FocusRequester() };requests["playback_timeline"]=timeline
-    val buttonRequests=remember { listOf("player_sources","player_rewind","play_pause","player_forward","player_subtitles","player_more").associateWith { FocusRequester() } }
+    val buttonRequests=remember { listOf("player_sources","player_subtitles","player_rewind","play_pause","player_forward","player_diagnostics","player_more").associateWith { FocusRequester() } }
     DisposableEffect(Unit) {
         requests.putAll(buttonRequests)
         onDispose { buttonRequests.forEach { (key,request) -> if(requests[key]===request) requests.remove(key) };requests.remove("playback_timeline") }
@@ -126,11 +126,8 @@ internal data class PlaybackAction(val key: String,val label: String,val enabled
                 },onFocus={ focusedKey=key;onFocus(key) },onClick=action.action)
             }
         }
-        // Equal side widths keep Play/Pause at the viewport center even with different action counts.
-        Row(Modifier.fillMaxWidth().height((60*scale).dp),verticalAlignment=Alignment.CenterVertically) {
-            Row(Modifier.weight(1f),horizontalArrangement=Arrangement.spacedBy((20*scale).dp,Alignment.End),verticalAlignment=Alignment.CenterVertically) { Control("player_sources");Control("player_rewind") }
-            Spacer(Modifier.width((22*scale).dp));Control("play_pause");Spacer(Modifier.width((22*scale).dp))
-            Row(Modifier.weight(1f),horizontalArrangement=Arrangement.spacedBy((20*scale).dp),verticalAlignment=Alignment.CenterVertically) { Control("player_forward");Control("player_subtitles");Control("player_more") }
+        Row(Modifier.fillMaxWidth().height((54*scale).dp),horizontalArrangement=Arrangement.spacedBy((16*scale).dp,Alignment.CenterHorizontally),verticalAlignment=Alignment.CenterVertically) {
+            ordered.forEach { Control(it) }
         }
         Text(if(focusedKey=="play_pause") Tr.text(if(playing) UiText.PAUSE_CONTROL else UiText.PLAY_CONTROL) else actions.firstOrNull { it.key==focusedKey }?.label.orEmpty(),Modifier.align(Alignment.CenterHorizontally).height((18*scale).dp),color=Paper.copy(alpha=.7f),fontSize=(11*scale).sp,lineHeight=(16*scale).sp)
 
@@ -139,13 +136,13 @@ internal data class PlaybackAction(val key: String,val label: String,val enabled
 
 @Composable private fun PlaybackIconButton(key: String,label: String,playing: Boolean,enabled: Boolean,modifier: Modifier,onFocus: ()->Unit,onClick: ()->Unit) {
     val scale=LocalTvScale.current;val primary=key=="play_pause";var focused by remember { mutableStateOf(false) }
-    Button(onClick=onClick,enabled=enabled,modifier=modifier.size(((if(primary) 50 else 34)*scale).dp).testTag(key)
+    Button(onClick=onClick,enabled=enabled,modifier=modifier.size((42*scale).dp).testTag(key)
         .onFocusChanged { focused=it.isFocused;if(it.isFocused) onFocus() }.semantics { contentDescription=label }
         .shadow(if(focused) (8*scale).dp else 0.dp,CircleShape,clip=false,ambientColor=Cyan.copy(alpha=.35f),spotColor=Cyan.copy(alpha=.35f))
         .border(((if(focused) 1.5f else 1f)*scale).dp,if(focused) Cyan else if(primary) Cyan.copy(alpha=.6f) else Paper.copy(alpha=.18f),CircleShape),
         shape=ButtonDefaults.shape(CircleShape),border=ButtonDefaults.border(focusedBorder=Border.None),scale=ButtonDefaults.scale(focusedScale=1f),
         colors=ButtonDefaults.colors(containerColor=if(primary) Cyan.copy(alpha=.1f) else Ink.copy(alpha=.65f),contentColor=Paper,focusedContainerColor=Cyan.copy(alpha=.16f),focusedContentColor=Cyan),contentPadding=PaddingValues(0.dp)) {
-        val glyph=when(key) { "play_pause" -> if(playing) TvGlyph.Pause else TvGlyph.Play;"player_rewind" -> TvGlyph.Rewind;"player_forward" -> TvGlyph.Forward;"player_sources" -> TvGlyph.Sources;"player_subtitles" -> TvGlyph.Subtitles;else -> TvGlyph.More }
-        TvIcon(glyph,if(!enabled) Muted else if(focused || primary) Cyan else Paper.copy(alpha=.9f),Modifier.size(((if(primary) 24 else 16)*scale).dp))
+        val glyph=when(key) { "play_pause" -> if(playing) TvGlyph.Pause else TvGlyph.Play;"player_rewind" -> TvGlyph.Rewind;"player_forward" -> TvGlyph.Forward;"player_sources" -> TvGlyph.Sources;"player_subtitles" -> TvGlyph.Subtitles;"player_diagnostics" -> TvGlyph.Info;else -> TvGlyph.More }
+        TvIcon(glyph,if(!enabled) Muted else if(focused || primary) Cyan else Paper.copy(alpha=.9f),Modifier.size((22*scale).dp))
     }
 }

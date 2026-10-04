@@ -17,7 +17,7 @@ import kotlin.math.sin
 /** Shared 24-unit vectors: decorative icons have no font-dependent baseline or semantics. */
 enum class TvGlyph { Home,Movies,Series,Favorite,Search,Server,Settings,Play,Pause,Rewind,Forward,Sources,Subtitles,More,Info,Restart,Filter,ChevronRight,Screen,Remote,Appearance,Account,Check,Language }
 
-@Composable fun TvIcon(glyph: TvGlyph,color: Color=Paper,modifier: Modifier=Modifier) {
+@Composable fun TvIcon(glyph: TvGlyph,color: Color,modifier: Modifier=Modifier) {
     Canvas(modifier) {
         val u=size.minDimension/24f
         val origin=Offset((size.width-24*u)/2,(size.height-24*u)/2)
@@ -40,7 +40,7 @@ enum class TvGlyph { Home,Movies,Series,Favorite,Search,Server,Settings,Play,Pau
             TvGlyph.Search -> { circle(10.5f,10.5f,7.3f);line(16f,16f,21f,21f) }
             TvGlyph.Server -> for(y in listOf(3f,10f,17f)) { rect(3f,y,18f,4f,1f);dot(6f,y+2,0.65f);line(10f,y+2,17f,y+2) }
             TvGlyph.Settings -> { path((0..31).map { i -> val a=i*Math.PI/16;val r=if(i%4<2) 10f else 8.2f;(12+r*cos(a).toFloat()) to (12+r*sin(a).toFloat()) },true);circle(12f,12f,3.1f) }
-            TvGlyph.Play -> triangle(8f,1)
+            TvGlyph.Play -> path(listOf(8f to 5f,19f to 12f,8f to 19f),true,true)
             TvGlyph.Pause -> { line(8f,5f,8f,19f);line(16f,5f,16f,19f) }
             TvGlyph.Rewind -> { triangle(11f,-1);triangle(21f,-1) }
             TvGlyph.Forward -> { triangle(3f,1);triangle(13f,1) }

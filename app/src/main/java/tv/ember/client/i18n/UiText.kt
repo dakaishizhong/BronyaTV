@@ -446,5 +446,6 @@ enum class UiText(val english: String,val chinese: String) {
     LANGUAGE("Language","语言"),
     INTERFACE_LANGUAGE("Interface language","界面语言"),
     BROWSE_MENU("Menu","菜单"),
-    RESUME_STATUS("Continue watching · {0}","继续观看 · {0}");
+    RESUME_STATUS("Continue watching · {0}","继续观看 · {0}"),
+    SERVER_SEARCH_ORDER("Server search order","服务器搜索排序");
 }

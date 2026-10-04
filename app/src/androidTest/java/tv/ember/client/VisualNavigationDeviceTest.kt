@@ -57,9 +57,9 @@ class VisualNavigationDeviceTest {
     @Test fun searchFiltersAndHistoryUseRealServerResults() {
         ActivityScenario.launch(MainActivity::class.java).use {
             ready("media_film3");click("nav_Search")
-            compose.onNodeWithTag("search_query").performTextReplacement("Ocean");click("search_submit")
+            compose.onNodeWithTag("search_query").performTextReplacement("Trip");click("search_submit")
             ready("media_demo");compose.onNodeWithTag("media_demo").assertExists();compose.onAllNodesWithTag("media_film0").assertCountEquals(0)
-            compose.onNodeWithTag("filter__Ocean").assertExists();capture("search")
+            compose.onNodeWithTag("filter__Trip").assertExists();capture("search")
         }
     }
     @Test fun sidebarCanOpenFavoritesAndReturnHomeWithRemoteFocus() {
@@ -71,10 +71,15 @@ class VisualNavigationDeviceTest {
     @Test fun homeFitsFiveCardsAndRemoteFocusStaysOnArtwork() {
         ActivityScenario.launch(MainActivity::class.java).use {
             ready("media_film3")
-            listOf("film0","film1","film2","film3","film4").forEach { id ->
+            listOf("demo","film0","film1","film2","film3","film4").forEach { id ->
                 val rect=compose.onNodeWithTag("artwork_$id",useUnmergedTree=true).fetchSemanticsNode().boundsInRoot
-                assertEquals(2.6,rect.width.toDouble()/rect.height,.06)
+                assertEquals(16.0/9.0,rect.width.toDouble()/rect.height,.06)
                 assertTrue(rect.right<=context.resources.displayMetrics.widthPixels);assertTrue(rect.bottom<=context.resources.displayMetrics.heightPixels)
+                listOf("media_title_$id","media_info_$id").forEach { tag ->
+                    compose.onNodeWithTag(tag,useUnmergedTree=true).assertIsDisplayed()
+                    val text=compose.onNodeWithTag(tag,useUnmergedTree=true).fetchSemanticsNode()
+                    assertEquals("Both rows must show complete card captions",text.size.height.toFloat(),text.boundsInRoot.height,1f)
+                }
             }
             focus("media_film0");val before=compose.onNodeWithTag("media_film0").fetchSemanticsNode().boundsInRoot
             repeat(4) { key(KeyEvent.KEYCODE_DPAD_RIGHT) };compose.onNodeWithTag("media_film4").assertIsFocused()

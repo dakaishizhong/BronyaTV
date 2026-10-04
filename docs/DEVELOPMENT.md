@@ -136,3 +136,16 @@ python3 scripts/compose_release_smoke.py \
 ```
 
 脚本会在专用模拟器卸载旧的测试安装，再安装签名包。使用本地 Emby 测试服务，不代表实体电视或生产服务器验证。
+
+
+## 1.7.0 搜索、页面复用与公开测试素材
+
+视频卡片统一 16:9；播放栏七个同尺寸按钮以播放/暂停为中心排列，两侧各三个，DPAD 按视觉顺序移动，无音量快捷按钮或页面左上角返回按钮。播放诊断仍可从 More 进入，也可使用控制栏信息图标。
+
+`SearchInput` 合并 300 ms 内的输入，确认与 IME Done 立即提交；NFKC 规范化全角字符并合并空白，保留中文、重音及词边界。空查询不请求影片或全局筛选；过期查询取消并检查请求版本。使用官方 ItemsService 的 SearchTerm，未选排序时省略可选 SortBy/SortOrder，由上游决定搜索顺序，不猜测 Relevance 枚举。显式排序及类型/年份等条件保留到每一页。类型/年份只在展开筛选后获取，同一媒体库/类型复用选项。
+
+返回 15 秒内完成加载的页面时，保留卡片、滚动和焦点并应用实时进度；超时后台刷新，菜单刷新不受限制。列表 Fields 仅请求 MediaSources,Genres，详情仍获取完整元数据。ImageCache 将编码图片磁盘键与显示尺寸区分，同一图片 URL 的多个显示尺寸共用一份编码数据，内存解码键仍包含尺寸；保持三路有界加载及原内存预算。
+
+公开测试图片、来源、许可、SHA-256 见 [tests/media](../tests/media/README.md)。`python3 scripts/create_test_assets.py` 无需下载即可生成慢缩放视频、双音轨和 SRT/ASS；素材指纹改变时替换旧生成文件。`scripts/create_dts_test_asset.py` 同样使用公共领域电影剧照，音频为原始测试信号。HEVC 的 PQ 标记用于路径回归，不作为 HDR 效果参考片。
+
+`SearchInputTest` 覆盖输入合并、即时提交、取消、中文/全角和服务器排序分页；`SearchDeviceTest` 检查空页不请求筛选、自动搜索、过期慢响应、历史、媒体范围及页面复用。`PlaybackUiDeviceTest` 同时检查按钮直径、轴线与镜像间距。签名包检查脚本示例：`python3 scripts/compose_release_smoke.py --apk releases/v1.7.0/BronyaTV-1.7.0-release.apk --version 1.7.0`。

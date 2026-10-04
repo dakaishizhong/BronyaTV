@@ -49,6 +49,8 @@ private class BrowserFrame(private val originalName: String,var query: BrowseQue
     var restoreFirst=0;var restoreOffset=0;var restoreFocus=""
     var resultRevision by mutableIntStateOf(0)
     var filtersOpen by mutableStateOf(false)
+    var loadedAt=0L;var facetScope="";var facetsLoaded=false
+    var recent by mutableStateOf<List<String>>(emptyList())
     val rowPositions=mutableMapOf<String,Pair<Int,Int>>()
 }
 class MainActivity: TvActivity() {
@@ -60,6 +62,7 @@ class MainActivity: TvActivity() {
     private var session: Session?=null
     private var work: Job?=null
     private var facetWork: Job?=null
+    private val searchInput by lazy { SearchInput(lifecycleScope) { term -> if(frame.destination=="search") search(frame,term,remember=false) } }
     private val homeFocus=FocusRequester()
     private var railFocused=""
     private var restored=false
@@ -76,7 +79,7 @@ class MainActivity: TvActivity() {
         }
         tvContent { Screen() }
         onBackPressedDispatcher.addCallback(this) {
-            if(history.isNotEmpty()) { work?.cancel();facetWork?.cancel();frame=history.removeLast();restoreEpoch++;load(frame) }
+            if(history.isNotEmpty()) { work?.cancel();facetWork?.cancel();searchInput.cancel();frame=history.removeLast();restoreEpoch++;resumeFrame() }
             else if(frame.query!=null) { frame=BrowserFrame(Tr.text(UiText.HOME_267));restoreEpoch++;load(frame) }
             else if(railFocused!=Tr.text(UiText.HOME_267)) homeFocus.requestFocus() else finish()
         }
@@ -88,16 +91,27 @@ class MainActivity: TvActivity() {
             session=current
             if(!restored) { history.clear();frame=BrowserFrame(Tr.text(UiText.HOME_267)) }
             restored=false;load(frame)
-        } else { restoreEpoch++;load(frame) }
+        } else { restoreEpoch++;resumeFrame() }
         intent.getStringExtra("navigate")?.let { intent.removeExtra("navigate");navigate(it) }
     }
+    private fun resumeFrame() {
+        val s=session ?: return
+        frame.items=frame.items.map { app.progress.apply(s,it) }
+        frame.rows=frame.rows.map { row -> row.copy(items=row.items.filterNot { row.key=="resume" && app.progress.finished(s,it.id) }.map { app.progress.apply(s,it) }) }
+        hero=hero?.let { app.progress.apply(s,it) }
+        frame.restoreFirst=frame.first;frame.restoreOffset=frame.offset;frame.restoreFocus=frame.focus
+        if(frame.loadedAt==0L || android.os.SystemClock.elapsedRealtime()-frame.loadedAt>=15000) load(frame)
+        else frame.resultRevision++
+    }
     private fun push(next: BrowserFrame) {
+        searchInput.cancel()
         history.addLast(frame)
         // Retain the complete navigation path, but only eight pages' response payloads.
-        history.toList().dropLast(8).forEach { it.items=emptyList();it.rows=emptyList() }
+        history.toList().dropLast(8).forEach { it.items=emptyList();it.rows=emptyList();it.loadedAt=0L }
         frame=next;restoreEpoch++;load(next)
     }
     private fun navigate(name: String) {
+        searchInput.cancel()
         if(name==Tr.text(UiText.SETTINGS_268)) { startActivity(Intent(this,SettingsActivity::class.java));return }
         if(name==frame.name && (frame.query?.parent ?: "").isBlank()) return
         when(name) {
@@ -114,11 +128,13 @@ class MainActivity: TvActivity() {
         else startActivity(Intent(this,DetailActivity::class.java).putExtra("item_id",item.id))
     }
     private fun filter(query: BrowseQuery) {
-        work?.cancel();frame.query=query.copy(start=0);frame.first=0;frame.offset=0;frame.focus="";restoreEpoch++;load(frame,facets=false)
+        if(frame.query==query.copy(start=0) && (frame.loading || frame.loadedAt>0L)) return
+        work?.cancel();frame.query=query.copy(start=0);frame.loadedAt=0L;frame.items=emptyList();frame.total=0;frame.first=0;frame.offset=0;frame.focus="";restoreEpoch++;load(frame)
     }
-    private fun load(target: BrowserFrame,facets: Boolean=true) {
+    private fun load(target: BrowserFrame) {
         val s=session ?: return;val request=++target.requestRevision;work?.cancel();target.loading=true;target.error=""
         val query=target.query
+        if(target.destination=="search") target.recent=getSharedPreferences("search_history",0).getString("queries","").orEmpty().split("\n").filter(String::isNotBlank).take(6)
         target.restoreFirst=target.first;target.restoreOffset=target.offset;target.restoreFocus=target.focus
         work=lifecycleScope.launch {
             try {
@@ -140,24 +156,38 @@ class MainActivity: TvActivity() {
                     }
                     coroutineScope {
                         val views=async { app.api.views(s) };val resume=async { optional { app.api.resume(s) } }
-                        val v=views.await();val r=resume.await();display(v,r,cachedSections(v))
+                        val v=views.await();val r=resume.await()
+                        if(target.rows.isEmpty()) display(v,r,cachedSections(v))
                         val sections=if(v.isEmpty()) listOf(HomeRow("latest",Tr.text(UiText.RECENTLY_ADDED_298),optional { app.api.latest(s) }))
                         else v.take(6).map { library -> async { HomeRow("library:${library.id}",library.name,optional { app.api.latest(s,library.id) }.map { app.progress.apply(s,it) },library) } }.awaitAll()
+                        target.restoreFirst=target.first;target.restoreOffset=target.offset;target.restoreFocus=target.focus
                         display(v,r,sections);target.resultRevision++
                     }
                 } else if(!(target.destination=="search" && query.search.isBlank())) {
                     if(target.items.isEmpty()) app.api.cachedItems(s,query)?.let { target.items=it.items;target.total=it.total }
-                    val result=app.api.browse(s,query);target.items=result.items.map { app.progress.apply(s,it) };target.total=result.total;target.resultRevision++
-                    if(libraries.isEmpty()) libraries=app.api.views(s)
+                    val result=app.api.browse(s,query)
+                    if(target.requestRevision!=request) return@launch
+                    target.restoreFirst=target.first;target.restoreOffset=target.offset;target.restoreFocus=target.focus
+                    target.items=result.items.map { app.progress.apply(s,it) };target.total=result.total;target.resultRevision++
+                    if(libraries.isEmpty() && target.destination!="search") libraries=app.api.views(s)
                 }
+                target.loadedAt=android.os.SystemClock.elapsedRealtime()
             } catch(e: CancellationException) { throw e } catch(e: Exception) { target.error=e.message ?: Tr.text(UiText.FAILED_TO_LOAD_247) }
             finally { if(target.requestRevision==request) target.loading=false }
         }
-        if(query!=null && facets) {
-            facetWork?.cancel();facetWork=lifecycleScope.launch {
-                try { target.facets=app.api.facets(s,query) }
-                catch(e: CancellationException) { throw e } catch(_: Exception) { target.facets=BrowseFacets(genresSupported=false,yearsSupported=false) }
-            }
+        if(target.filtersOpen) loadFacets(target)
+    }
+    private fun loadFacets(target: BrowserFrame) {
+        val s=session ?: return;val query=target.query ?: return
+        val scope="${query.parent}:${query.types}"
+        if(target.facetsLoaded && target.facetScope==scope) return
+        facetWork?.cancel();target.facetScope=scope
+        facetWork=lifecycleScope.launch {
+            try {
+                val result=app.api.facets(s,query)
+                if(target.facetScope==scope) { target.facets=result;target.facetsLoaded=true }
+            } catch(e: CancellationException) { throw e }
+            catch(_: Exception) { target.facets=BrowseFacets(genresSupported=false,yearsSupported=false) }
         }
     }
     private suspend fun optional(block: suspend ()->List<VideoItem>): List<VideoItem> = try { block() } catch(e: CancellationException) { throw e } catch(_: Exception) { emptyList() }
@@ -195,15 +225,15 @@ class MainActivity: TvActivity() {
         val focusMap=remember(current.id) { mutableMapOf<String,FocusRequester>() }
         val scroll=rememberLazyListState(current.first,current.offset)
         hero?.let { featured ->
-            Column(Modifier.fillMaxWidth().height((205*scale).dp).padding(top=(10*scale).dp)) {
-                Text(listOf(if(featured.resumeTicks>0) Tr.text(UiText.RESUME_STATUS,MediaUi.remaining(featured)) else "",MediaUi.badges(featured).joinToString("  ")).filter(String::isNotBlank).joinToString("  ·  "),color=Cyan,fontSize=(12*scale).sp)
-                Text(featured.name,color=Paper,fontWeight=FontWeight.Bold,fontSize=(43*scale).sp,maxLines=1,overflow=TextOverflow.Ellipsis)
-                Text(MediaUi.metadata(featured),color=Muted,fontSize=(14*scale).sp)
-                Spacer(Modifier.height((6*scale).dp));Text(featured.overview,Modifier.widthIn(max=(580*scale).dp),color=Paper,fontSize=(14*scale).sp,maxLines=2,overflow=TextOverflow.Ellipsis)
-                Spacer(Modifier.height((8*scale).dp))
+            Column(Modifier.fillMaxWidth().height((156*scale).dp).padding(top=(4*scale).dp)) {
+                Text(listOf(if(featured.resumeTicks>0) Tr.text(UiText.RESUME_STATUS,MediaUi.remaining(featured)) else "",MediaUi.badges(featured).joinToString("  ")).filter(String::isNotBlank).joinToString("  ·  "),color=Cyan,fontSize=(11*scale).sp,lineHeight=(14*scale).sp)
+                Text(featured.name,color=Paper,fontWeight=FontWeight.Bold,fontSize=(36*scale).sp,lineHeight=(42*scale).sp,maxLines=1,overflow=TextOverflow.Ellipsis)
+                Text(MediaUi.metadata(featured),color=Muted,fontSize=(12*scale).sp,lineHeight=(16*scale).sp)
+                Spacer(Modifier.height((3*scale).dp));Text(featured.overview,Modifier.widthIn(max=(580*scale).dp),color=Paper,fontSize=(12*scale).sp,lineHeight=(16*scale).sp,maxLines=2,overflow=TextOverflow.Ellipsis)
+                Spacer(Modifier.height((5*scale).dp))
                 Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                    TvAction(Tr.text(if(featured.resumeTicks>0) UiText.RESUME_251 else UiText.PLAY_252),"hero_play",Modifier.width((145*scale).dp).height((37*scale).dp),primary=true) { startActivity(Intent(this@MainActivity,DetailActivity::class.java).putExtra("item_id",featured.id).putExtra("auto_play",true)) }
-                    TvAction(Tr.text(UiText.DETAILS_324),"hero_details",Modifier.width((100*scale).dp).height((37*scale).dp)) { open(featured) }
+                    TvAction(Tr.text(if(featured.resumeTicks>0) UiText.RESUME_251 else UiText.PLAY_252),"hero_play",Modifier.width((145*scale).dp).height((36*scale).dp),primary=true) { startActivity(Intent(this@MainActivity,DetailActivity::class.java).putExtra("item_id",featured.id).putExtra("auto_play",true)) }
+                    TvAction(Tr.text(UiText.DETAILS_324),"hero_details",Modifier.width((100*scale).dp).height((36*scale).dp)) { open(featured) }
                 }
             }
         }
@@ -247,16 +277,16 @@ class MainActivity: TvActivity() {
         val focusMap=remember(current.id) { mutableMapOf<String,FocusRequester>() }
         Row(Modifier.fillMaxWidth(),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
             Text(current.name,color=Paper,fontWeight=FontWeight.Bold,fontSize=(29*scale).sp)
-            TvAction(Tr.text(UiText.FILTER_SORT),"browse_filters",selected=current.filtersOpen) { current.filtersOpen=!current.filtersOpen }
+            TvAction(Tr.text(UiText.FILTER_SORT),"browse_filters",selected=current.filtersOpen) { current.filtersOpen=!current.filtersOpen;if(current.filtersOpen) loadFacets(current) }
         }
         if(current.destination=="search") {
             var term by rememberSaveable(current.id) { mutableStateOf(query.search) }
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                TvField(term,{ term=it },Tr.text(UiText.SEARCH_MOVIES_OR_SERIES_320),"search_query",Modifier.weight(1f),onSubmit={ search(current,term) })
+                TvField(term,{ term=it;queryChanged(current,it) },Tr.text(UiText.SEARCH_MOVIES_OR_SERIES_320),"search_query",Modifier.weight(1f),onSubmit={ search(current,term) })
                 TvAction(Tr.text(UiText.SEARCH_295),"search_submit",primary=true) { search(current,term) }
             }
             Options("",listOf(Tr.text(UiText.ALL_322) to "",Tr.text(UiText.MOVIES_316) to "Movie",Tr.text(UiText.SERIES_317) to "Series,Episode"),query.types) { filter(query.copy(types=it)) }
-            val recent=getSharedPreferences("search_history",0).getString("queries","").orEmpty().split("\n").filter(String::isNotBlank).take(6)
+            val recent=current.recent
             if(recent.isNotEmpty()) Options("",recent.map { it to it },"") { term=it;search(current,it) }
         } else if(query.parent.isBlank() && current.destination in listOf("movies","series")) {
             val visible=libraries.filter { it.collectionType==if(current.destination=="series") "tvshows" else "movies" }
@@ -269,11 +299,11 @@ class MainActivity: TvActivity() {
                 if(current.facets.genres.isNotEmpty()) FilterPicker(Tr.text(UiText.GENRE),"genre",listOf(Tr.text(UiText.ALL_322) to "")+current.facets.genres.map { it to it },query.genre,Modifier.weight(1f)) { filter(query.copy(genre=it)) }
                 if(current.facets.years.isNotEmpty()) FilterPicker(Tr.text(UiText.YEAR),"year",listOf(Tr.text(UiText.ALL_322) to "")+current.facets.years.map { it to it },query.year,Modifier.weight(1f)) { filter(query.copy(year=it)) }
                 FilterPicker(Tr.text(UiText.WATCH_STATUS),"watch",listOf(Tr.text(UiText.ALL_322) to "",Tr.text(UiText.WATCHED) to "true",Tr.text(UiText.UNWATCHED) to "false"),query.played?.toString().orEmpty(),Modifier.weight(1f)) { filter(query.copy(played=it.takeIf(String::isNotBlank)?.toBoolean())) }
-                FilterPicker(Tr.text(UiText.SORT_292),"sort",BrowseSort.entries.map { it.label to it.name },query.sort.name,Modifier.weight(1f)) { filter(query.copy(sort=BrowseSort.valueOf(it),descending=it!=BrowseSort.NAME.name)) }
+                FilterPicker(Tr.text(UiText.SORT_292),"sort",listOf(Tr.text(UiText.SERVER_SEARCH_ORDER) to "") .filter { query.search.isNotBlank() }+BrowseSort.entries.map { it.label to it.name },if(query.search.isNotBlank() && !query.explicitSort && query.sort==BrowseSort.NAME && !query.descending) "" else query.sort.name,Modifier.weight(1f)) { filter(query.copy(sort=if(it.isBlank()) BrowseSort.NAME else BrowseSort.valueOf(it),descending=it.isNotBlank() && it!=BrowseSort.NAME.name,explicitSort=it.isNotBlank())) }
             }
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                TvAction(Tr.text(if(query.descending) UiText.DESCENDING else UiText.ASCENDING),"sort_order") { filter(query.copy(descending=!query.descending)) }
-                TvAction(Tr.text(UiText.RESET_FILTERS),"filter_reset") { filter(query.copy(genre="",year="",played=null,sort=BrowseSort.NAME,descending=false)) }
+                TvAction(Tr.text(if(query.descending) UiText.DESCENDING else UiText.ASCENDING),"sort_order") { filter(query.copy(descending=!query.descending,explicitSort=true)) }
+                TvAction(Tr.text(UiText.RESET_FILTERS),"filter_reset") { filter(query.copy(genre="",year="",played=null,sort=BrowseSort.NAME,descending=false,explicitSort=false)) }
             }
             if(!current.facets.genresSupported || !current.facets.yearsSupported) Text(Tr.text(UiText.SERVER_FILTER_UNAVAILABLE),color=Muted,fontSize=(10*scale).sp)
         } else if(query.genre.isNotBlank() || query.year.isNotBlank() || query.played!=null) {
@@ -317,16 +347,31 @@ class MainActivity: TvActivity() {
             }
         }
     }
-    private fun page(current: BrowserFrame,query: BrowseQuery) { current.query=query;current.first=0;current.offset=0;current.focus="";restoreEpoch++;load(current,facets=false) }
-    private fun search(current: BrowserFrame,raw: String) {
-        val term=raw.trim();if(term.isBlank()) return
-        val prefs=getSharedPreferences("search_history",0);val old=prefs.getString("queries","").orEmpty().split("\n").filter { it.isNotBlank() && it!=term }
-        prefs.edit().putString("queries",(listOf(term)+old).take(6).joinToString("\n")).apply()
+    private fun page(current: BrowserFrame,query: BrowseQuery) { current.query=query;current.loadedAt=0L;current.first=0;current.offset=0;current.focus="";restoreEpoch++;load(current) }
+    private fun queryChanged(current: BrowserFrame,raw: String) {
+        if(current!==frame) return
+        if(normalizeSearch(raw)!=current.query?.search && current.loading) {
+            work?.cancel();current.requestRevision++;current.loading=false;current.loadedAt=0L;searchInput.cancel()
+        }
+        searchInput.change(raw)
+    }
+    private fun search(current: BrowserFrame,raw: String,remember: Boolean=true) {
+        if(current!==frame) return
+        val term=normalizeSearch(raw)
+        if(remember) {
+            // Mark explicit submission as delivered before cancelling any delayed keystroke query.
+            searchInput.change(term,immediate=true)
+            if(term.isNotBlank()) {
+                val prefs=getSharedPreferences("search_history",0);val old=prefs.getString("queries","").orEmpty().split("\n").filter { it.isNotBlank() && it!=term }
+                current.recent=(listOf(term)+old).take(6)
+                prefs.edit().putString("queries",current.recent.joinToString("\n")).apply()
+            }
+        }
         filter(current.query!!.copy(search=term))
     }
     private fun showMenu() {
         TvUi.dialog(this).setTitle(Tr.text(UiText.BROWSE_MENU)).setItems(arrayOf(Tr.text(UiText.REFRESH_212),Tr.text(UiText.SORT_292))) { _,which ->
-            if(which==0) load(frame) else if(frame.query!=null) TvUi.dialog(this).setTitle(Tr.text(UiText.SORT_CONTENT_326)).setItems(BrowseSort.entries.map { it.label }.toTypedArray()) { _,i -> filter(frame.query!!.copy(sort=BrowseSort.entries[i],descending=i!=0)) }.show()
+            if(which==0) { frame.facetsLoaded=false;load(frame) } else if(frame.query!=null) TvUi.dialog(this).setTitle(Tr.text(UiText.SORT_CONTENT_326)).setItems(BrowseSort.entries.map { it.label }.toTypedArray()) { _,i -> filter(frame.query!!.copy(sort=BrowseSort.entries[i],descending=i!=0,explicitSort=true)) }.show()
             else message(Tr.text(UiText.OPEN_A_LIBRARY_OR_SEARCH_RESULTS_325))
         }.show()
     }

@@ -103,9 +103,9 @@ class ComposeMigrationDeviceTest {
             compose.onAllNodesWithTag("picker_genre").assertCountEquals(0);capture("category")
             click("browse_filters");ready("picker_genre");pick("genre",2);ready("media_film1")
             compose.waitUntil(60000) { compose.onAllNodesWithTag("media_film0").fetchSemanticsNodes().isEmpty() }
-            pick("year",1);pick("watch",1);ready("media_film1")
-            pick("sort",1);ready("media_film43");focus("media_film43")
-            click("media_film43");ready("detail_play");key(KeyEvent.KEYCODE_BACK);ready("media_film43");compose.onNodeWithTag("media_film43").assertIsFocused()
+            pick("year",1);pick("watch",1);ready("media_film9")
+            pick("sort",1);ready("media_film39");focus("media_film39")
+            click("media_film39");ready("detail_play");key(KeyEvent.KEYCODE_BACK);ready("media_film39");compose.onNodeWithTag("media_film39").assertIsFocused()
             pick("genre",0);pick("year",0);pick("watch",0)
             compose.waitUntil(60000) { compose.onAllNodesWithTag("page_next").fetchSemanticsNodes().singleOrNull()?.config?.contains(androidx.compose.ui.semantics.SemanticsProperties.Disabled)==false };click("page_next");ready("media_film0")
             compose.onNodeWithTag("page_previous").assertIsEnabled();focus("media_film0");click("media_film0");ready("detail_play");key(KeyEvent.KEYCODE_BACK)
@@ -142,11 +142,15 @@ class ComposeMigrationDeviceTest {
     }
     @Test fun imagesAreSizedSharedBoundedAndClearedIndependentlyOfMetadata()=runBlocking {
         val cache=app.imageCache;cache.clear();val initial=cache.snapshot()
-        val item=VideoItem("demo","Ocean of light","Movie",imageTag="cache-test")
+        val item=VideoItem("demo","A Trip to the Moon","Movie",imageTag="cache-test")
         val url=app.api.imageUrl(session,item,160)
         val values=coroutineScope { (0 until 16).map { async { cache.load(session,url,160,90) } }.awaitAll() }
         assertNotNull(values.first());assertTrue(values.all { it===values.first() });assertTrue(values.first()!!.width<=320);assertTrue(values.first()!!.height<=180)
         assertEquals(1,cache.snapshot().networkRequests-initial.networkRequests)
+        val encodedSize=cache.usedBytes()
+        cache.load(session,url,80,45)
+        assertEquals("A second display size reuses the same encoded image",1,cache.snapshot().networkRequests-initial.networkRequests)
+        assertEquals("Display sizes do not duplicate disk data",encodedSize,cache.usedBytes())
         val quota=app.settings.imageCacheMb.toLong()*1048576;assertTrue(cache.usedBytes() in 1..quota)
         cache.trim(true);cache.load(session,url,160,90);assertEquals(1,cache.snapshot().networkRequests-initial.networkRequests);assertTrue(cache.snapshot().diskHits>initial.diskHits)
         cache.load(session,url+"&tag=new",160,90);assertEquals(2,cache.snapshot().networkRequests-initial.networkRequests)

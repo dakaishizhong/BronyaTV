@@ -49,13 +49,22 @@ class PlaybackUiDeviceTest {
             val viewport=compose.onNodeWithTag("playback_surface",useUnmergedTree=true).fetchSemanticsNode().boundsInRoot
             val center=compose.onNodeWithTag("play_pause").fetchSemanticsNode().boundsInRoot
             assertEquals("Play/Pause must be centered on screen",viewport.center.x,center.center.x,1f)
+            val pairs=listOf("player_rewind" to "player_forward","player_subtitles" to "player_diagnostics","player_sources" to "player_more")
+            pairs.forEach { (left,right) ->
+                val l=compose.onNodeWithTag(left).fetchSemanticsNode().boundsInRoot
+                val r=compose.onNodeWithTag(right).fetchSemanticsNode().boundsInRoot
+                assertEquals("Equal control diameters",center.width,l.width,1f);assertEquals(center.width,r.width,1f)
+                assertEquals("Mirrored spacing",center.center.x-l.center.x,r.center.x-center.center.x,1f)
+                assertEquals("Shared vertical center",center.center.y,l.center.y,1f);assertEquals(center.center.y,r.center.y,1f)
+            }
             println("Playback geometry: viewport=${viewport.width}x${viewport.height}, playPauseCenterX=${center.center.x}, diameter=${center.width}")
             compose.onNodeWithTag("player_audio").assertDoesNotExist()
             key(KeyEvent.KEYCODE_DPAD_CENTER);player { assertFalse("OK pauses the real player",it.playWhenReady) }
             key(KeyEvent.KEYCODE_DPAD_LEFT);compose.onNodeWithTag("player_rewind").assertIsFocused()
+            key(KeyEvent.KEYCODE_DPAD_LEFT);compose.onNodeWithTag("player_subtitles").assertIsFocused()
             key(KeyEvent.KEYCODE_DPAD_LEFT);compose.onNodeWithTag("player_sources").assertIsFocused()
             key(KeyEvent.KEYCODE_DPAD_LEFT);compose.onNodeWithTag("player_sources").assertIsFocused()
-            repeat(2) { key(KeyEvent.KEYCODE_DPAD_RIGHT) };compose.onNodeWithTag("play_pause").assertIsFocused()
+            repeat(3) { key(KeyEvent.KEYCODE_DPAD_RIGHT) };compose.onNodeWithTag("play_pause").assertIsFocused()
             assertEquals("Focus must not move or resize the main control",center,compose.onNodeWithTag("play_pause").fetchSemanticsNode().boundsInRoot)
             key(KeyEvent.KEYCODE_DPAD_CENTER);player { assertTrue("OK resumes the real player",it.playWhenReady) }
             key(KeyEvent.KEYCODE_DPAD_UP);compose.onNodeWithTag("playback_timeline").assertIsFocused()
@@ -63,7 +72,7 @@ class PlaybackUiDeviceTest {
             key(KeyEvent.KEYCODE_DPAD_RIGHT)
             compose.waitUntil(30000) { var sought=false;player { sought=it.currentPosition>before+3000 };sought }
             key(KeyEvent.KEYCODE_DPAD_DOWN);compose.onNodeWithTag("play_pause").assertIsFocused()
-            listOf("player_forward","player_subtitles","player_more").forEach { key(KeyEvent.KEYCODE_DPAD_RIGHT);compose.onNodeWithTag(it).assertIsFocused() }
+            listOf("player_forward","player_diagnostics","player_more").forEach { key(KeyEvent.KEYCODE_DPAD_RIGHT);compose.onNodeWithTag(it).assertIsFocused() }
             key(KeyEvent.KEYCODE_DPAD_CENTER);ready("dialog_option_0")
             compose.onNodeWithText("Audio tracks").assertExists()
             // Audio track selection remains available through More; there is no speaker shortcut.
