@@ -1,170 +1,189 @@
 package tv.ember.client.ui
 
-import tv.ember.client.i18n.Tr
-import tv.ember.client.i18n.UiText
-import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
-import android.widget.*
-import android.view.View
-import android.graphics.Typeface
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
+import androidx.tv.material3.Text
+import kotlinx.coroutines.*
 import tv.ember.client.data.*
-import tv.ember.client.player.ExternalPlayers
-import tv.ember.client.player.PlaybackActivity
+import tv.ember.client.i18n.*
+import tv.ember.client.player.*
 import tv.ember.client.settings.PlayerChoice
 
-class DetailActivity : TvActivity() {
-    private lateinit var status: TextView
-    private var item: VideoItem? = null
-    private var busy = false
-    private var versionDialog: AlertDialog?=null
-    private var choice = PlayerChoice.INTERNAL
-    private var playbackInfo: PlaybackInfo?=null
-    private var playbackInfoAt=0L
+class DetailActivity: TvActivity() {
+    private var item by mutableStateOf<VideoItem?>(null)
+    private var versions by mutableStateOf<List<MediaVersion>>(emptyList())
+    private var related by mutableStateOf<List<VideoItem>>(emptyList())
+    private var selected by mutableStateOf("")
+    private var choice by mutableStateOf(PlayerChoice.INTERNAL)
+    private var busy by mutableStateOf(false)
+    private var error by mutableStateOf("")
+    private var work: Job?=null
+    private var autoPlay=false
+    private var returnToPlay=false
+    private var focusedControl by mutableStateOf("detail_play")
+    private val focusTargets=mutableMapOf<String,FocusRequester>()
+    private var detailFirst=0;private var detailOffset=0
+    private var loadFinished by mutableStateOf(false)
+    private var focusPending by mutableStateOf(true)
+    private var windowFocused by mutableStateOf(false)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        choice = app.settings.player
-        status = TvUi.text(this, Tr.text(UiText.FETCHING_MOVIE_DETAILS_246), 22f)
-        setContentView(paddedColumn().apply { TvUi.add(this, status) })
-        load()
+        focusedControl=savedInstanceState?.getString("focus") ?: "detail_play"
+        detailFirst=savedInstanceState?.getInt("first") ?: 0;detailOffset=savedInstanceState?.getInt("offset") ?: 0
+        choice=savedInstanceState?.getString("player")?.let { runCatching { PlayerChoice.valueOf(it) }.getOrNull() } ?: app.settings.player
+        selected=savedInstanceState?.getString("source").orEmpty()
+        autoPlay=intent.getBooleanExtra("auto_play",false);intent.removeExtra("auto_play")
+        tvContent { Screen() };load()
+    }
+    override fun onResume() { super.onResume();if(returnToPlay) { returnToPlay=false;focusedControl="detail_play";focusPending=true };if(item!=null && !busy) load() }
+    override fun onWindowFocusChanged(hasFocus: Boolean) { super.onWindowFocusChanged(hasFocus);windowFocused=hasFocus }
+    private fun apply(video: VideoItem) {
+        item=app.sessions.load()?.let { app.progress.apply(it,video) } ?: video;MediaUi.backdropItem=video
+        versions=video.sources
+        if(selected.isBlank()) selected=versions.firstOrNull()?.id.orEmpty()
     }
     private fun load() {
-        val s = app.sessions.load() ?: run { finish(); return }
-        val id = intent.getStringExtra("item_id") ?: run { finish(); return }
-        lifecycleScope.launch {
+        val s=app.sessions.load() ?: return finish();val id=intent.getStringExtra("item_id") ?: return finish()
+        work?.cancel();loadFinished=false;work=lifecycleScope.launch {
+            if(item==null) app.api.cachedDetail(s,id)?.let(::apply)
             try {
-                item = app.api.detail(s, id); render(item!!, s)
-                if(intent.getBooleanExtra("auto_play",false)) { intent.removeExtra("auto_play");chooseVersion(item!!.resumeTicks/10_000) }
-            }
-            catch(e: CancellationException) { throw e }
-            catch(e: Exception) {
-                val root = paddedColumn(); TvUi.add(root, TvUi.text(this@DetailActivity, e.message ?: Tr.text(UiText.FAILED_TO_LOAD_247)))
-                TvUi.add(root, TvUi.button(this@DetailActivity, Tr.text(UiText.RETRY_248)) { load() }); setContentView(root)
-            }
+                apply(app.api.detail(s,id));error=""
+                if(versions.isEmpty()) versions=app.api.playbackInfo(s,id).versions
+                if(selected.isBlank()) selected=versions.firstOrNull()?.id.orEmpty()
+                if(autoPlay) { autoPlay=false;play(item!!.resumeTicks/10000) }
+                related=try { app.api.similar(s,id).filter { it.id!=id } } catch(e: CancellationException) { throw e } catch(_: Exception) { emptyList() }
+            } catch(e: CancellationException) { throw e } catch(e: Exception) { error=e.message.orEmpty() }
+            finally { loadFinished=true }
         }
     }
-    private fun render(video: VideoItem, session: Session) {
-        MediaUi.backdropItem=video
-        val surface=TvUi.backdrop(this)
-        PosterLoader.load(lifecycleScope,surface.findViewWithTag("backdrop"),app.api.landscapeUrl(session,video,true),session,true)
-        val scroll=ScrollView(this).apply { isFillViewport=true;clipToPadding=false }
-        val root=TvUi.column(this).apply { setPadding(TvUi.dp(this,TvUi.gutter(context)),TvUi.dp(this,18),TvUi.dp(this,TvUi.gutter(context)),TvUi.dp(this,20)) }
-        val top=TvUi.row(this)
-        top.addView(TvUi.back(this) { onBackPressedDispatcher.onBackPressed() },LinearLayout.LayoutParams(TvUi.dp(root,32),TvUi.dp(root,32)))
-        top.addView(View(this),LinearLayout.LayoutParams(0,1,1f))
-        top.addView(TextClock(this).apply { format24Hour="HH:mm";format12Hour="HH:mm";textSize=12f;setTextColor(TvUi.text) })
-        TvUi.add(root,top,bottom=8)
-        TvUi.add(root,TvUi.text(this,video.name,44f*TvUi.scale(this)).apply { typeface=Typeface.DEFAULT_BOLD;maxLines=2;includeFontPadding=false },bottom=6)
-        TvUi.add(root,TvUi.text(this,"",14f).apply { text=MediaUi.styledMetadata(video) },bottom=8)
-        val badges=MediaUi.badgeRow(this,video)
-        if(badges.childCount>0) TvUi.add(root,badges,bottom=8)
-        TvUi.add(root,TvUi.text(this,video.overview.ifBlank { Tr.text(UiText.NO_OVERVIEW_PROVIDED_BY_THE_SERVER_250) },14f).apply {
-            maxLines=4;ellipsize=android.text.TextUtils.TruncateAt.END;maxWidth=TvUi.dp(this,460)
-        },width=TvUi.dp(root,460),bottom=12)
-        val actions=TvUi.row(this)
-        val play=TvUi.button(this,if(video.resumeTicks>0) Tr.text(UiText.RESUME_251) else Tr.text(UiText.PLAY_252),true) { chooseVersion(video.resumeTicks/10_000) }
-        actions.addView(play,LinearLayout.LayoutParams(-2,TvUi.dp(root,44)))
-        fun action(label: String,block: ()->Unit) { actions.addView(TvUi.button(this,label,block),LinearLayout.LayoutParams(-2,TvUi.dp(root,44)).apply { marginStart=TvUi.dp(root,8) }) }
-        if(video.resumeTicks>0) action(Tr.text(UiText.PLAY_FROM_START_253)) { chooseVersion(0) }
-        action(Tr.text(UiText.SOURCES_254)) { chooseVersion(video.resumeTicks/10_000,true) }
-        action(Tr.text(UiText.MORE_INFO_255)) {
-            val details=listOf(video.overview,MediaUi.metadata(video),Tr.text(UiText.RATING_256 ,(video.rating.ifBlank { Tr.text(UiText.NOT_PROVIDED_026) })),video.people.joinToString("\n") { "${it.name} · ${it.role.ifBlank { it.type }}" }).filter(String::isNotBlank).joinToString("\n\n")
-            TvUi.dialog(this).setTitle(video.name).setMessage(details).setPositiveButton(Tr.text(UiText.OFF_187),null).show()
-        }
-        action(Tr.text(UiText.PLAYER_257 ,(choice.label))) {
-            val choices=PlayerChoice.entries
-            TvUi.dialog(this).setTitle(Tr.text(UiText.CHOOSE_PLAYER_258)).setItems(choices.map { it.label+if(ExternalPlayers.available(this,it)) "" else Tr.text(UiText.NOT_INSTALLED_259) }.toTypedArray()) { _,which ->
-                val c=choices[which]
-                if(ExternalPlayers.available(this,c)) { choice=c;render(video,session) } else message(Tr.text(UiText.INSTALL_ON_YOUR_TV_FIRST_260 ,(c.label)))
-            }.show()
-        }
-        TvUi.add(root,actions,bottom=6)
-        if(video.resumeTicks>0) {
-            TvUi.add(root,TvUi.progress(this,MediaUi.percent(video)),width=TvUi.dp(root,220),height=TvUi.dp(root,4),bottom=4)
-            TvUi.add(root,TvUi.text(this,Tr.text(UiText.WATCHED_261 ,(MediaUi.percent(video)),(MediaUi.remaining(video))),11f,TvUi.accent),bottom=4)
-        }
-        status=TvUi.text(this,"",12f,TvUi.muted).apply { visibility=View.GONE };TvUi.add(root,status,bottom=8)
-        if(video.people.isNotEmpty()) {
-            val cast=TvUi.column(this).apply { background=TvUi.box(0xDD0C1C26.toInt(),12f,0xFF1C3744.toInt());setPadding(TvUi.dp(this,12),TvUi.dp(this,6),TvUi.dp(this,12),TvUi.dp(this,8)) }
-            TvUi.add(cast,TvUi.text(this,"",15f).apply { text=TvUi.sectionTitle(Tr.text(UiText.CAST_CREW_262)) },bottom=4)
-            val people=TvUi.row(this)
-            video.people.take(8).forEach { person ->
-                val personRow=TvUi.row(this)
-                val portrait=FrameLayout(this).apply { background=TvUi.box(TvUi.raised,100f);clipToOutline=true }
-                portrait.addView(TvUi.text(this,person.name.take(1),18f,TvUi.accent).apply { gravity=android.view.Gravity.CENTER },FrameLayout.LayoutParams(-1,-1))
-                if(person.id.isNotBlank() && person.imageTag.isNotBlank()) {
-                    val photo=ImageView(this).apply { scaleType=ImageView.ScaleType.CENTER_CROP }
-                    portrait.addView(photo,FrameLayout.LayoutParams(-1,-1))
-                    PosterLoader.load(lifecycleScope,photo,app.api.imageUrl(session,VideoItem(person.id,person.name,"Person",imageTag=person.imageTag)),session)
-                }
-                personRow.addView(portrait,LinearLayout.LayoutParams(TvUi.dp(root,40),TvUi.dp(root,40)))
-                val label=TvUi.column(this)
-                TvUi.add(label,TvUi.text(this,person.name,12f).apply { maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END },bottom=3)
-                TvUi.add(label,TvUi.text(this,person.role.ifBlank { when(person.type) { "Director" -> Tr.text(UiText.DIRECTOR_263);"Actor" -> Tr.text(UiText.ACTOR_264);"Writer" -> Tr.text(UiText.WRITER_265);else -> person.type } },10f,TvUi.muted).apply { maxLines=1 },bottom=0)
-                personRow.addView(label,LinearLayout.LayoutParams(TvUi.dp(root,118),-2).apply { marginStart=TvUi.dp(root,8) })
-                people.addView(personRow,LinearLayout.LayoutParams(-2,-2).apply { marginEnd=TvUi.dp(root,14) })
-            }
-            cast.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled=false;addView(people) })
-            TvUi.add(root,cast,bottom=8)
-        }
-        val related=TvUi.column(this);TvUi.add(root,related,bottom=0)
-        lifecycleScope.launch {
-            try {
-                val items=app.api.similar(session,video.id).filter { it.id!=video.id }
-                if(items.isNotEmpty()) {
-                    TvUi.section(related,Tr.text(UiText.RELATED_TITLES_266))
-                    val strip=TvUi.row(this@DetailActivity)
-                    val presenter=LandscapeCardPresenter(app,lifecycleScope,TvUi.cardWidth(this@DetailActivity))
-                    items.forEach { v ->
-                        val holder=presenter.onCreateViewHolder(strip);presenter.onBindViewHolder(holder,v)
-                        holder.view.setOnClickListener { startActivity(Intent(this@DetailActivity,DetailActivity::class.java).putExtra("item_id",v.id)) }
-                        strip.addView(holder.view,LinearLayout.LayoutParams(TvUi.dp(strip,TvUi.cardWidth(this@DetailActivity)),-2).apply { marginEnd=TvUi.dp(strip,TvUi.cardGap(this@DetailActivity)) })
-                    }
-                    related.addView(HorizontalScrollView(this@DetailActivity).apply { isHorizontalScrollBarEnabled=false;addView(strip) })
-                }
-            } catch(e: CancellationException) { throw e } catch(_: Exception) { /* Recommendations are optional. */ }
-        }
-        scroll.addView(root);surface.addView(scroll)
-        setContentView(TvUi.shell(this,Tr.text(UiText.HOME_267),{ name ->
-            if(name==Tr.text(UiText.SETTINGS_268)) startActivity(Intent(this,SettingsActivity::class.java))
-            else { startActivity(Intent(this,MainActivity::class.java).putExtra("navigate",name).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP));finish() }
-        },surface));play.requestFocus()
-    }
-    private fun chooseVersion(positionMs: Long,forceChoice: Boolean=false) {
+    private fun play(positionMs: Long) {
         if(busy) return
-        val v = item ?: return; val s = app.sessions.load() ?: return
-        busy = true; status.visibility=View.VISIBLE;status.text = Tr.text(UiText.FETCHING_PLAYABLE_VERSIONS_206)
+        val video=item ?: return;val s=app.sessions.load() ?: return
+        if(selected.isBlank()) { error=Tr.text(UiText.SERVER_HAS_NO_VIDEO_VERSIONS_269);return }
+        val sourceId=selected;busy=true;error=Tr.text(UiText.FETCHING_PLAYABLE_VERSIONS_206)
         lifecycleScope.launch {
             try {
-                val now=android.os.SystemClock.elapsedRealtime()
-                val info = playbackInfo?.takeIf { now-playbackInfoAt<15_000 } ?: app.api.playbackInfo(s,v.id).also { playbackInfo=it;playbackInfoAt=now }
-                check(info.versions.isNotEmpty()) { Tr.text(UiText.SERVER_HAS_NO_VIDEO_VERSIONS_269) }
-                status.text = Tr.text(UiText.VERSIONS_AVAILABLE_270 ,(info.versions.size))
-                fun play(index: Int) {
-                        val source = info.versions[index]
-                        if(choice == PlayerChoice.INTERNAL) {
-                            val spec=app.api.playbackSpec(s,v.id,source,info.playSessionId)
-                            app.launches.put(s,v,spec)
-                            startActivity(Intent(this@DetailActivity, PlaybackActivity::class.java).putExtra("item_id", v.id)
-                                .putExtra("source_id", source.id).putExtra("position_ms", positionMs))
-                        } else {
-                            try { ExternalPlayers.launch(this@DetailActivity, choice, app.api.playbackSpec(s, v.id, source, info.playSessionId), v.name, positionMs) }
-                            catch(e: Exception) { message(e.message ?: Tr.text(UiText.CANNOT_OPEN_EXTERNAL_PLAYER_271)) }
-                        }
-                }
-                if(info.versions.size==1 && !forceChoice) play(0) else {
-                    val dialog=TvUi.dialog(this@DetailActivity).setTitle(Tr.text(UiText.CHOOSE_VIDEO_VERSION_272))
-                    .setItems(info.versions.map { it.label }.toTypedArray()) { _,index ->
-                        try { play(index) } catch(e: Exception) { message(e.message ?: Tr.text(UiText.CANNOT_OPEN_THE_SELECTED_SOURCE_273)) }
-                    }.setNegativeButton(Tr.text(UiText.CANCEL_196),null).create()
-                    versionDialog=dialog;dialog.setOnDismissListener { busy=false;versionDialog=null };dialog.show()
-                }
-            } catch(e: CancellationException) { throw e }
-            catch(e: Exception) { status.text = e.message ?: Tr.text(UiText.SOURCE_REQUEST_FAILED_210) }
-            finally { if(versionDialog==null) busy=false }
+                // Negotiate at activation time. The detail cache never contains a playable URL/session.
+                val info=app.api.playbackInfo(s,video.id,sourceId)
+                val source=info.versions.firstOrNull { it.id==sourceId } ?: error(Tr.text(UiText.VERSION_UNAVAILABLE))
+                val spec=app.api.playbackSpec(s,video.id,source,info.playSessionId)
+                if(choice==PlayerChoice.INTERNAL) {
+                    app.launches.put(s,video,spec)
+                    startActivity(Intent(this@DetailActivity,PlaybackActivity::class.java).putExtra("item_id",video.id).putExtra("source_id",source.id).putExtra("position_ms",positionMs))
+                } else ExternalPlayers.launch(this@DetailActivity,choice,spec,video.name,positionMs)
+                returnToPlay=true;error=""
+            } catch(e: CancellationException) { throw e } catch(e: Exception) { error=e.message.orEmpty() }
+            finally { busy=false;if(!returnToPlay) { focusedControl="detail_play";focusPending=true } }
         }
     }
+    @Composable private fun control(tag: String): Modifier {
+        val request=remember(tag) { FocusRequester() }
+        DisposableEffect(tag) { focusTargets[tag]=request;onDispose { if(focusTargets[tag]===request) focusTargets.remove(tag) } }
+        return Modifier.focusRequester(request).onFocusChanged { if(it.isFocused) focusedControl=tag }
+    }
+    @Composable private fun Screen() {
+        val s=app.sessions.load();val video=item;val scale=LocalTvScale.current
+        val scroll=rememberLazyListState(detailFirst,detailOffset)
+        val versionScroll=rememberLazyListState();val relatedScroll=rememberLazyListState()
+        TvShell(Tr.text(UiText.HOME_267),::navigateTo,video) {
+            LazyColumn(Modifier.fillMaxSize().padding(horizontal=(14*scale).dp),state=scroll,contentPadding=PaddingValues(vertical=(18*scale).dp),verticalArrangement=Arrangement.spacedBy((8*scale).dp)) {
+                item(key="top") { Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) { TvAction("‹",tag="detail_back",modifier=control("detail_back")) { onBackPressedDispatcher.onBackPressed() };TvClock() } }
+                if(video==null) item(key="loading") {
+                    Text(if(error.isBlank()) Tr.text(UiText.FETCHING_MOVIE_DETAILS_246) else error,color=Paper)
+                    if(error.isNotBlank()) TvAction(Tr.text(UiText.RETRY_248),onClick=::load)
+                } else {
+                    item(key="title") { Text(video.name,color=Paper,fontWeight=FontWeight.Bold,fontSize=(44*scale).sp,lineHeight=(50*scale).sp,maxLines=2);Text(MediaUi.metadata(video),color=Muted,fontSize=(14*scale).sp) }
+                    item(key="overview") { Text(video.overview.ifBlank { Tr.text(UiText.NO_OVERVIEW_PROVIDED_BY_THE_SERVER_250) },Modifier.widthIn(max=(530*scale).dp),color=Paper,fontSize=(14*scale).sp,maxLines=4,overflow=TextOverflow.Ellipsis) }
+                    item(key="versions") {
+                        Section(Tr.text(UiText.MEDIA_VERSIONS))
+                        if(versions.size==1) {
+                            if(selected==versions[0].id) Text(versions[0].name,color=Cyan,fontSize=(15*scale).sp)
+                            else TvAction(versions[0].name,"version_${versions[0].id}",control("version_${versions[0].id}")) { selected=versions[0].id;error="" }
+                            Text(versions[0].displayDetails(),color=Muted,fontSize=(12*scale).sp)
+                        } else LazyRow(state=versionScroll,horizontalArrangement=Arrangement.spacedBy(10.dp),contentPadding=PaddingValues(3.dp)) {
+                            items(versions,key={ it.id }) { version ->
+                                Column(Modifier.width((260*scale).dp)) {
+                                    TvAction(version.name,"version_${version.id}",Modifier.fillMaxWidth().then(control("version_${version.id}")),selected=selected==version.id) { selected=version.id;error="" }
+                                    Spacer(Modifier.height(5.dp));Text(version.displayDetails(),color=Muted,fontSize=(12*scale).sp,maxLines=2)
+                                }
+                            }
+                        }
+                    }
+                    item(key="actions") {
+                        LazyRow(horizontalArrangement=Arrangement.spacedBy(8.dp),contentPadding=PaddingValues(3.dp)) {
+                            item(key="play") { TvAction(if(video.resumeTicks>0) Tr.text(UiText.RESUME_251) else Tr.text(UiText.PLAY_252),"detail_play",control("detail_play"),primary=true,enabled=!busy && selected.isNotBlank()) { play(video.resumeTicks/10000) } }
+                            if(video.resumeTicks>0) item(key="start") { TvAction(Tr.text(UiText.PLAY_FROM_START_253),"detail_start",control("detail_start"),enabled=!busy) { play(0) } }
+                            item(key="info") { TvAction(Tr.text(UiText.MORE_INFO_255),"detail_info",control("detail_info")) { TvUi.dialog(this@DetailActivity).setTitle(video.name).setMessage(video.overview+"\n\n"+MediaUi.metadata(video)).setPositiveButton(Tr.text(UiText.OFF_187),null).show() } }
+                            item(key="player") { TvAction(Tr.text(UiText.PLAYER_257,choice.label),"detail_player",control("detail_player")) {
+                                TvUi.dialog(this@DetailActivity).setTitle(Tr.text(UiText.CHOOSE_PLAYER_258)).setItems(PlayerChoice.entries.map { it.label+if(ExternalPlayers.available(this@DetailActivity,it)) "" else Tr.text(UiText.NOT_INSTALLED_259) }.toTypedArray()) { _,i ->
+                                    val next=PlayerChoice.entries[i];if(ExternalPlayers.available(this@DetailActivity,next)) choice=next else message(Tr.text(UiText.INSTALL_ON_YOUR_TV_FIRST_260,next.label))
+                                }.show()
+                            } }
+                        }
+                    }
+                    if(video.resumeTicks>0) item(key="resume") { Text(Tr.text(UiText.WATCHED_261,MediaUi.percent(video),MediaUi.remaining(video)),color=Cyan,fontSize=(12*scale).sp) }
+                    if(error.isNotBlank()) item(key="error") { Text(error,color=Cyan);if(!busy) TvAction(Tr.text(UiText.RETRY_248),onClick=::load) }
+                    if(video.people.isNotEmpty() && s!=null) item(key="people") {
+                        Section(Tr.text(UiText.CAST_CREW_262))
+                        LazyRow(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                            items(video.people,key={ it.id.ifBlank { it.name+it.type } }) { person ->
+                                Row(Modifier.width((170*scale).dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                    if(person.id.isNotBlank() && person.imageTag.isNotBlank()) {
+                                        val width=(42*scale*LocalContext.current.resources.displayMetrics.density).toInt()
+                                        CachedImage(app,s,app.api.imageUrl(s,VideoItem(person.id,person.name,"Person",imageTag=person.imageTag),width),width,width,Modifier.size((42*scale).dp))
+                                    }
+                                    Column { Text(person.name,color=Paper,fontSize=(12*scale).sp);Text(person.role.ifBlank { person.type },color=Muted,fontSize=(10*scale).sp) }
+                                }
+                            }
+                        }
+                    }
+                    if(related.isNotEmpty() && s!=null) item(key="related") {
+                        Section(Tr.text(UiText.RELATED_TITLES_266))
+                        LazyRow(state=relatedScroll,horizontalArrangement=Arrangement.spacedBy((8*scale).dp),contentPadding=PaddingValues(3.dp)) {
+                            items(related,key={ it.id }) { other -> MediaCard(app,s,other,Modifier.width((160*scale).dp).then(control("related_${other.id}"))) { startActivity(Intent(this@DetailActivity,DetailActivity::class.java).putExtra("item_id",other.id)) } }
+                        }
+                    }
+                }
+            }
+            LaunchedEffect(Unit) { snapshotFlow { scroll.firstVisibleItemIndex to scroll.firstVisibleItemScrollOffset }.collect { detailFirst=it.first;detailOffset=it.second } }
+            // Wait for Android window focus as well as composition. Preserve the chosen
+            // version/action on recreation and the parent card when returning from related titles.
+            LaunchedEffect(video?.id,versions.size,related.size,loadFinished,windowFocused,focusPending,busy) {
+                if(windowFocused && focusPending && !busy && video!=null && versions.isNotEmpty()) {
+                    val desired=focusedControl
+                    if(desired.startsWith("related_") && related.isEmpty() && !loadFinished) return@LaunchedEffect
+                    withFrameNanos { };withFrameNanos { }
+                    if(focusTargets[desired]==null) {
+                        val keys=buildList { addAll(listOf("top","title","overview","versions","actions"));if(video.resumeTicks>0) add("resume");if(error.isNotBlank()) add("error");if(video.people.isNotEmpty()) add("people");if(related.isNotEmpty()) add("related") }
+                        val key=when { desired=="detail_back" -> "top";desired.startsWith("version_") -> "versions";desired.startsWith("related_") && related.isNotEmpty() -> "related";else -> "actions" }
+                        scroll.scrollToItem(keys.indexOf(key).coerceAtLeast(0));withFrameNanos { };withFrameNanos { }
+                    }
+                    if(focusTargets[desired]==null) {
+                        if(desired.startsWith("version_")) versions.indexOfFirst { "version_${it.id}"==desired }.takeIf { it>=0 }?.let { versionScroll.scrollToItem(it) }
+                        if(desired.startsWith("related_")) related.indexOfFirst { "related_${it.id}"==desired }.takeIf { it>=0 }?.let { relatedScroll.scrollToItem(it) }
+                        withFrameNanos { };withFrameNanos { }
+                    }
+                    (focusTargets[desired] ?: focusTargets["detail_play"])?.let { it.requestFocus();focusPending=false }
+                }
+            }
+        }
+    }
+    override fun onSaveInstanceState(outState: Bundle) { outState.putString("focus",focusedControl);outState.putInt("first",detailFirst);outState.putInt("offset",detailOffset);outState.putString("source",selected);outState.putString("player",choice.name);super.onSaveInstanceState(outState) }
 }

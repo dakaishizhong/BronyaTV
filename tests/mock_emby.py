@@ -1,23 +1,27 @@
 #!/usr/bin/env python3
 """Local Emby contract fixture, with real range video, subtitles, and fault injection."""
+import datetime
 import http.server, json, pathlib, re, threading, urllib.parse, time
 ROOT = pathlib.Path(__file__).resolve().parent
 ASSETS = ROOT/'assets'
 LOG = ROOT.parent/'logs/fixture-requests.jsonl'
 lock = threading.Lock()
-state = {'fail': 0, 'status': 503, 'streams': 0, 'failures': 0, 'reports': [], 'playback': [], 'url_generation': 0, 'subtitle_fail': 0, 'expose_original_case': False}
+state = {'fail': 0, 'status': 503, 'streams': 0, 'failures': 0, 'reports': [], 'playback': [], 'url_generation': 0, 'subtitle_fail': 0, 'expose_original_case': False, 'missing_source': '', 'view_type': 'CollectionFolder'}
 
 def sources(item_id='demo'):
-    media = [dict(Id='mp4', Name='1080P · MP4', Container='mp4', SupportsDirectPlay=True,
+    media = [dict(Id='mp4', Name='H.264 MP4', Container='mp4', SupportsDirectPlay=True,
                  Bitrate=1400000, MediaStreams=[dict(Index=0, Type='Video', Codec='h264', Width=640, Height=360, Profile='High', BitDepth=8, AverageFrameRate=25),
                     dict(Index=1, Type='Audio', Codec='aac', Language='eng', DisplayTitle='English AAC'),
                     dict(Index=2, Type='Audio', Codec='aac', Language='zho', DisplayTitle='中文 AAC'),
                     dict(Index=3, Type='Subtitle', Codec='srt', Language='eng', IsExternal=True, DisplayTitle='External SRT', DeliveryUrl='/subtitle.srt')]),
-            dict(Id='mkv', Name='MKV · 内嵌 SRT + ASS', Container='mkv', SupportsDirectPlay=True, Bitrate=1400000,
+            dict(Id='mkv', Name='MKV · embedded SRT + ASS', Container='mkv', SupportsDirectPlay=True, Bitrate=1400000,
                  MediaStreams=[dict(Index=0, Type='Video', Codec='h264', Width=640, Height=360, Profile='High', BitDepth=8, AverageFrameRate=25),
                     dict(Index=1, Type='Audio', Codec='aac'), dict(Index=3, Type='Subtitle', Codec='subrip'), dict(Index=4, Type='Subtitle', Codec='ass')]),
             dict(Id='hevc', Name='HEVC · HDR10', Container='mkv', SupportsDirectPlay=True, Bitrate=600000,
                  MediaStreams=[dict(Index=0, Type='Video', Codec='hevc', Width=640, Height=360, VideoRange='HDR10', Profile='Main 10', BitDepth=10, AverageFrameRate=24), dict(Index=1, Type='Audio', Codec='aac')])]
+    media.append(dict(Id='vp8',Name='VP8 emulator fixture',Container='webm',SupportsDirectPlay=True,Bitrate=300000,
+        MediaStreams=[dict(Index=0,Type='Video',Codec='vp8',Width=320,Height=180,AverageFrameRate=12),
+                      dict(Index=1,Type='Audio',Codec='vorbis'),dict(Index=2,Type='Subtitle',Codec='srt',IsExternal=True,DeliveryUrl='/subtitle.srt')]))
     if state['expose_original_case']:
         extra=dict(media[1], Id='originalfallback', Name='Original-route recovery test',
                    DirectStreamUrl='/Videos/demo/stream.mp4?MediaSourceId=originalfallback&Static=true', AddApiKeyToDirectStreamUrl=True)
@@ -43,9 +47,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def log_request_safe(self, body=None):
         url=urllib.parse.urlsplit(self.path)
         with lock, LOG.open('a') as f:
-            f.write(json.dumps({'method':self.command,'path':url.path,'body':body if 'Playing' in url.path or 'PlaybackInfo' in url.path else None})+'\n')
+            f.write(json.dumps({'method':self.command,'path':url.path,'body':body if 'Playing' in url.path or 'PlaybackInfo' in url.path else None,'query':{k:v for k,v in urllib.parse.parse_qs(url.query).items() if k in ('ParentId','IncludeItemTypes','StartIndex','Limit','Genres','Years','IsPlayed','Filters','SortBy','SortOrder','Recursive','SearchTerm')}})+'\n')
     def respond(self, data, status=200, kind='application/json'):
         content=data if isinstance(data, bytes) else json.dumps(data).encode()
+        if status in (204,304):content=b''
         self.send_response(status); self.send_header('Content-Type',kind); self.send_header('Content-Length',str(len(content))); self.end_headers()
         if self.command != 'HEAD': self.wfile.write(content)
     def do_POST(self):
@@ -75,6 +80,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         dict(Index=1,Type='Audio',Codec='vorbis'),
                         dict(Index=2,Type='Subtitle',Codec='srt',IsExternal=True,DeliveryUrl='/subtitle.srt')])]
             elif selected: media=[s for s in media if s['Id']==selected]
+            if selected and selected==state['missing_source']: media=[]
             self.respond({'MediaSources':media,'PlaySessionId':'fixture-session'})
         elif '/Sessions/Playing' in path:
             with lock: state['reports'].append(dict(event=path,**body))
@@ -89,6 +95,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 state['fail']=int(q.get('fail',['0'])[0]); state['status']=int(q.get('status',['503'])[0]); state['url_generation']=0
                 state['subtitle_fail']=int(q.get('subtitle_fail',['0'])[0])
                 state['expose_original_case']=q.get('expose_original_case',['0'])[0]=='1'
+                state['missing_source']=q.get('missing_source',[''])[0]
+                state['view_type']=q.get('view_type',['CollectionFolder'])[0]
             self.respond({'ok':True}); return
         if path=='/fixture/status':
             with lock: result=json.loads(json.dumps(state))
@@ -100,16 +108,40 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path.endswith('/Shows/series/Episodes'):
             all_items=[video('ep'+str(i)) for i in range(1,4)]
             self.respond({'Items':all_items,'TotalRecordCount':3}); return
-        if path.endswith('/Views'): self.respond({'Items':[dict(Id='movies',Name='Cinema',Type='CollectionFolder',ImageTags={'Primary':'fixture'})]}); return
+        if path.endswith('/Views'): self.respond({'Items':[dict(Id='movies',Name='Cinema',Type=state['view_type'],CollectionType='movies',ImageTags={'Primary':'fixture'}),dict(Id='tv',Name='Television',Type=state['view_type'],CollectionType='tvshows',ImageTags={'Primary':'fixture'})]}); return
         if path.endswith('/Items/Resume'): self.respond({'Items':[video()]}); return
-        if path.endswith('/Items/Latest'): self.respond([video('ep1')]+[video('film'+str(i)) for i in range(7)]); return
+        if path.endswith('/Items/Latest'):
+            parent=q.get('ParentId',[''])[0]
+            items=[video('ep'+str(i)) for i in range(1,4)] if parent=='tv' else [video('film'+str(i)) for i in range(8)] if parent=='movies' else [video('ep1')]+[video('film'+str(i)) for i in range(7)]
+            self.respond(items); return
+        if path.endswith('/Genres') or path.endswith('/Years'):
+            names=['Science fiction','Fantasy','Adventure'] if path.endswith('/Genres') else ['2024','2026']
+            self.respond({'Items':[dict(Id='facet-'+str(i),Name=name) for i,name in enumerate(names)],'TotalRecordCount':len(names)}); return
         if path.endswith('/Users/u1/Items'):
-            start=int(q.get('StartIndex',['0'])[0]); limit=int(q.get('Limit',['40'])[0]); all_items=[video('film'+str(i)) for i in range(45)]
+            start=int(q.get('StartIndex',['0'])[0]); limit=int(q.get('Limit',['40'])[0])
+            all_items=[]
+            for i in range(45):
+                item=video('film'+str(i));item['ProductionYear']=2026 if i%2==0 else 2024
+                item['Genres']=['Science fiction','Adventure'] if i%2==0 else ['Fantasy']
+                item['UserData']['Played']=i%2==1;item['DateCreated']=str(datetime.date(2026,8,1)+datetime.timedelta(days=i));all_items.append(item)
+            parent=q.get('ParentId',[''])[0]
+            if parent=='tv' or q.get('IncludeItemTypes',[''])[0]=='Series': all_items=[dict(video('series'),Type='Series',Name='The horizon')]
+            if parent=='series': all_items=[dict(Id='season1',Name='Season 1',Type='Season'),dict(Id='season2',Name='Season 2',Type='Season')]
+            if parent=='season1': all_items=[video('ep1'),video('ep2')]
+            if parent=='season2': all_items=[video('ep3')]
+            if parent=='movies' and q.get('Recursive',['false'])[0]!='true': all_items=[dict(Id='collection',Name='Collections',Type='Folder')]+all_items
             query=q.get('SearchTerm',[''])[0].lower()
             if query: all_items=[v for v in [video()]+all_items if query in v['Name'].lower()]
+            if 'IsFavorite' in q.get('Filters',[''])[0]: all_items=[video()]
             types=q.get('IncludeItemTypes',[''])[0].split(',')
-            if types!=['']: all_items=[v for v in all_items if v['Type'] in types]
-            if q.get('Filters',[''])[0]=='IsFavorite': all_items=all_items[:3]
+            if types[0]: all_items=[v for v in all_items if v['Type'] in types]
+            genre=q.get('Genres',[''])[0];year=q.get('Years',[''])[0]
+            if genre: all_items=[v for v in all_items if genre in v.get('Genres',[])]
+            if year: all_items=[v for v in all_items if str(v.get('ProductionYear'))==year]
+            if 'IsPlayed' in q: all_items=[v for v in all_items if v.get('UserData',{}).get('Played',False)==(q['IsPlayed'][0]=='true')]
+            sort=q.get('SortBy',['SortName'])[0]
+            field={'SortName':'Name','DateCreated':'DateCreated','PremiereDate':'ProductionYear','CommunityRating':'CommunityRating'}[sort]
+            all_items.sort(key=lambda v:str(v.get(field,'')),reverse=q.get('SortOrder',['Ascending'])[0]=='Descending')
             self.respond({'Items':all_items[start:start+limit],'TotalRecordCount':len(all_items)}); return
         if '/Users/u1/Items/' in path: self.respond(video(path.rsplit('/',1)[-1])); return
         if '/Images/Backdrop/' in path: self.respond((ASSETS/'backdrop.jpg').read_bytes(),kind='image/jpeg'); return
@@ -138,7 +170,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if header:
                 match=re.fullmatch(r'bytes=(\d+)-(\d*)',header)
                 if match: start=int(match[1]); end=min(end,int(match[2])) if match[2] else end
-            if start>=size: self.respond({},416); return
+            if start>=size:
+                self.send_response(416);self.send_header('Content-Range',f'bytes */{size}');self.send_header('Content-Length','0');self.end_headers();return
             self.send_response(206 if header else 200); self.send_header('Content-Type','video/webm' if source=='vp8' else 'video/x-matroska' if source in ('mkv','hevc','originalfallback') else 'video/mp4')
             self.send_header('ETag',f'"fixture-{file.name}-v1"'); self.send_header('Accept-Ranges','bytes'); self.send_header('Content-Length',str(end-start+1))
             if header: self.send_header('Content-Range',f'bytes {start}-{end}/{size}')

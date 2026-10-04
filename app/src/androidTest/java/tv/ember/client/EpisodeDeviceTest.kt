@@ -5,8 +5,9 @@ import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
-import android.widget.TextView
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.media3.common.Player
 import androidx.media3.ui.PlayerView
 import androidx.test.core.app.ActivityScenario
@@ -14,6 +15,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import okhttp3.Request
 import org.junit.Assert.*
+import org.junit.Rule
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -25,6 +27,14 @@ import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(AndroidJUnit4::class)
 class EpisodeDeviceTest {
+    @get:Rule val compose=createEmptyComposeRule()
+    private val fixtureServer get()=InstrumentationRegistry.getArguments().getString("fixtureServer") ?: "http://10.0.2.2:8765"
+    private val source get()=InstrumentationRegistry.getArguments().getString("playbackSource") ?: "mp4"
+    private fun controls(s: ActivityScenario<PlaybackActivity>) {
+        s.onActivity { it.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_DPAD_UP));it.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_DPAD_UP)) }
+        compose.waitUntil(60000) { compose.onAllNodesWithTag("play_pause").fetchSemanticsNodes().isNotEmpty() }
+    }
+    private fun click(tag: String) { compose.waitUntil(60000) { compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty() };compose.onNodeWithTag(tag).performSemanticsAction(SemanticsActions.OnClick) { it() } }
     private val context get()=InstrumentationRegistry.getInstrumentation().targetContext
     private val app get()=context.applicationContext as BronyaApp
     private fun all(v:View):List<View> = listOf(v)+if(v is ViewGroup) (0 until v.childCount).flatMap { all(v.getChildAt(it)) } else emptyList()
@@ -32,30 +42,26 @@ class EpisodeDeviceTest {
     private fun await(s:ActivityScenario<PlaybackActivity>,check:(PlaybackActivity)->Boolean) {
         val end=SystemClock.elapsedRealtime()+30_000
         while(SystemClock.elapsedRealtime()<end) {
-            var ready=false;s.onActivity { ready=check(it) };if(ready) return;Thread.sleep(150)
+            var ready=false;s.onActivity { ready=all(it.window.decorView).filterIsInstance<PlayerView>().firstOrNull()?.player!=null && check(it) };if(ready) return;Thread.sleep(150)
         };fail("Playback condition did not become true")
     }
-    private fun launch(id:String="ep1")=ActivityScenario.launch<PlaybackActivity>(Intent(context,PlaybackActivity::class.java).putExtra("item_id",id).putExtra("source_id","mp4"))
+    private fun launch(id:String="ep1")=ActivityScenario.launch<PlaybackActivity>(Intent(context,PlaybackActivity::class.java).putExtra("item_id",id).putExtra("source_id",source))
     @Before fun setup() {
         tv.ember.client.i18n.AppLanguage.save(context,"zh")
-        app.sessions.save(Session("http://10.0.2.2:8765","fixture-token","u1","Demo TV"))
-        app.settings.streamConnections=4;app.settings.introSeconds=0;app.settings.outroSeconds=0;app.settings.autoNextEpisode=true
-        HttpClient.api.newCall(Request.Builder().url("http://10.0.2.2:8765/fixture/control?fail=0").build()).execute().close()
+        app.sessions.save(Session(fixtureServer,"fixture-token","u1","Demo TV"))
+        app.settings.streamConnections=4;app.settings.diskCacheMb=512;app.settings.introSeconds=0;app.settings.outroSeconds=0;app.settings.autoNextEpisode=true
+        HttpClient.api.newCall(Request.Builder().url("$fixtureServer/fixture/control?fail=0").build()).execute().close()
     }
     @Test fun manualNextAndPreviousReuseActivityAndCrossSeasonBoundary() {
         launch("ep2").use { s ->
-            await(s) { player(it).playbackState==Player.STATE_READY && all(it.window.decorView).filterIsInstance<Button>().any { b -> b.text=="下一集" && b.visibility==View.VISIBLE } }
-            s.onActivity { a -> player(a).pause();all(a.window.decorView).filterIsInstance<Button>().first { it.text=="下一集" }.performClick() }
+            await(s) { player(it).playbackState==Player.STATE_READY };controls(s)
+            s.onActivity { player(it).pause() };click("next_episode")
             await(s) { it.intent.getStringExtra("item_id")=="ep3" && player(it).playbackState==Player.STATE_READY }
             s.onActivity { a ->
                 assertEquals("ep3",player(a).currentMediaItem?.mediaId)
                 assertTrue(player(a).currentPosition<5000)
             }
-            await(s) { all(it.window.decorView).filterIsInstance<Button>().any { b -> b.text=="上一集" && b.visibility==View.VISIBLE } }
-            s.onActivity { a ->
-                assertEquals(View.GONE,all(a.window.decorView).filterIsInstance<Button>().first { it.text=="下一集" }.visibility)
-                all(a.window.decorView).filterIsInstance<Button>().first { it.text=="上一集" }.performClick()
-            }
+            controls(s);compose.onAllNodesWithTag("next_episode").assertCountEquals(0);click("previous_episode")
             await(s) { it.intent.getStringExtra("item_id")=="ep2" && player(it).playbackState==Player.STATE_READY }
         }
     }
@@ -83,14 +89,13 @@ class EpisodeDeviceTest {
         launch().use { s ->
             await(s) { player(it).playbackState==Player.STATE_READY }
             s.onActivity { player(it).seekTo(player(it).duration-12000) }
-            await(s) { all(it.window.decorView).filterIsInstance<TextView>().any { v -> v.text.toString().contains("秒后播放下一集") } }
+            compose.waitUntil(60000) { compose.onAllNodesWithText("秒后播放下一集",substring=true).fetchSemanticsNodes().isNotEmpty() }
             s.onActivity { a -> a.onBackPressedDispatcher.onBackPressed();player(a).pause() }
             Thread.sleep(5500)
             s.onActivity { a ->
                 assertEquals("ep1",a.intent.getStringExtra("item_id"))
-                assertFalse(all(a.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.toString().contains("秒后播放下一集") })
-                all(a.window.decorView).filterIsInstance<Button>().first { it.text=="下一集" }.performClick()
             }
+            compose.onAllNodesWithText("秒后播放下一集",substring=true).assertCountEquals(0);controls(s);click("next_episode")
             await(s) { it.intent.getStringExtra("item_id")=="ep2" && player(it).playbackState==Player.STATE_READY }
         }
     }
@@ -132,7 +137,7 @@ class EpisodeDeviceTest {
                 val f=PlaybackActivity::class.java.getDeclaredField("stats").apply { isAccessible=true }
                 val stats=f.get(a) as PlayerStatsMonitor
                 val output=stats.outputSummary(player(a) as androidx.media3.exoplayer.ExoPlayer)
-                assertTrue(output,output.contains("实际解码画面 640×360"));assertTrue(output,output.contains("已输出首帧"))
+                assertTrue(output,output.contains("实际解码画面 "+if(source=="vp8") "320×180" else "640×360"));assertTrue(output,output.contains("已输出首帧"))
                 assertTrue(output,output.contains("系统音频输出 PCM"));assertFalse(output,output.contains("1920×1080"))
             }
         }

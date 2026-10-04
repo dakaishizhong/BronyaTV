@@ -14,10 +14,40 @@ import org.json.JSONObject
 import tv.ember.client.data.*
 import tv.ember.client.network.ApiException
 import tv.ember.client.network.awaitResponse
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class EmbyApi(private val client: OkHttpClient, private val deviceId: String) {
+    var metadataStore: tv.ember.client.cache.MetadataStore?=null
+    private suspend fun metadata(s: Session,path: String,query: Map<String,String> = emptyMap()): String {
+        val store=metadataStore ?: return request(s.server,path,s.token,query)
+        return store.fresh(store.key(s,path,query)) { request(s.server,path,s.token,query) }
+    }
+    private suspend fun cached(s: Session,path: String,query: Map<String,String> = emptyMap())=metadataStore?.let { it.cached(it.key(s,path,query)) }
+    suspend fun cachedDetail(s: Session,id: String): VideoItem?=withContext(Dispatchers.IO) { cached(s,"Users/${s.userId}/Items/$id")?.let { runCatching { VideoItem.parse(JSONObject(it)) }.getOrNull() } }
+    suspend fun cachedItems(s: Session,query: BrowseQuery): ItemPage?=withContext(Dispatchers.IO) { cached(s,"Users/${s.userId}/Items",query.parameters())?.let { runCatching { val j=JSONObject(it);ItemPage(j.optJSONArray("Items").objects().map(VideoItem::parse),j.optInt("TotalRecordCount")) }.getOrNull() } }
+    suspend fun browse(s: Session,query: BrowseQuery): ItemPage=withContext(Dispatchers.IO) {
+        val j=JSONObject(metadata(s,"Users/${s.userId}/Items",query.parameters()))
+        ItemPage(j.optJSONArray("Items").objects().map(VideoItem::parse),j.optInt("TotalRecordCount"))
+    }
+    suspend fun facets(s: Session,query: BrowseQuery): BrowseFacets=kotlinx.coroutines.coroutineScope {
+        suspend fun values(path: String): Pair<List<String>,Boolean> = try {
+            val names=mutableListOf<String>();var start=0
+            do {
+                val q=mutableMapOf("UserId" to s.userId,"Recursive" to "true","Limit" to "200","StartIndex" to "$start","EnableTotalRecordCount" to "true","SortBy" to "SortName","SortOrder" to "Ascending")
+                if(query.parent.isNotBlank()) q["ParentId"]=query.parent
+                query.parameters()["IncludeItemTypes"]?.let { q["IncludeItemTypes"]=it }
+                val j=withContext(Dispatchers.IO) { JSONObject(metadata(s,path,q)) }
+                val list=j.optJSONArray("Items").objects();names+=list.map { it.optString("Name") }.filter(String::isNotBlank)
+                start+=list.size
+                val more=list.isNotEmpty() && start<j.optInt("TotalRecordCount",start)
+            } while(more)
+            names.distinct() to true
+        } catch(e: kotlinx.coroutines.CancellationException) { throw e } catch(e: ApiException) { if(e.status !in listOf(400,404,405,501)) throw e;emptyList<String>() to false }
+        val genres=async { values("Genres") };val years=async { values("Years") }
+        val g=genres.await();val y=years.await();BrowseFacets(g.first,y.first,g.second,y.second)
+    }
     companion object {
         fun normalizeServer(input: String): String {
             val cleaned = input.trim().trimEnd('/')
@@ -67,19 +97,23 @@ class EmbyApi(private val client: OkHttpClient, private val deviceId: String) {
             response.body?.string().orEmpty()
         } }
     }
-    suspend fun login(serverInput: String, username: String, password: String): Session {
+    suspend fun login(serverInput: String, username: String, password: String): Session = withContext(Dispatchers.IO) {
         val server = normalizeServer(serverInput)
         val j = JSONObject(request(server, "Users/AuthenticateByName", body = JSONObject().put("Username", username).put("Pw", password)))
         val u = j.getJSONObject("User")
-        return Session(server, j.getString("AccessToken"), u.getString("Id"), u.optString("Name", username))
+        return@withContext Session(server, j.getString("AccessToken"), u.getString("Id"), u.optString("Name", username))
     }
     suspend fun validate(s: Session) { request(s.server, "Users/${s.userId}", s.token) }
-    suspend fun views(s: Session): List<VideoItem> = JSONObject(request(s.server, "Users/${s.userId}/Views", s.token)).optJSONArray("Items").objects().map(VideoItem::parse)
-    suspend fun resume(s: Session): List<VideoItem> = JSONObject(request(s.server, "Users/${s.userId}/Items/Resume", s.token,
-        mapOf("Limit" to "16", "MediaTypes" to "Video", "Fields" to "Overview,MediaSources", "EnableImageTypes" to "Primary,Backdrop"))).optJSONArray("Items").objects().map(VideoItem::parse)
-    suspend fun latest(s: Session): List<VideoItem> = JSONArray(request(s.server, "Users/${s.userId}/Items/Latest", s.token,
-        mapOf("Limit" to "24", "IncludeItemTypes" to "Movie,Episode", "Fields" to "Overview,MediaSources"))).objects().map(VideoItem::parse)
-    suspend fun items(s: Session, parent: String, start: Int = 0, search: String = "", sort: String = "SortName", types: String = "", favorite: Boolean = false): ItemPage {
+    suspend fun views(s: Session): List<VideoItem> = withContext(Dispatchers.IO) { JSONObject(metadata(s, "Users/${s.userId}/Views")).optJSONArray("Items").objects().map(VideoItem::parse) }
+    suspend fun cachedViews(s: Session): List<VideoItem>?=withContext(Dispatchers.IO) { cached(s,"Users/${s.userId}/Views")?.let { JSONObject(it).optJSONArray("Items").objects().map(VideoItem::parse) } }
+    private val resumeQuery=mapOf("Limit" to "16","MediaTypes" to "Video","Fields" to "Overview,MediaSources","EnableImageTypes" to "Primary,Backdrop")
+    private val latestQuery=mapOf("Limit" to "24","IncludeItemTypes" to "Movie,Episode","Fields" to "Overview,MediaSources")
+    private fun latestQuery(parent: String)=if(parent.isBlank()) latestQuery else latestQuery+("ParentId" to parent)
+    suspend fun resume(s: Session): List<VideoItem> = withContext(Dispatchers.IO) { JSONObject(metadata(s,"Users/${s.userId}/Items/Resume",resumeQuery)).optJSONArray("Items").objects().map(VideoItem::parse) }
+    suspend fun latest(s: Session,parent: String=""): List<VideoItem> = withContext(Dispatchers.IO) { JSONArray(metadata(s,"Users/${s.userId}/Items/Latest",latestQuery(parent))).objects().map(VideoItem::parse) }
+    suspend fun cachedResume(s: Session): List<VideoItem>?=withContext(Dispatchers.IO) { cached(s,"Users/${s.userId}/Items/Resume",resumeQuery)?.let { JSONObject(it).optJSONArray("Items").objects().map(VideoItem::parse) } }
+    suspend fun cachedLatest(s: Session,parent: String=""): List<VideoItem>?=withContext(Dispatchers.IO) { cached(s,"Users/${s.userId}/Items/Latest",latestQuery(parent))?.let { JSONArray(it).objects().map(VideoItem::parse) } }
+    suspend fun items(s: Session, parent: String, start: Int = 0, search: String = "", sort: String = "SortName", types: String = "", favorite: Boolean = false): ItemPage = withContext(Dispatchers.IO) {
         require(sort in listOf("SortName","DateCreated","PremiereDate","CommunityRating"))
         val q = mutableMapOf("Limit" to "40", "StartIndex" to "${start}", "Fields" to "Overview,MediaSources", "SortBy" to sort, "SortOrder" to if(sort=="SortName") "Ascending" else "Descending", "EnableTotalRecordCount" to "true")
         if (parent.isNotBlank()) q["ParentId"] = parent
@@ -87,17 +121,17 @@ class EmbyApi(private val client: OkHttpClient, private val deviceId: String) {
         if(types.isNotBlank()) { q["IncludeItemTypes"]=types; q["Recursive"]="true" }
         if(favorite) { q["Filters"]="IsFavorite";q["Recursive"]="true" }
         val j = JSONObject(request(s.server, "Users/${s.userId}/Items", s.token, q))
-        return ItemPage(j.optJSONArray("Items").objects().map(VideoItem::parse), j.optInt("TotalRecordCount"))
+        return@withContext ItemPage(j.optJSONArray("Items").objects().map(VideoItem::parse), j.optInt("TotalRecordCount"))
     }
-    suspend fun detail(s: Session, id: String) = VideoItem.parse(JSONObject(request(s.server, "Users/${s.userId}/Items/${id}", s.token)))
-    suspend fun adjacentEpisodes(s: Session, item: VideoItem): EpisodeNeighbors {
-        if(item.type!="Episode" || item.seriesId.isBlank()) return EpisodeNeighbors()
+    suspend fun detail(s: Session, id: String) = withContext(Dispatchers.IO) { VideoItem.parse(JSONObject(metadata(s, "Users/${s.userId}/Items/${id}"))) }
+    suspend fun adjacentEpisodes(s: Session, item: VideoItem): EpisodeNeighbors = withContext(Dispatchers.IO) {
+        if(item.type!="Episode" || item.seriesId.isBlank()) return@withContext EpisodeNeighbors()
         val j=JSONObject(request(s.server,"Shows/${item.seriesId}/Episodes",s.token,mapOf(
             "UserId" to s.userId,"AdjacentTo" to item.id,"Fields" to "Overview,MediaSources",
             "EnableUserData" to "true")))
-        return EpisodeNeighbors.from(item,j.optJSONArray("Items").objects().map(VideoItem::parse))
+        return@withContext EpisodeNeighbors.from(item,j.optJSONArray("Items").objects().map(VideoItem::parse))
     }
-    suspend fun playbackInfo(s: Session, id: String, sourceId: String = ""): PlaybackInfo {
+    suspend fun playbackInfo(s: Session, id: String, sourceId: String = ""): PlaybackInfo = withContext(Dispatchers.IO) {
         val profile = JSONObject().put("Name", "BronyaTV Direct Play")
             .put("MaxStreamingBitrate", 1_000_000_000)
             .put("DirectPlayProfiles", JSONArray().put(JSONObject().put("Type", "Video").put("Container", "mkv,mp4,m4v,mov,webm,avi,ts,mpegts")))
@@ -111,7 +145,7 @@ class EmbyApi(private val client: OkHttpClient, private val deviceId: String) {
         if (sourceId.isNotBlank()) body.put("MediaSourceId", sourceId)
         val j = JSONObject(request(s.server, "Items/${id}/PlaybackInfo", s.token, body = body))
         if (j.optString("ErrorCode").isNotBlank()) throw IllegalStateException(Tr.text(UiText.SERVER_CANNOT_PROVIDE_THE_ORIGINAL_SOURCE_022 ,(j.optString("ErrorCode"))))
-        return PlaybackInfo(j.optJSONArray("MediaSources").objects().map(MediaVersion::parse), j.optString("PlaySessionId"))
+        return@withContext PlaybackInfo(j.optJSONArray("MediaSources").objects().map(MediaVersion::parse), j.optString("PlaySessionId"))
     }
     fun playbackSpec(s: Session, itemId: String, version: MediaVersion, playSessionId: String, forceOriginal: Boolean = false): PlaybackSpec {
         require(!version.requiresOpening) { Tr.text(UiText.THIS_SOURCE_REQUIRES_A_LIVE_SESSION_023) }
@@ -144,12 +178,12 @@ class EmbyApi(private val client: OkHttpClient, private val deviceId: String) {
             url(s.server, "Videos/${itemId}/${version.id}/Subtitles/${stream.index}/Stream.${if (stream.codec in listOf("ass", "ssa")) "ass" else "srt"}").toString()
         return if (sameOrigin(s.server, address)) address.toHttpUrl().newBuilder().setQueryParameter("api_key", s.token).build().toString() else address
     }
-    fun imageUrl(s: Session, item: VideoItem): String = url(s.server, "Items/${item.imageId}/Images/Primary", mapOf("maxWidth" to "360", "quality" to "85", "tag" to item.imageTag)).toString()
-    fun landscapeUrl(s: Session,item: VideoItem,large: Boolean=false): String =
-        if(item.backdropTag.isBlank()) url(s.server,"Items/${item.imageId}/Images/Primary",mapOf("maxWidth" to if(large) "1280" else "480","quality" to "85","tag" to item.imageTag)).toString()
-        else url(s.server,"Items/${item.backdropId}/Images/Backdrop/0",mapOf("maxWidth" to if(large) "1280" else "480","quality" to "85","tag" to item.backdropTag)).toString()
-    suspend fun similar(s: Session,id: String): List<VideoItem> = JSONObject(request(s.server,"Items/${id}/Similar",s.token,
-        mapOf("UserId" to s.userId,"Limit" to "12","Fields" to "Overview,MediaSources"))).optJSONArray("Items").objects().map(VideoItem::parse)
+    fun imageUrl(s: Session, item: VideoItem,width: Int=360): String = url(s.server, "Items/${item.imageId}/Images/Primary", mapOf("maxWidth" to width.coerceIn(48,1920).toString(), "quality" to "85", "tag" to item.imageTag)).toString()
+    fun landscapeUrl(s: Session,item: VideoItem,large: Boolean=false,width: Int=if(large) 1280 else 480): String =
+        if(item.backdropTag.isBlank()) url(s.server,"Items/${item.imageId}/Images/Primary",mapOf("maxWidth" to width.coerceIn(48,1920).toString(),"quality" to "85","tag" to item.imageTag)).toString()
+        else url(s.server,"Items/${item.backdropId}/Images/Backdrop/0",mapOf("maxWidth" to width.coerceIn(48,1920).toString(),"quality" to "85","tag" to item.backdropTag)).toString()
+    suspend fun similar(s: Session,id: String): List<VideoItem> = withContext(Dispatchers.IO) { JSONObject(metadata(s,"Items/${id}/Similar",
+        mapOf("UserId" to s.userId,"Limit" to "12","Fields" to "Overview,MediaSources"))).optJSONArray("Items").objects().map(VideoItem::parse) }
     suspend fun report(s: Session, event: String, itemId: String, spec: PlaybackSpec, positionMs: Long, paused: Boolean) {
         request(s.server, "Sessions/Playing${if (event.isBlank()) "" else "/${event}"}", s.token, body = JSONObject()
             .put("ItemId", itemId).put("MediaSourceId", spec.version.id).put("PlaySessionId", spec.playSessionId)

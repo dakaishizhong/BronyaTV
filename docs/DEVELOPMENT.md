@@ -2,7 +2,7 @@
 
 ## 构建
 
-Linux x86_64、JDK 17、Android SDK 36 / Build Tools 36.0.0。使用 Kotlin、Compose for TV、Leanback、Media3 和 OkHttp。
+Linux x86_64、JDK 17、Android SDK 36 / Build Tools 36.0.0。使用 Kotlin、Compose for TV / TV Material、Media3 和 OkHttp。
 
 ```bash
 bash scripts/bootstrap.sh
@@ -101,3 +101,24 @@ adb shell am instrument -w -r -e class tv.ember.client.LosslessAudioDeviceTest t
 ```
 
 如设备的外部目录访问策略不同，可通过 `-e losslessFixtureBase <目录或 URL>` 指定包含两个文件的位置。此检查不代替 DTS-HD MA 或厂商硬解的真机验证。
+
+
+## 1.6.0 界面与数据缓存
+
+全部应用页面、侧栏、设置编辑、播放控制和弹窗正文使用 Compose TV，播放器仅保留 PlayerView 的 Surface/字幕互操作。原取流、解码、缓存预取、续播和字幕核心继续使用。`TvDialog` 使用 AndroidX ComponentDialog 提供生命周期与窗口返回分发，遥控器重复键过滤和系统返回手势共用 dispatcher。
+
+首页以最近播放/继续观看开头，随后展示 Emby User Views 返回的前六个实际媒体库及各自 ParentId 范围的最新内容，按服务器顺序排列，标题直接进入原目录；没有返回媒体库时才使用全局最近添加。其余媒体库保留入口。电影/剧集页默认只有影片和相应服务器媒体库入口，筛选收进一个可展开的“筛选与排序”入口，选择即更新，不要求额外应用。播放进度条下采用圆形图标，固定尺寸避免焦点引起布局跳动。
+
+媒体库来自 [UserViews](https://dev.emby.media/reference/RestAPI/UserViewsService/getUsersByUseridViews.html)，分区内容来自支持 ParentId 的 [Latest](https://dev.emby.media/reference/RestAPI/UserLibraryService/getUsersByUseridItemsLatest.html)。媒体库入口直接使用返回的 ID 查询，不依赖聚合视图 Type 是否等于 CollectionFolder。
+
+分类能力来自 Emby 官方接口：[ItemsService](https://dev.emby.media/reference/RestAPI/ItemsService/getUsersByUseridItems.html)、[Genres](https://dev.emby.media/reference/RestAPI/GenresService/getGenres.html)、[Years](https://dev.emby.media/reference/RestAPI/TagService/getYears.html)。使用 ParentId、IncludeItemTypes、Genres、Years、IsPlayed、Filters、SortBy、SortOrder、StartIndex 和 Limit，服务器完成条件与分页。Genres/Years 按用户、媒体库与媒体类型查询并分页获取，不支持的端点不展示相应选项。无筛选的文件夹查询不强制递归，保留媒体库层级。
+
+`ImageCache` 独立磁盘 LRU 默认 256 MiB，支持 0 或 64–1024 MiB；按实际尺寸和 ImageTag 加载，三路并发并合并相同请求，离开页面后取消无观察者工作。停止的页面释放 bitmap 引用并取消请求；返回时从内存/磁盘恢复。解码内存为 heap/32，限制 2–12 MiB，播放时最多 3 MiB，内存压力时最多 2 MiB。`MetadataStore` 独立 24 MiB，四路并发合并请求，仅允许描述性字段；UserData、临时地址、鉴权头和播放会话均不落盘。两个缓存均按规范化服务器与用户命名空间隔离。动态进度取服务器最新数据，停止报告与刷新之间由 30 秒、最多 128 条的内存记录衔接。
+
+新增 `BrowseCacheTest` 覆盖服务器请求、分页、缓存隔离/淘汰、敏感字段排除、请求合并取消与临时进度。`ComposeMigrationDeviceTest` 检查登录密码不恢复、版本直选/失效处理、分类分页和文件夹返回、横向焦点恢复、图片尺寸和缓存独立清理。既有界面测试已改用 Compose semantics，PlayerView 测试仍检查真实播放器。上述界面/剧集/按键检查也接受 `playbackSource=vp8`，用于 SSE 限制的软件模拟器；它不代替 H.264/HDR 真机验证。
+
+片尾回归还修正了精确 EOF 的 Range 416：仅在服务器返回合法 `Content-Range: bytes */N` 且请求位置等于 N 时按空读取成功处理；未知长度和越界位置仍失败，与 Media3 HTTP 数据源语义一致。`ParallelRangeReaderTest` 覆盖两类情况，原分段接收实现和解码二进制保持。
+
+外部字幕文本与 PlaybackInfo 使用控制传输，视频前台和预取仍共享原有 1/2/4/8 媒体取流预算。这避免单连接视频响应在缓冲暂停时长期占用唯一许可，导致已选外部字幕无法加载；`TvIntegrationTest` 验证单连接/四连接 MP4 的真实 SRT cue、音轨切换与生命周期。媒体流总并发策略没有放宽。
+
+本地签名包流程可用 `python3 scripts/compose_release_smoke.py --apk releases/v1.6.0/BronyaTV-1.6.0-release.apk` 在专用测试模拟器上复现；默认 serial 为 emulator-5556，需先启动 tests/mock_emby.py。脚本在该模拟器卸载测试包并安装签名包，通过原生按键检查登录、分类、版本直选、播放 Menu/Back、设置和搜索，将英文截图保存到 artifacts/compose-release。TV Material 按钮通过 OK 激活；输入框 Up/Down 显式调用 Compose 焦点移动，避免编辑器截获方向键。

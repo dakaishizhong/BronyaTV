@@ -1,74 +1,85 @@
 package tv.ember.client.ui
 
-import tv.ember.client.i18n.Tr
-import tv.ember.client.i18n.UiText
 import android.content.Intent
 import android.os.Bundle
-import android.text.InputType
-import android.view.Gravity
-import android.view.View
-import android.widget.*
+import androidx.activity.addCallback
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.*
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.tv.material3.Text
 import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import tv.ember.client.cache.DiskCachePlan
-import tv.ember.client.player.ExternalPlayers
+import kotlinx.coroutines.*
+import tv.ember.client.i18n.*
 import tv.ember.client.settings.*
+import tv.ember.client.cache.*
+import tv.ember.client.player.ExternalPlayers
 
-@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+private data class SettingEntry(val key: String,val label: String,val value: String="",val action: (() ->Unit)?=null)
 class SettingsActivity: TvActivity() {
-    private var taps=0
-    private var category=-1
+    private var category by mutableIntStateOf(-1)
+    private var revision by mutableIntStateOf(0)
     private var dashboardFocus=0
-    private var scroll: ScrollView?=null
+    private var lastFocus=""
+    private var editorFirst=0
+    private var editorOffset=0
+    private var taps=0
+    private var imageBytes by mutableLongStateOf(0)
+    private var diskUsage by mutableStateOf("")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        onBackPressedDispatcher.addCallback(this,object: androidx.activity.OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() { if(category>=0) { category=-1;scroll=null;render() } else finish() }
-        })
-        category=savedInstanceState?.getInt("category") ?: -1;dashboardFocus=savedInstanceState?.getInt("dashboardFocus") ?: 0;render()
-    }
-    override fun onSaveInstanceState(outState: Bundle) { outState.putInt("category",category);outState.putInt("dashboardFocus",dashboardFocus);super.onSaveInstanceState(outState) }
-    private fun render(focus: String?=currentFocus?.tag as? String) {
-        if(category<0) { renderDashboard();return }
-        val oldScroll=if(focus?.startsWith("tab")!=true) scroll?.scrollY ?: 0 else 0
-        val root=paddedColumn()
-        val heading=TvUi.row(this)
-        heading.addView(TvUi.back(this) { category=-1;scroll=null;render() })
-        heading.addView(TvUi.text(this,Tr.text(UiText.SETTINGS_268),28f),LinearLayout.LayoutParams(-2,-2).apply { marginStart=TvUi.dp(root,16) })
-        TvUi.add(root,heading,bottom=24)
-        val body=TvUi.row(this).apply { gravity=Gravity.TOP }
-        val side=TvUi.column(this)
-        listOf(Tr.text(UiText.PLAYBACK_333),Tr.text(UiText.REMOTE_CONTROL_334),Tr.text(UiText.NETWORK_CACHE_335),Tr.text(UiText.AUDIO_SUBTITLES_336),Tr.text(UiText.ACCOUNT_INFO_337)).forEachIndexed { index,name ->
-            TvUi.add(side,TvUi.navigationButton(this,name,index==category) { category=index;scroll=null;render("tab${index}") }.apply {
-                tag="tab${index}";isSelected=index==category;gravity=Gravity.START or Gravity.CENTER_VERTICAL
-                textSize=14f
-            },bottom=8)
-        }
-        body.addView(side,LinearLayout.LayoutParams(TvUi.dp(root,180),-1).apply { marginEnd=TvUi.dp(root,32) })
-        val scroller=ScrollView(this).apply { clipToPadding=false };scroll=scroller
-        val content=TvUi.column(this).apply { setPadding(TvUi.dp(this,4),TvUi.dp(this,4),TvUi.dp(this,8),TvUi.dp(this,18)) }
-        scroller.addView(content);body.addView(scroller,LinearLayout.LayoutParams(0,-1,1f))
-        root.addView(body,LinearLayout.LayoutParams(-1,0,1f));setContentView(TvUi.shell(this,Tr.text(UiText.SETTINGS_268),::navigate,root))
-        val p=app.settings
-        fun setting(key: String,label: String,value: String,action: ()->Unit) {
-            val row=TvUi.row(this).apply {
-                tag=key;isFocusable=true;isFocusableInTouchMode=true;background=TvUi.focusBackground()
-                setPadding(TvUi.dp(this,18),TvUi.dp(this,14),TvUi.dp(this,18),TvUi.dp(this,14))
-                minimumHeight=TvUi.dp(this,54)
+        category=savedInstanceState?.getInt("category",-1) ?: -1;dashboardFocus=savedInstanceState?.getInt("dashboard",0) ?: 0
+        lastFocus=savedInstanceState?.getString("focus").orEmpty();editorFirst=savedInstanceState?.getInt("first",0) ?: 0;editorOffset=savedInstanceState?.getInt("offset",0) ?: 0
+        tvContent {
+            TvShell(Tr.text(UiText.SETTINGS_268),::navigate,MediaUi.backdropItem) {
+                if(category<0) Dashboard() else key(category) { Editor() }
             }
-            val title=TvUi.text(this,label,16f)
-            val detail=TvUi.text(this,"${value}  ›",14f,TvUi.muted)
-            row.addView(title,LinearLayout.LayoutParams(0,-2,1f));row.addView(detail)
-            TvUi.focusOnTouch(row)
-            row.setOnClickListener { action() }
-            row.setOnFocusChangeListener { _,focused -> title.setTextColor(if(focused) TvUi.bg else TvUi.text);detail.setTextColor(if(focused) TvUi.bg else TvUi.muted) }
-            TvUi.add(content,row,bottom=9)
         }
-        fun hint(value: String) { TvUi.add(content,TvUi.text(this,value,13f,TvUi.muted).apply { setPadding(TvUi.dp(this,4),0,0,0) },bottom=14) }
+        onBackPressedDispatcher.addCallback(this) { if(category>=0) { category=-1;lastFocus="";editorFirst=0;editorOffset=0 } else finish() }
+        refreshUsage()
+    }
+    private fun refreshUsage() { lifecycleScope.launch {
+        imageBytes=app.imageCache.usedBytes()
+        val snapshot=withContext(Dispatchers.IO) { app.playbackCache.snapshot() }
+        diskUsage=Tr.text(UiText.DISK_USED_MB_AVAILABLE_MB_365,snapshot.usedBytes/1048576,snapshot.availableBytes/1048576)
+    } }
+    private fun render(focus: String?=null) { lastFocus=focus ?: lastFocus;revision++ }
+    @Composable private fun Editor() {
+        val scale=LocalTvScale.current;val stamp=revision
+        val entries=entries(stamp)
+        val state=rememberLazyListState(editorFirst,editorOffset)
+        val requests=remember { mutableMapOf<String,FocusRequester>() }
+        Column(Modifier.fillMaxSize().padding((18*scale).dp)) {
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) { TvAction("‹","settings_back") { category=-1 };Text(Tr.text(UiText.SETTINGS_268),color=Paper,fontSize=(28*scale).sp);TvClock() }
+            LazyRow(horizontalArrangement=Arrangement.spacedBy(7.dp),contentPadding=PaddingValues(vertical=12.dp)) {
+                itemsIndexed(listOf(UiText.PLAYBACK_333,UiText.REMOTE_CONTROL_334,UiText.NETWORK_CACHE_335,UiText.AUDIO_SUBTITLES_336,UiText.ACCOUNT_INFO_337),key={ i,_-> i }) { i,label ->
+                    val request=remember { FocusRequester() };requests["tab$i"]=request
+                    TvAction(Tr.text(label),"tab$i",Modifier.focusRequester(request),selected=category==i,onFocus={ lastFocus="tab$i" }) { category=i;lastFocus="tab$i";editorFirst=0;editorOffset=0;refreshUsage() }
+                }
+            }
+            LazyColumn(Modifier.weight(1f).fillMaxWidth(),state=state,contentPadding=PaddingValues(3.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                items(entries,key={ it.key }) { entry ->
+                    if(entry.action==null) Text(entry.label,color=Muted,fontSize=(12*scale).sp)
+                    else {
+                        val request=remember(entry.key) { FocusRequester() }
+                        DisposableEffect(entry.key) { requests[entry.key]=request;onDispose { if(requests[entry.key]===request) requests.remove(entry.key) } }
+                        TvAction(entry.label+"    "+entry.value,entry.key,Modifier.fillMaxWidth().focusRequester(request),onFocus={ lastFocus=entry.key },onClick=entry.action)
+                    }
+                }
+            }
+        }
+        LaunchedEffect(category,revision) { withFrameNanos {};requests[lastFocus.ifBlank { "tab$category" }]?.requestFocus() }
+        LaunchedEffect(category) { snapshotFlow { state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset }.collect { editorFirst=it.first;editorOffset=it.second } }
+    }
+    private fun entries(@Suppress("UNUSED_PARAMETER") stamp: Int): List<SettingEntry> {
+        val result=mutableListOf<SettingEntry>();val p=app.settings
+        fun setting(key: String,label: String,value: String,action: ()->Unit) { result+=SettingEntry(key,label,value,action) }
+        fun hint(value: String) { result+=SettingEntry("hint_${result.size}",value) }
         fun seconds(key: String,title: String,value: Int,values: List<Int>,save: (Int)->Unit) {
-            setting(key,title,Tr.text(UiText.SEC_013 ,(value))) { select(title,values.map { Tr.text(UiText.SEC_013 ,(it)) },values.indexOf(value)) { save(values[it]);render(key) } }
+            setting(key,title,Tr.text(UiText.SEC_013,value)) { select(title,values.map { Tr.text(UiText.SEC_013,it) },values.indexOf(value)) { save(values[it]);render(key) } }
         }
         when(category) {
             0 -> {
@@ -124,12 +135,20 @@ class SettingsActivity: TvActivity() {
                                 .onFailure { message(Tr.text(UiText.COULD_NOT_CLEAR_CACHE_TRY_AGAIN_363)) }
                         } }.setNegativeButton(Tr.text(UiText.CANCEL_196),null).show()
                 }
-                val diskInfo=TvUi.text(this,Tr.text(UiText.READING_CACHE_USAGE_364),13f,TvUi.muted)
-                TvUi.add(content,diskInfo)
-                lifecycleScope.launch {
-                    val snapshot=withContext(Dispatchers.IO) { app.playbackCache.snapshot() }
-                    diskInfo.text=Tr.text(UiText.DISK_USED_MB_AVAILABLE_MB_365 ,(snapshot.usedBytes/1048576),(snapshot.availableBytes/1048576))
+                hint(diskUsage)
+                setting("image_capacity",Tr.text(UiText.IMAGE_CACHE_CAPACITY),if(p.imageCacheMb==0) Tr.text(UiText.OFF_187) else "${p.imageCacheMb} MB") {
+                    val choices=listOf(0,64,128,256,512,1024)
+                    select(Tr.text(UiText.IMAGE_CACHE_CAPACITY),choices.map { if(it==0) Tr.text(UiText.OFF_187) else "$it MB" },choices.indexOf(p.imageCacheMb)) {
+                        p.imageCacheMb=choices[it];lifecycleScope.launch { app.imageCache.resize();refreshUsage() };render("image_capacity")
+                    }
                 }
+                hint(Tr.text(UiText.IMAGE_CACHE_USED,imageBytes/1048576))
+                setting("image_clear",Tr.text(UiText.IMAGE_CACHE_CLEAR),Tr.text(UiText.IMAGE_CACHE)) {
+                    TvUi.dialog(this).setTitle(Tr.text(UiText.IMAGE_CACHE_CLEAR)).setMessage(Tr.text(UiText.IMAGE_CACHE_HINT))
+                        .setPositiveButton(Tr.text(UiText.CLEAR_361)) { _,_-> lifecycleScope.launch { app.imageCache.clear();refreshUsage();render("image_clear") } }
+                        .setNegativeButton(Tr.text(UiText.CANCEL_196),null).show()
+                }
+                hint(Tr.text(UiText.IMAGE_CACHE_HINT))
                 hint(Tr.text(UiText.DISK_CAPACITY_IS_LIMITED_BY_AVAILABLE_366))
                 seconds("prebuffer",Tr.text(UiText.PREBUFFER_DURATION_367),p.prebuffer,listOf(2,5,10,15,30,60)) { p.prebuffer=it }
                 seconds("backbuffer",Tr.text(UiText.BACK_BUFFER_368),p.backBufferSeconds,listOf(0,5,15,30)) { p.backBufferSeconds=it }
@@ -155,26 +174,20 @@ class SettingsActivity: TvActivity() {
                 }
                 setting("logout",Tr.text(UiText.SIGN_OUT_382),app.sessions.load()?.userName.orEmpty()) {
                     TvUi.dialog(this).setTitle(Tr.text(UiText.SIGN_OUT_OF_THIS_ACCOUNT_383)).setPositiveButton(Tr.text(UiText.SIGN_OUT_384)) { _,_->
-                        app.sessions.clear();app.launches.clear();PosterLoader.clear()
+                        app.sessions.clear();app.launches.clear();app.progress.clear();app.imageCache.trim(true);MediaUi.backdropItem=null
                         startActivity(Intent(this,LoginActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK));finish()
                     }.setNegativeButton(Tr.text(UiText.CANCEL_196),null).show()
                 }
             }
         }
-        root.post {
-            val target=root.findViewWithTag<View>(focus ?: "tab${category}")
-            (target ?: side.getChildAt(category)).requestFocus()
-            if(focus!=null && !focus.startsWith("tab")) scroller.scrollTo(0,oldScroll)
-        }
+        return result
     }
     private fun navigate(name: String) {
-        if(name==Tr.text(UiText.SETTINGS_268)) { category=-1;render();return }
-        startActivity(Intent(this,MainActivity::class.java).putExtra("navigate",name).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP));finish()
+        if(name==Tr.text(UiText.SETTINGS_268)) { category=-1;return }
+        navigateTo(name);finish()
     }
-    private fun renderDashboard() {
-        val surface=TvUi.backdrop(this)
-        val session=app.sessions.load();val item=MediaUi.backdropItem
-        if(session!=null && item!=null) PosterLoader.load(lifecycleScope,surface.findViewWithTag("backdrop"),app.api.landscapeUrl(session,item,true),session,true)
+    @Composable private fun Dashboard() {
+        val session=app.sessions.load()
         val p=app.settings
         fun enabled(value: Boolean)=if(value) Tr.text(UiText.ON_186) else Tr.text(UiText.OFF_187)
         fun language(value: String)=when(value) { "zh" -> Tr.text(UiText.CHINESE_370);"en" -> Tr.text(UiText.ENGLISH_371);"ja" -> Tr.text(UiText.JAPANESE_372);"off" -> Tr.text(UiText.OFF_BY_DEFAULT_374);"" -> Tr.text(UiText.AUTO_220);else -> value }
@@ -186,34 +199,21 @@ class SettingsActivity: TvActivity() {
             SettingsTile(Tr.text(UiText.INTERFACE_DIAGNOSTICS_398),4,0xFFFF983D.toInt(),listOf(Tr.text(UiText.INTERFACE_LANGUAGE) to if(tv.ember.client.i18n.AppLanguage.read(this)=="zh") "简体中文" else "English",Tr.text(UiText.PERFORMANCE_OVERLAY_399) to enabled(p.osd),Tr.text(UiText.MOVIE_BACKDROP_401) to Tr.text(UiText.SERVER_IMAGES_402),Tr.text(UiText.VERSION_403) to tv.ember.client.BuildConfig.VERSION_NAME)),
             SettingsTile(Tr.text(UiText.ACCOUNT_INFO_337),4,0xFFAE59FF.toInt(),listOf(Tr.text(UiText.ACCOUNT_279) to session?.userName.orEmpty(),Tr.text(UiText.SERVICE_404) to "Emby",Tr.text(UiText.APPLICATION_405) to "BronyaTV",Tr.text(UiText.VERSION_403) to tv.ember.client.BuildConfig.VERSION_NAME))
         )
-        val compose=androidx.compose.ui.platform.ComposeView(this).apply {
-            setViewCompositionStrategy(androidx.compose.ui.platform.ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-            setContent {
-                SettingsDashboard(tiles,dashboardFocus,TvUi.scale(this@SettingsActivity),
-                    onFocused={ dashboardFocus=it },
-                    onOpen={ index -> category=index;this@SettingsActivity.scroll=null;render("tab$index") },
-                    onFocusSidebar={ window.decorView.findViewWithTag<View>("nav_${Tr.text(UiText.SETTINGS_268)}")?.requestFocus() })
-            }
-        }
-        surface.addView(compose,FrameLayout.LayoutParams(-1,-1))
-        // Horizontal LinearLayout's baseline probe measures weighted children with infinite height.
-        // Compose scrolling requires a bounded viewport even during that preliminary measurement.
-        setContentView(TvUi.shell(this,Tr.text(UiText.SETTINGS_268),::navigate,surface).apply { isBaselineAligned=false })
+        val rail=LocalRailFocus.current
+        SettingsDashboard(tiles,dashboardFocus,LocalTvScale.current,onFocused={ dashboardFocus=it },onOpen={ index -> category=index;lastFocus="tab$index";editorFirst=0;editorOffset=0;refreshUsage() },onFocusSidebar=rail)
     }
-
     private fun duration(title: String,value: Int,save: (Int)->Unit) {
-        val input=TvUi.input(this,Tr.text(UiText.SEC_406)).apply { inputType=InputType.TYPE_CLASS_NUMBER;setText("${value}");selectAll() }
-        val dialog=TvUi.dialog(this).setTitle(title).setMessage(Tr.text(UiText.ENTER_SECONDS_DISABLES_SKIPPING_MAXIMUM_407))
-            .setView(input).setPositiveButton(Tr.text(UiText.SAVE_408),null).setNegativeButton(Tr.text(UiText.CANCEL_196),null).create()
-        dialog.setOnShowListener {
-            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val seconds=input.text.toString().toIntOrNull()
-                if(seconds==null || seconds !in 0..600) input.error=Tr.text(UiText.ENTER_A_NUMBER_FROM_TO_409)
+        TvUi.dialog(this).setTitle(title).setMessage(Tr.text(UiText.ENTER_SECONDS_DISABLES_SKIPPING_MAXIMUM_407)).setInput(Tr.text(UiText.SEC_406),"$value")
+            .button(Tr.text(UiText.SAVE_408),false) { dialog ->
+                val seconds=dialog.input.toIntOrNull()
+                if(seconds==null || seconds !in 0..600) dialog.inputError=Tr.text(UiText.ENTER_A_NUMBER_FROM_TO_409)
                 else { dialog.dismiss();save(seconds) }
-            }
-        };dialog.show()
+            }.setNegativeButton(Tr.text(UiText.CANCEL_196),null).show()
     }
     private fun select(title: String,values: List<String>,checked: Int,action: (Int)->Unit) {
-        TvUi.dialog(this).setTitle(title).setSingleChoiceItems(values.toTypedArray(),checked.coerceAtLeast(0)) { dialog,which -> dialog.dismiss();action(which) }.setNegativeButton(Tr.text(UiText.CANCEL_196),null).show()
+        TvUi.dialog(this).setTitle(title).setSingleChoiceItems(values.toTypedArray(),checked) { dialog,index -> dialog.dismiss();action(index) }.setNegativeButton(Tr.text(UiText.CANCEL_196),null).show()
+    }
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putInt("category",category);outState.putInt("dashboard",dashboardFocus);outState.putString("focus",lastFocus);outState.putInt("first",editorFirst);outState.putInt("offset",editorOffset);super.onSaveInstanceState(outState)
     }
 }

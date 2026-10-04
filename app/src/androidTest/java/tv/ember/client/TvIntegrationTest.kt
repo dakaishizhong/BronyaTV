@@ -3,9 +3,9 @@ package tv.ember.client
 import android.content.Intent
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
-import android.widget.EditText
-import android.widget.TextView
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -27,6 +27,9 @@ import tv.ember.client.ui.*
 
 @RunWith(AndroidJUnit4::class)
 class TvIntegrationTest {
+    @get:Rule val compose=createEmptyComposeRule()
+    private fun text(value: String)=compose.onAllNodesWithText(value,substring=true).fetchSemanticsNodes().isNotEmpty()
+    private fun click(tag: String) { compose.waitUntil(30000) { compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty() };compose.onNodeWithTag(tag).performSemanticsAction(SemanticsActions.OnClick) { it() } }
     private val fixtureServer get()=InstrumentationRegistry.getArguments().getString("fixtureServer") ?: "http://10.0.2.2:8765"
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private val app get() = context.applicationContext as BronyaApp
@@ -41,7 +44,8 @@ class TvIntegrationTest {
     @Before fun setup() {
         tv.ember.client.i18n.AppLanguage.save(context,"zh")
         app.sessions.save(Session(fixtureServer, "fixture-token", "u1", "Demo TV"))
-        app.settings.osd = false; app.settings.debugEnabled = false; app.settings.receiveBufferKb = 0; app.settings.streamConnections=InstrumentationRegistry.getArguments().getString("connections")?.toIntOrNull() ?: 1
+        // Keep transport/retry tests independent of the previous disk-prefetch device scenarios.
+        app.settings.diskCacheMb=0;app.settings.osd = false; app.settings.debugEnabled = false; app.settings.receiveBufferKb = 0; app.settings.streamConnections=InstrumentationRegistry.getArguments().getString("connections")?.toIntOrNull() ?: 1
         fixture("/fixture/control?fail=0")
     }
     @Test fun encryptedSessionSurvivesReloadWithoutPlaintext() {
@@ -52,18 +56,15 @@ class TvIntegrationTest {
     }
     @Test fun homeDisplaysServerContentAndHasRemoteFocus() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            await { var ready=false; scenario.onActivity { ready=views(it).filterIsInstance<TextView>().any { v -> v.text.toString().contains("Ocean of light") } && views(it).filterIsInstance<TextView>().any { v -> v.text.toString().contains("After the horizon") } }; ready }
-            scenario.onActivity { assertNotNull(it.currentFocus); assertTrue(views(it).filterIsInstance<Button>().any { b -> b.text=="设置" }) }
+            await { text("Ocean of light") && text("After the horizon") }
+            compose.onNodeWithTag("nav_首页").assertIsFocused();compose.onNodeWithTag("nav_设置").assertExists()
         }
     }
     @Test fun usernamePasswordLoginPersistsAuthenticatedSession() {
         app.sessions.clear()
         ActivityScenario.launch(LoginActivity::class.java).use { scenario ->
-            scenario.onActivity { a ->
-                val fields=views(a).filterIsInstance<EditText>()
-                fields[0].setText(fixtureServer); fields[1].setText("demo"); fields[2].setText("demo")
-                views(a).filterIsInstance<Button>().first { it.text=="连接服务器" }.performClick()
-            }
+            compose.waitUntil(30000) { compose.onAllNodesWithTag("login_password").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("login_server").performTextReplacement(fixtureServer);compose.onNodeWithTag("login_username").performTextReplacement("demo");compose.onNodeWithTag("login_password").performTextReplacement("demo");click("login_connect")
             await { app.sessions.load()?.userId=="u1" }
         }
     }
@@ -111,15 +112,9 @@ class TvIntegrationTest {
                 scenario.moveToState(Lifecycle.State.RESUMED)
                 await(15000) { var ready=false; scenario.onActivity { a -> val p=views(a).filterIsInstance<PlayerView>().first().player; ready=p?.playbackState==Player.STATE_READY && p.currentPosition>10000 }; ready }
             }
-            if(osd) await(5000) {
-                var found=false
-                scenario.onActivity { a -> found=views(a).filterIsInstance<TextView>().any {
-                    val text=it.text.toString()
-                    it.visibility==View.VISIBLE && text.contains("缓冲内存") &&
-                        (app.settings.streamConnections==1 || (if(source=="norange") text.contains("使用单连接") else text.contains("独立 TCP ${app.settings.streamConnections} 路分段"))) &&
-                        (source!="queryauth" || (text.contains("TCP 接收") && text.contains("请求 1024KB") && !text.contains("等待连接")))
-                } }
-                found
+            if(osd) await(15000) {
+                text("缓冲内存") && (app.settings.streamConnections==1 || text(if(source=="norange") "单连接" else "独立 TCP ${app.settings.streamConnections} 路分段")) &&
+                    (source!="queryauth" || (text("TCP 接收") && text("请求 1024KB") && !text("等待连接")))
             }
         }
     }
@@ -144,11 +139,8 @@ class TvIntegrationTest {
             await { var ready=false;scenario.onActivity { a -> ready=views(a).filterIsInstance<PlayerView>().first().player?.playbackState==Player.STATE_READY };ready }
             scenario.onActivity { a -> views(a).filterIsInstance<PlayerView>().first().player!!.seekTo(65000) }
             await { var ready=false;scenario.onActivity { a ->
-                val p=views(a).filterIsInstance<PlayerView>().first().player!!
-                ready=p.playbackState==Player.STATE_READY && p.currentPosition>=65000 && views(a).filterIsInstance<TextView>().any {
-                    val text=it.text.toString();text.contains("独立 TCP 4 路分段") && text.contains("片源 MP4") && text.contains("解码输入 video/avc")
-                }
-            };ready }
+                val p=views(a).filterIsInstance<PlayerView>().first().player!!;ready=p.playbackState==Player.STATE_READY && p.currentPosition>=65000
+            };ready && text("独立 TCP 4 路分段") && text("片源 MP4") && text("解码输入 video/avc") }
         }
     }
     @Test fun hevc10BitDirectPlayback() = playback("hevc")
@@ -167,7 +159,7 @@ class TvIntegrationTest {
         fixture("/fixture/control?fail=10&status=403")
         val intent=Intent(context,PlaybackActivity::class.java).putExtra("item_id","demo").putExtra("source_id","mp4")
         ActivityScenario.launch<PlaybackActivity>(intent).use { scenario ->
-            await { var shown=false;scenario.onActivity { a -> shown=views(a).filterIsInstance<TextView>().any { it.text.toString().contains("HTTP 403") && it.text.toString().contains("拒绝访问") } };shown }
+            await { text("HTTP 403") && text("拒绝访问") }
         }
         val state=HttpClient.api.newCall(Request.Builder().url("$fixtureServer/fixture/status").build()).execute().use { org.json.JSONObject(it.body!!.string()) }
         assertEquals("One failed request followed by one refresh; no retry loop",8,state.getInt("fail"))
@@ -191,13 +183,8 @@ class TvIntegrationTest {
     @Test fun restoredSessionValidatesOnDevice() = runBlocking { app.api.validate(app.sessions.load()!!) }
     @Test fun debugModeIsHiddenUntilSevenRemoteClicks() {
         ActivityScenario.launch(SettingsActivity::class.java).use { scenario ->
-            scenario.onActivity { a ->
-                assertFalse(app.settings.debugEnabled)
-                views(a).filterIsInstance<Button>().first { it.text=="信息与账号" }.performClick()
-                repeat(7) { a.window.decorView.findViewWithTag<View>("about").performClick() }
-                assertTrue(app.settings.debugEnabled)
-                assertNotNull(a.window.decorView.findViewWithTag<View>("debug"))
-            }
+            assertFalse(app.settings.debugEnabled);click("settings_tile_5");repeat(7) { click("about") }
+            assertTrue(app.settings.debugEnabled);compose.onNodeWithTag("debug").assertExists()
         }
     }
 }

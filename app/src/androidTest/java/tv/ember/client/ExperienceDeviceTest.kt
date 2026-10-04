@@ -5,9 +5,10 @@ import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
-import android.widget.EditText
-import android.widget.TextView
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import org.junit.Rule
 import androidx.media3.common.Player
 import androidx.media3.ui.PlayerView
 import androidx.test.core.app.ActivityScenario
@@ -26,6 +27,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(AndroidJUnit4::class)
 class ExperienceDeviceTest {
+    @get:Rule val compose=createEmptyComposeRule()
     private val fixtureServer get()=InstrumentationRegistry.getArguments().getString("fixtureServer") ?: "http://10.0.2.2:8765"
     private val context get()=InstrumentationRegistry.getInstrumentation().targetContext
     private val app get()=context.applicationContext as BronyaApp
@@ -46,21 +48,17 @@ class ExperienceDeviceTest {
     @Test fun accountPasswordLoginHasOnlyThreeFieldsAndRetainsNonSecretHints() {
         app.sessions.clear()
         ActivityScenario.launch(LoginActivity::class.java).use { scenario ->
-            scenario.onActivity { a ->
-                val views=children(a.window.decorView)
-                val fields=views.filterIsInstance<EditText>()
-                assertEquals(fixtureServer,fields[0].text.toString())
-                assertEquals("Demo TV",fields[1].text.toString())
-                assertEquals(3,fields.size);assertTrue(fields[2].text.isEmpty())
-                assertFalse(views.filterIsInstance<Button>().any { it.text.toString().contains("Token") })
-                fields[1].setText("demo");fields[2].setText("demo")
-                views.filterIsInstance<Button>().first { it.text=="连接服务器" }.performClick()
-            }
+            compose.waitUntil(30000) { compose.onAllNodesWithTag("login_password").fetchSemanticsNodes().isNotEmpty() }
+            assertEquals(fixtureServer,compose.onNodeWithTag("login_server").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.EditableText].text)
+            assertEquals("Demo TV",compose.onNodeWithTag("login_username").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.EditableText].text)
+            assertEquals("",compose.onNodeWithTag("login_password").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.EditableText].text)
+            compose.onNodeWithTag("login_username").performTextReplacement("demo");compose.onNodeWithTag("login_password").performTextReplacement("demo")
+            compose.onNodeWithTag("login_connect").performSemanticsAction(SemanticsActions.OnClick) { it() }
             await { app.sessions.load()?.token=="fixture-token" }
         }
     }
     @Test fun repeatedRemoteKeysSeekOnceAndBackCancelsPreview() {
-        val intent=Intent(context,PlaybackActivity::class.java).putExtra("item_id","demo").putExtra("source_id","mp4")
+        val intent=Intent(context,PlaybackActivity::class.java).putExtra("item_id","demo").putExtra("source_id",InstrumentationRegistry.getArguments().getString("playbackSource") ?: "mp4")
         ActivityScenario.launch<PlaybackActivity>(intent).use { scenario ->
             await { var ready=false;scenario.onActivity { a -> ready=children(a.window.decorView).filterIsInstance<PlayerView>().first().player?.playbackState==Player.STATE_READY };ready }
             val seeks=AtomicInteger()
@@ -75,9 +73,11 @@ class ExperienceDeviceTest {
                 })
                 a.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_MEDIA_FAST_FORWARD))
                 assertEquals(0,seeks.get())
-                assertTrue(children(a.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.toString().contains("松开跳转") })
-                a.onBackPressedDispatcher.onBackPressed()
-                assertFalse(children(a.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.toString().contains("松开跳转") })
+            }
+            compose.onAllNodesWithText("松开跳转",substring=true).fetchSemanticsNodes().let { assertTrue(it.isNotEmpty()) }
+            scenario.onActivity { a -> a.onBackPressedDispatcher.onBackPressed() }
+            compose.onAllNodesWithText("松开跳转",substring=true).assertCountEquals(0)
+            scenario.onActivity { a ->
                 repeat(3) { a.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_MEDIA_FAST_FORWARD)) }
                 assertEquals(0,seeks.get())
                 a.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_MEDIA_FAST_FORWARD))

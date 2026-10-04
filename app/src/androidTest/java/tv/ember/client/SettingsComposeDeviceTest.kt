@@ -27,21 +27,21 @@ class SettingsComposeDeviceTest {
         (context.applicationContext as BronyaApp).sessions.save(Session(
             InstrumentationRegistry.getArguments().getString("fixtureServer") ?: "http://10.0.2.2:8765","fixture-token","u1","Demo TV"))
     }
-    @Test fun dpadTraversesBothRowsOpensLegacyEditorAndRestoresFocus() {
+    @Test fun dpadTraversesBothRowsOpensComposeEditorAndRestoresFocus() {
         ActivityScenario.launch(SettingsActivity::class.java).use { scenario ->
             fun key(code: Int) { instrumentation.sendKeyDownUpSync(code);compose.waitForIdle() }
             fun focused(index: Int) { compose.onNodeWithTag("settings_tile_$index").assertIsFocused() }
             focused(0);key(KeyEvent.KEYCODE_DPAD_RIGHT);focused(1)
             key(KeyEvent.KEYCODE_DPAD_RIGHT);focused(2)
             key(KeyEvent.KEYCODE_DPAD_CENTER)
-            scenario.onActivity { a -> assertNotNull(a.window.decorView.findViewWithTag<View>("disk_capacity")) }
+            compose.onNodeWithTag("disk_capacity").assertExists()
             key(KeyEvent.KEYCODE_BACK);focused(2)
             key(KeyEvent.KEYCODE_DPAD_DOWN);focused(5)
             key(KeyEvent.KEYCODE_DPAD_LEFT);focused(4)
             key(KeyEvent.KEYCODE_DPAD_LEFT);focused(3)
             key(KeyEvent.KEYCODE_DPAD_UP);focused(0)
             key(KeyEvent.KEYCODE_DPAD_LEFT)
-            scenario.onActivity { a -> assertEquals("nav_Settings",a.currentFocus?.tag) }
+            compose.onNodeWithTag("nav_Settings").assertIsFocused()
             key(KeyEvent.KEYCODE_DPAD_RIGHT)
             compose.onAllNodes(hasTestTag("settings_tile_0") or hasTestTag("settings_tile_3"))
                 .fetchSemanticsNodes().let { nodes -> assertTrue(nodes.any { it.config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.Focused) { false } }) }

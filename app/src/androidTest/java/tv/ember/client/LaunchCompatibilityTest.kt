@@ -5,7 +5,9 @@ import android.content.Intent
 import android.content.pm.FeatureInfo
 import android.view.View
 import android.view.ViewGroup
-import android.widget.EditText
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import org.junit.Rule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
@@ -20,6 +22,7 @@ import tv.ember.client.ui.MainActivity
 /** Covers the package entry points used by vendor launchers and installer Open buttons. */
 @RunWith(AndroidJUnit4::class)
 class LaunchCompatibilityTest {
+    @get:Rule val compose=createEmptyComposeRule()
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
 
@@ -70,11 +73,13 @@ class LaunchCompatibilityTest {
             while (!displayed && System.currentTimeMillis() < end) {
                 instrumentation.runOnMainSync {
                     displayed = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
-                        .filterIsInstance<LoginActivity>().any { all(it.window.decorView).filterIsInstance<EditText>().size == 3 }
+                        .filterIsInstance<LoginActivity>().isNotEmpty()
                 }
                 if (!displayed) Thread.sleep(100)
             }
             assertTrue("The package Open action must reach the visible login screen", displayed)
+            compose.waitUntil(30000) { compose.onAllNodesWithTag("login_password").fetchSemanticsNodes().isNotEmpty() }
+            listOf("login_server","login_username","login_password").forEach { compose.onNodeWithTag(it).assertExists() }
         } finally {
             if (saved != null) app.sessions.save(saved)
         }

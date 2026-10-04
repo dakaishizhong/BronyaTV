@@ -94,6 +94,17 @@ class ParallelRangeReaderTest {
             }
         } }
     }
+    @Test fun exactEndOfFile416BecomesAnEmptyReadButBeyondEndStillFails() {
+        MockWebServer().use { server ->
+            repeat(2) { server.enqueue(MockResponse().setResponseCode(416).setHeader("Content-Range","bytes */12345")) }
+            ParallelRangeReader(client(),server.url("/file").toString(),emptyMap(),12345,-1,4,chunk) { fail("EOF cannot transfer bytes") }.use {
+                assertEquals(0L,it.open());assertEquals(12345L,it.totalBytes);assertEquals(-1,it.read(ByteArray(1),0,1));assertEquals(0L,it.bufferedBytes.get())
+            }
+            ParallelRangeReader(client(),server.url("/file").toString(),emptyMap(),12346,-1,4,chunk) {}.use {
+                try { it.open();fail("Beyond EOF must still fail") } catch(e:RangeHttpException) { assertEquals(416,e.code) }
+            }
+        }
+    }
     @Test fun firstHttp200RequestsSingleConnectionFallback() {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody("whole file"))

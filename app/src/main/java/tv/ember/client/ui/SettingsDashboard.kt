@@ -38,9 +38,7 @@ internal fun SettingsDashboard(tiles: List<SettingsTile>,initialFocus: Int,scale
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal=(14*scale).dp,vertical=(22*scale).dp)) {
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
                 Text(Tr.text(UiText.SETTINGS_268),fontSize=(32*scale).sp,fontWeight=FontWeight.Bold,color=text)
-                AndroidView(factory={ context -> android.widget.TextClock(context).apply {
-                    format24Hour="HH:mm";format12Hour="HH:mm";textSize=12*scale;setTextColor(TvUi.text)
-                } },modifier=Modifier.padding(top=8.dp))
+                TvClock()
             }
             Spacer(Modifier.height((16*scale).dp))
             tiles.chunked(3).forEachIndexed { rowIndex,group ->
@@ -64,7 +62,7 @@ internal fun SettingsDashboard(tiles: List<SettingsTile>,initialFocus: Int,scale
                                     if(column==0 && event.type==KeyEventType.KeyDown && event.key==Key.DirectionLeft) {
                                         onFocusSidebar();true
                                     } else false
-                                },scale=ButtonDefaults.scale(focusedScale=1f),
+                                },scale=ButtonDefaults.scale(focusedScale=1f),border=ButtonDefaults.border(focusedBorder=Border.None),
                                 colors=ButtonDefaults.colors(containerColor=Color.Transparent,contentColor=text,
                                     focusedContainerColor=accent.copy(alpha=.14f),focusedContentColor=accent),
                                 contentPadding=PaddingValues(horizontal=(4*scale).dp)) {

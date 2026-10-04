@@ -13,7 +13,7 @@ data class VideoItem(
     val sources: List<MediaVersion> = emptyList(), val episodeLabel: String = "",
     val seriesId: String = "", val seasonId: String = "", val seasonNumber: Int = -1, val episodeNumber: Int = -1,
     val backdropTag: String = "", val backdropId: String = id, val communityRating: String = "",
-    val genres: List<String> = emptyList(), val people: List<MediaPerson> = emptyList()
+    val genres: List<String> = emptyList(), val people: List<MediaPerson> = emptyList(),val collectionType: String=""
 ) {
     val isFolder get() = type in listOf("CollectionFolder", "Folder", "Series", "Season", "BoxSet")
     val subtitle get() = listOf(year, episodeLabel, rating, if (runtimeTicks >= 600_000_000) Tr.text(UiText.MIN_012 ,(runtimeTicks / 600_000_000)) else if(runtimeTicks > 0) Tr.text(UiText.SEC_013 ,(runtimeTicks / 10_000_000)) else "").filter { it.isNotBlank() }.joinToString("  ·  ")
@@ -33,7 +33,7 @@ data class VideoItem(
                 if((o.optJSONArray("BackdropImageTags")?.length() ?: 0)>0) o.getString("Id") else o.optString("ParentBackdropItemId",o.getString("Id")),
                 o.optDouble("CommunityRating").takeIf { it.isFinite() && it>0 }?.let { "%.1f".format(java.util.Locale.ROOT,it) }.orEmpty(),
                 o.optJSONArray("Genres").let { a -> if(a==null) emptyList() else (0 until a.length()).map { a.optString(it) }.filter(String::isNotBlank) },
-                o.optJSONArray("People").objects().map { MediaPerson(it.optString("Name"),it.optString("Type"),it.optString("Role"),it.optString("Id"),it.optString("PrimaryImageTag")) })
+                o.optJSONArray("People").objects().map { MediaPerson(it.optString("Name"),it.optString("Type"),it.optString("Role"),it.optString("Id"),it.optString("PrimaryImageTag")) },o.optString("CollectionType"))
         }
     }
 }

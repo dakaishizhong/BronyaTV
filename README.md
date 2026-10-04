@@ -4,15 +4,17 @@
 
 An Emby playback client for Android TV. Dark movie backdrops, cyan remote focus indicators, and landscape media cards bring your movies and series to the big screen. Supports Android 6.0 and later, with English and Simplified Chinese interfaces.
 
-[Download BronyaTV 1.5.0](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.5.0/BronyaTV-1.5.0-release.apk) · [Release notes](https://github.com/dakaishizhong/BronyaTV/releases) · [Build and development guide (Chinese)](docs/DEVELOPMENT.md)
+[Latest APK: 1.6.0](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.6.0/BronyaTV-1.6.0-release.apk) · [Release notes](https://github.com/dakaishizhong/BronyaTV/releases) · [Build and development guide (Chinese)](docs/DEVELOPMENT.md)
 
 ## Features
 
 - Username and password login, encrypted session storage, and automatic login.
 - English by default, with a saved English / Simplified Chinese language preference.
-- Continue watching, recently added media, movie / series / favorites navigation, library folders, inline search, recent queries, type filters, sorting, and pagination.
+- Continue watching first, followed by the first six actual Emby libraries in server order. Library headings open their original folder structure directly. Additional libraries stay accessible below. No regional categories or counts are invented.
+- Movies / series show content first and direct server-library tabs. Optional **Filter & sort** reveals compact genre, year, watch status and sort selectors. Filtering and pagination run on the server; available facets come from Emby. Inline search and recent queries remain available.
 - Server-provided movie backdrops, quality badges based on actual media metadata, resume progress, cast and crew, related titles, and a six-panel settings overview.
-- Movie details, posters, multiple source selection, and source switching during playback with progress preserved.
+- Select the server-provided version directly in details, then play or resume it. Resolution, HDR, codec and bitrate come from the server. Source switching during playback preserves progress; playback URLs are freshly negotiated.
+- Bounded image disk cache for posters, backdrops and people, with capacity, usage and clear controls. Separate persistent descriptive metadata loads first while the server refreshes it.
 - Original-source playback for MP4, MKV, H.264, and H.265, including HDR / Dolby Vision supported by the device.
 - Audio and subtitle selection, embedded and external SRT / ASS subtitles, subtitle size, and language preferences.
 - TrueHD / MLP / DTS / DTS-HD: prefer device MediaCodec/vendor decoding to PCM, with built-in FFmpeg fallback for unsupported devices or decoder failures. PCM output does not retain TrueHD Atmos or DTS:X object metadata.
@@ -28,16 +30,18 @@ An Emby playback client for Android TV. Dark movie backdrops, cyan remote focus 
 Version 1.4.0 uses a new signing key. When moving from 1.3.0 or earlier, uninstall the old version, install the new APK, and sign in again. Old application data will not be retained. Later releases using the 1.4.0 key can update this installation. You can also install with ADB:
 
 ```bash
-adb install -r BronyaTV-1.5.0-release.apk
+adb install -r BronyaTV-1.6.0-release.apk
 ```
 
 Enter your server URL, username, and password. HTTPS, custom ports, and reverse proxy paths are supported, for example `https://emby.example.com/emby`. URLs without a scheme use HTTPS. After a successful login, the encrypted session is saved; the password is not stored.
 
 ## Remote control and settings
 
+Choose a version in **Details → Video versions**, then select Play or Resume. The app revalidates that source at activation time. A removed version shows an error so you can select another. External players and the in-player source menu remain available.
+
 Use **Settings → Interface & diagnostics → Interface language** to switch between English and Simplified Chinese. You can also choose **Language** on the sign-in screen. The choice persists across restarts; server-provided titles and descriptions keep their original language.
 
-Use the direction buttons to move focus and OK to open content or choose an action. In the browser, press Menu or select **⋯** to access sorting and refresh. During playback, the Menu button or **Playback options** opens audio, subtitle, speed, aspect ratio, and source controls. The bottom control bar also provides source, subtitle, and audio shortcuts.
+Use the direction buttons to move focus and OK to open content or choose an action. Category pages show films first. Select a server-library tab to enter it directly, or open **Filter & sort** for optional conditions. Each condition applies immediately. Press Menu or select **⋯** for refresh and sorting shortcuts. During playback, the Menu button or **Playback options** opens audio, subtitle, speed, aspect ratio, and source controls. The centered control bar uses circular source, seek, pause, subtitle, audio and options icons, with a label for the focused control.
 
 When the control bar is hidden, briefly press Left / Right to preview a seek position. Hold a direction button to advance by the configured long-press step, then release to seek. Press Back to cancel. When the bar is visible, Left / Right selects controls. Fast-forward and rewind buttons are also supported. The defaults are 10 seconds for a short press and 30 seconds per long-press step; adjust them under **Settings → Remote control**.
 
@@ -49,24 +53,32 @@ Disk cache defaults to automatic capacity, up to 512 MiB, with 60 seconds of rea
 
 Disk read-ahead applies to original-file playback such as MP4 and MKV. HLS / DASH uses the player's buffer. Cache lives in private application storage and requires no storage permission. Backward playback and seeking within the current player can reuse cached data. Switching sources, rebuilding the player, or reopening a title uses a new cache identifier to avoid mixing expired links or different files. This is temporary playback cache, not offline downloading.
 
+**Image cache** defaults to 256 MiB of private disk storage and can be disabled or set to 64–1024 MiB. Images are requested and decoded for their displayed dimensions; the URL includes the server ImageTag. Identical requests share work, with at most three image loads. Stopped pages release their bitmap references and cancel outstanding loads. Decoded memory is capped at 2–12 MiB according to heap size and drops to at most 3 MiB during playback or 2 MiB under memory pressure. Clear image cache affects only these images.
+
+Title, overview, cast and descriptive version metadata use a separate 24 MiB persistent cache. Both caches are isolated by server and user. Metadata appears immediately from cache and refreshes in the background. Playback progress remains live; temporary URLs, authentication headers and playback sessions are excluded from persistent metadata. Playback buffers and read-ahead are separate.
+
 **Playback options → Playback diagnostics** lets you view, refresh, and copy diagnostics. Source declarations, decoded video, Surface, and display mode are listed separately, alongside disk read-ahead, cache usage, cache hits, and recent audio, video, or network failures. HDR / Dolby Vision decoder paths and system audio bitstreams reflect observed output. Final HDR / Atmos modes on the TV or sound system appear as **Unconfirmed** when Android cannot reliably identify them.
 
 ## Screenshots
 
-These screenshots show version 1.5.0 with a mock Emby server. Movies and metadata are test fixtures.
+These screenshots show version 1.6.0 with a mock Emby server. Movies and metadata are test fixtures.
 
 | Home | Details |
 | --- | --- |
-| ![BronyaTV home](docs/screenshots/1.5.0/home.png) | ![BronyaTV details](docs/screenshots/1.5.0/detail.png) |
+| ![BronyaTV home](docs/screenshots/1.6.0/home.png) | ![BronyaTV details](docs/screenshots/1.6.0/detail.png) |
 
 | Settings | Playback |
 | --- | --- |
-| ![BronyaTV settings](docs/screenshots/1.5.0/settings.png) | ![BronyaTV playback](docs/screenshots/1.5.0/player.png) |
+| ![BronyaTV settings](docs/screenshots/1.6.0/settings.png) | ![BronyaTV playback](docs/screenshots/1.6.0/player.png) |
 
-![BronyaTV search](docs/screenshots/1.5.0/search.png)
+![BronyaTV search](docs/screenshots/1.6.0/search.png)
+
+| Movies | Sign in |
+| --- | --- |
+| ![Movies](docs/screenshots/1.6.0/category.png) | ![Sign in](docs/screenshots/1.6.0/login.png) |
 
 ## Development
 
-Built with Kotlin, Compose for TV / TV Material, Leanback, and AndroidX Media3. The settings dashboard uses Compose with DPAD navigation; category editors, browsing, and the player retain their existing implementation during incremental migration. See the [development guide (Chinese)](docs/DEVELOPMENT.md) for build and test instructions and [releases](https://github.com/dakaishizhong/BronyaTV/releases) for changes and validation.
+All application pages, sidebar navigation, settings editors, playback controls and dialog content use Kotlin and Compose for TV / TV Material. Media3 playback and decoding remain intact; PlayerView interoperability supplies the video Surface and subtitles. Lazy lists use stable item keys and restore remote focus and scroll positions. See the [development guide (Chinese)](docs/DEVELOPMENT.md) for build and test instructions and [releases](https://github.com/dakaishizhong/BronyaTV/releases) for changes and validation.
 
 Licensed under [GPL-3.0](LICENSE).

@@ -4,15 +4,17 @@
 
 面向 Android TV 的 Emby 播放客户端。深色影片背景、青色遥控器焦点和横向媒体卡片，让电影与剧集更适合大屏观看。支持 Android 6.0 及以上系统。
 
-[下载 BronyaTV 1.5.0](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.5.0/BronyaTV-1.5.0-release.apk) · [版本发布说明](https://github.com/dakaishizhong/BronyaTV/releases) · [构建与开发](docs/DEVELOPMENT.md)
+[最新 APK：1.6.0](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.6.0/BronyaTV-1.6.0-release.apk) · [版本发布说明](https://github.com/dakaishizhong/BronyaTV/releases) · [构建与开发](docs/DEVELOPMENT.md)
 
 ## 功能
 
 - 账号密码登录，加密保存会话，自动登录。
 - 默认英文界面，支持切换为简体中文并保存语言选择。
-- 继续观看、最近添加、电影 / 剧集 / 收藏侧栏、媒体分类、页内搜索与最近搜索、类型筛选、排序和分页浏览。
+- 首页先展示最近播放与继续观看，下方按 Emby 顺序展示前六个真实媒体库分区，分区标题可直接进入原有目录；其余媒体库保留入口，不编造地区分类或数量。
+- 电影和剧集页优先展示影片与直接媒体库入口，按需展开“筛选与排序”，类型、年份、观看状态和排序由服务器执行；保留目录、收藏、搜索和历史。
 - 服务器影片背景、真实画质标签、续看进度、演职人员、相关推荐及六块设置面板。
-- 影片详情、海报、多片源选择，播放中切换片源并保留进度。
+- 详情页直接选择服务器提供的影片版本，显示实际分辨率、HDR、编码与码率；点击播放时重新协商地址。保留续播、外部播放器和播放中换源。
+- 图片磁盘缓存提供容量、已用空间与清理；元数据单独持久缓存，优先展示缓存并后台更新。
 - 原始片源播放，支持 MP4、MKV、H.264、H.265，以及设备支持的 HDR / Dolby Vision。
 - 音轨和字幕选择、内嵌与外置 SRT / ASS 字幕、字幕大小和语言偏好。
 - TrueHD / MLP / DTS / DTS-HD 优先设备 MediaCodec / 厂商解码器输出 PCM；设备不支持或解码失败时回退内置 FFmpeg。PCM 输出不保留 TrueHD Atmos 或 DTS:X 对象元数据。
@@ -28,14 +30,16 @@
 1.4.0 使用新的签名密钥。从 1.3.0 或更早版本迁移时，需要先卸载旧版，再安装新版并重新登录；旧版应用数据不会保留。以后沿用 1.4.0 密钥的版本可覆盖升级。也可使用 ADB：
 
 ```bash
-adb install -r BronyaTV-1.5.0-release.apk
+adb install -r BronyaTV-1.6.0-release.apk
 ```
 
 输入服务器地址、账号和密码。地址支持 HTTPS、自定义端口和反向代理路径，例如 `https://emby.example.com/emby`。省略协议时使用 HTTPS。登录成功后会自动保存加密会话，密码不保存。
 
 ## 遥控器与设置
 
-浏览页面的排序与刷新位于右上角 **⋯** 菜单，也可通过遥控器菜单键打开。
+分类页优先展示影片，点击服务器媒体库入口直接进入内容；按需展开“筛选与排序”，选择后立即生效。右上角 **⋯** 或遥控器菜单键提供刷新与排序快捷入口。
+
+在“详情 → 影片版本”选择服务器提供的版本，再点击播放或继续播放。播放时重新获取有效地址；版本已被移除时提示重新选择。
 
 在“Settings → Interface & diagnostics → Interface language”选择“简体中文”；中文界面的入口是“设置 → 界面与诊断 → 界面语言”。登录页也提供语言选择。重启后保留选择，服务器影片名称和简介保持原文。
 
@@ -51,24 +55,32 @@ adb install -r BronyaTV-1.5.0-release.apk
 
 磁盘提前缓存用于 MP4、MKV 等原文件播放；HLS / DASH 使用播放器缓冲。缓存保存在应用私有存储，不需要存储权限。当前播放器内的回退和跳转可复用已缓存的数据；切换片源、重建播放器或重新打开影片使用新的缓存标识，避免混用失效链接或不同版本的文件。这是临时播放缓存，不是离线下载。
 
+“图片缓存”默认占用最多 256 MiB 磁盘，可关闭或设为 64–1024 MiB。海报、背景和人物图片按显示尺寸请求并解码，使用服务器 ImageTag 更新；相同请求合并，最多同时加载三张图片。页面停止后释放图片引用并取消未完成的加载。解码图片内存根据堆大小限制在 2–12 MiB，播放中最多 3 MiB，内存紧张时最多 2 MiB。清理只影响图片。
+
+标题、简介、演职人员和版本描述使用独立的 24 MiB 元数据持久缓存，先展示缓存再后台更新。两类缓存按服务器与用户隔离。播放进度及时同步，临时播放地址、鉴权头和播放会话不写入元数据缓存；播放缓冲与磁盘预取独立。
+
 “播放选项 → 播放诊断详情”可查看、刷新和复制诊断信息。片源声明、实际解码画面、Surface 和显示模式分别展示，并显示磁盘前向缓存、占用、命中读取和最近故障的音频、视频或取流分类；HDR / Dolby Vision 解码路径与系统音频码流按实际观察显示。电视屏幕或音响的最终 HDR / Atmos 模式无法由系统可靠确认时，会显示“未确认”。
 
 ## 界面
 
-以下截图来自 1.5.0 的模拟 Emby 测试服务器，影片和元数据为测试内容。
+以下截图来自 1.6.0 的模拟 Emby 测试服务器，影片和元数据为测试内容。
 
 | 首页 | 详情 |
 | --- | --- |
-| ![BronyaTV 首页](docs/screenshots/1.5.0/home.png) | ![BronyaTV 详情](docs/screenshots/1.5.0/detail.png) |
+| ![BronyaTV 首页](docs/screenshots/1.6.0/home.png) | ![BronyaTV 详情](docs/screenshots/1.6.0/detail.png) |
 
 | 设置 | 播放 |
 | --- | --- |
-| ![BronyaTV 设置](docs/screenshots/1.5.0/settings.png) | ![BronyaTV 播放](docs/screenshots/1.5.0/player.png) |
+| ![BronyaTV 设置](docs/screenshots/1.6.0/settings.png) | ![BronyaTV 播放](docs/screenshots/1.6.0/player.png) |
 
-![BronyaTV 搜索](docs/screenshots/1.5.0/search.png)
+![BronyaTV 搜索](docs/screenshots/1.6.0/search.png)
+
+| 电影分类 | 登录 |
+| --- | --- |
+| ![电影分类](docs/screenshots/1.6.0/category.png) | ![登录](docs/screenshots/1.6.0/login.png) |
 
 ## 开发
 
-Kotlin、Leanback、AndroidX Media3；使用原生电视视图、列表复用和有界内存缓存。开发、构建与测试步骤见 [开发说明](docs/DEVELOPMENT.md)，每个版本的改动和验证见 [发布说明](https://github.com/dakaishizhong/BronyaTV/releases)。
+所有应用页面、侧栏、设置编辑页、播放控制和弹窗内容已迁移为 Kotlin + Compose for TV / TV Material；保留 Media3 播放与解码核心，PlayerView 承载视频 Surface 和字幕。惰性列表使用稳定 key，保存遥控器焦点与滚动位置。开发、构建与测试步骤见 [开发说明](docs/DEVELOPMENT.md)，每个版本的改动和验证见 [发布说明](https://github.com/dakaishizhong/BronyaTV/releases)。
 
 采用 [GPL-3.0](LICENSE) 许可证。

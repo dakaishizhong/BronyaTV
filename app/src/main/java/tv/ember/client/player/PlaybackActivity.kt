@@ -2,8 +2,9 @@ package tv.ember.client.player
 
 import tv.ember.client.i18n.Tr
 import tv.ember.client.i18n.UiText
+import androidx.compose.runtime.*
+import tv.ember.client.ui.*
 import android.app.ActivityManager
-import android.app.AlertDialog
 import android.content.Context
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -15,16 +16,9 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.Button
-import tv.ember.client.R
-import android.widget.TextView
-import android.widget.ScrollView
 import androidx.lifecycle.lifecycleScope
 import androidx.activity.addCallback
 import androidx.media3.common.*
@@ -46,8 +40,6 @@ import tv.ember.client.network.ReceiveBufferSocketFactory
 import tv.ember.client.network.RangePlaybackDataSource
 import tv.ember.client.network.RangePlaybackStatus
 import tv.ember.client.network.StreamPolicy
-import tv.ember.client.ui.TvActivity
-import tv.ember.client.ui.TvUi
 import tv.ember.client.cache.*
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheDataSink
@@ -55,17 +47,14 @@ import androidx.media3.datasource.cache.CacheDataSink
 @UnstableApi
 class PlaybackActivity : TvActivity(), Player.Listener {
     private lateinit var playerView: PlayerView
-    private lateinit var title: TextView
-    private lateinit var mediaInfo: TextView
-    private lateinit var status: TextView
-    private lateinit var osd: TextView
-    private lateinit var debug: TextView
-    private lateinit var menu: Button
-    private lateinit var episodeBar: LinearLayout
-    private lateinit var previousEpisode: Button
-    private lateinit var nextEpisode: Button
-    private lateinit var skipIntro: Button
-    private lateinit var skipOutro: Button
+    private val title=PlaybackText()
+    private val mediaInfo=PlaybackText()
+    private val status=PlaybackText()
+    private val osd=PlaybackText()
+    private val debug=PlaybackText()
+    private var controllerVisible by mutableStateOf(true)
+    private var controllerInteraction by mutableLongStateOf(0L)
+    private var controllerFocus="play_pause"
     private var neighbors=EpisodeNeighbors()
     private var neighborsForId=""
     private var neighborJob: Job?=null
@@ -74,8 +63,8 @@ class PlaybackActivity : TvActivity(), Player.Listener {
     private var outroHandled=false
     private var outroDeadline=0L
     private var sourceJob: Job?=null
-    private var activeDialog: AlertDialog?=null
-    private var player: ExoPlayer? = null
+    private var activeDialog by mutableStateOf<TvDialog?>(null)
+    private var player by mutableStateOf<ExoPlayer?>(null)
     private var stats = PlayerStatsMonitor()
     private lateinit var network: NetworkMonitor
     private lateinit var cpu: CpuMonitor
@@ -117,7 +106,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
     private var previousBuffer = -1L
     private var previousPosition = -1L
     private var registered = false
-    private lateinit var seekPreview: TextView
+    private val seekPreview=PlaybackText()
     private var pendingSeek: Long?=null
     private var seekOrigin=0L
     private var lastSeekMove=0L
@@ -139,64 +128,22 @@ class PlaybackActivity : TvActivity(), Player.Listener {
         if(session == null) { finish(); return }
         position = savedInstanceState?.getLong("position") ?: intent.getLongExtra("position_ms", 0)
         wantedPlay = savedInstanceState?.getBoolean("playing") ?: true
+        controllerVisible=savedInstanceState?.getBoolean("controls") ?: false;controllerFocus=savedInstanceState?.getString("control_focus") ?: "play_pause"
         showOsd = app.settings.osd
         showDebug = app.settings.debugEnabled
         network = NetworkMonitor(this); cpu = CpuMonitor(); memory = MemoryMonitor(this)
-        val root = FrameLayout(this).apply { setBackgroundColor(android.graphics.Color.BLACK) }
-        playerView = (layoutInflater.inflate(R.layout.bronya_player_view,null) as PlayerView).apply {
-            resizeMode=app.settings.resizeMode
+        playerView=PlayerView(this).apply {
+            useController=false;resizeMode=app.settings.resizeMode
             subtitleView?.setFractionalTextSize(.0533f*app.settings.subtitleScale/100f)
-            controllerShowTimeoutMs = 4500
-            setShowSubtitleButton(false); setShowNextButton(false); setShowPreviousButton(false)
-            setShowFastForwardButton(true); setShowRewindButton(true)
-            setKeepContentOnPlayerReset(true)
-            setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { visibility ->
-                if(::title.isInitialized) title.visibility=visibility
-                if(::mediaInfo.isInitialized) mediaInfo.visibility=visibility
-                if(::episodeBar.isInitialized) episodeBar.visibility=visibility
-            })
+            setKeepContentOnPlayerReset(true);isFocusable=false
         }
-        listOf(androidx.media3.ui.R.id.exo_rew,androidx.media3.ui.R.id.exo_play_pause,androidx.media3.ui.R.id.exo_ffwd)
-            .forEach { id -> playerView.findViewById<View>(id)?.let(TvUi::focusOnTouch) }
-        listOf(R.id.bronya_sources to { chooseSource() },R.id.bronya_subtitles to { chooseTrack(C.TRACK_TYPE_TEXT) },
-            R.id.bronya_audio to { chooseTrack(C.TRACK_TYPE_AUDIO) },R.id.bronya_more to { showMenu() }).forEach { (id,action) ->
-            playerView.findViewById<View>(id)?.apply { TvUi.focusOnTouch(this);setOnClickListener { action() } }
-        }
-        root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
-        title = TvUi.text(this, Tr.text(UiText.OPENING_VIDEO_137), 20f).apply { setShadowLayer(4f, 0f, 1f, android.graphics.Color.BLACK) }
-        root.addView(title, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply { bottomMargin = TvUi.dp(root,142); marginStart = TvUi.dp(root,44) })
-        mediaInfo=TvUi.text(this,"",12f,TvUi.muted)
-        root.addView(mediaInfo,FrameLayout.LayoutParams(-2,-2,Gravity.BOTTOM or Gravity.START).apply { bottomMargin=TvUi.dp(root,120);marginStart=TvUi.dp(root,44) })
-        status = TvUi.text(this, "", 18f).apply { setBackgroundColor(0xB0000000.toInt()); setPadding(20, 10, 20, 10); visibility = View.GONE }
-        root.addView(status, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = TvUi.dp(root,116) })
-        osd = overlay(12f).apply { maxWidth=TvUi.dp(this,330) }
-        root.addView(osd, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { topMargin = 24; marginEnd = 28 })
-        debug = overlay(11f)
-        root.addView(debug, FrameLayout.LayoutParams(TvUi.dp(root, 520), -2, Gravity.BOTTOM or Gravity.START).apply { bottomMargin = TvUi.dp(root,210); marginStart = 28 })
-        episodeBar=TvUi.row(this)
-        menu=TvUi.button(this,Tr.text(UiText.PLAYBACK_OPTIONS_138)) { showMenu() }
-        previousEpisode=TvUi.button(this,Tr.text(UiText.PREVIOUS_EPISODE_139)) { neighbors.previous?.let(::switchEpisode) }
-        nextEpisode=TvUi.button(this,Tr.text(UiText.NEXT_EPISODE_140)) { neighbors.next?.let(::switchEpisode) }
-        skipIntro=TvUi.button(this,Tr.text(UiText.SKIP_INTRO_141)) { skipOpening() }
-        skipOutro=TvUi.button(this,Tr.text(UiText.SKIP_OUTRO_142)) { finishEpisode() }
-        listOf(menu,previousEpisode,nextEpisode,skipIntro,skipOutro).forEach {
-            episodeBar.addView(it,LinearLayout.LayoutParams(-2,TvUi.dp(root,42)).apply { marginEnd=TvUi.dp(root,8) })
-        }
-        root.addView(episodeBar,FrameLayout.LayoutParams(-2,-2,Gravity.BOTTOM or Gravity.START).apply { bottomMargin=TvUi.dp(root,188);marginStart=TvUi.dp(root,44) })
-        updateEpisodeButtons()
-        seekPreview=TvUi.text(this,"",22f).apply {
-            background=TvUi.box(0xE8172230.toInt(),22f,TvUi.accent)
-            setPadding(TvUi.dp(this,28),TvUi.dp(this,16),TvUi.dp(this,28),TvUi.dp(this,16))
-            gravity=Gravity.CENTER;visibility=View.GONE
-        }
-        root.addView(seekPreview,FrameLayout.LayoutParams(-2,-2,Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin=TvUi.dp(root,100) })
-        setContentView(root)
-        playerView.requestFocus()
+        title.text=Tr.text(UiText.OPENING_VIDEO_137)
+        tvContent { PlaybackScreen() }
         onBackPressedDispatcher.addCallback(this) {
             when {
                 pendingSeek!=null -> cancelSeekPreview()
                 outroDeadline>0 -> cancelOutro()
-                playerView.isControllerFullyVisible -> playerView.hideController()
+                controllerVisible -> controllerVisible=false
                 else -> finish()
             }
         }
@@ -208,13 +155,39 @@ class PlaybackActivity : TvActivity(), Player.Listener {
             listOf(if(it.width>=3800 || it.height>=2100) "4K" else if(it.height>0) "${it.height}P" else "",it.videoRange.takeUnless { range -> range in listOf("","SDR","None") }.orEmpty()).filter(String::isNotBlank).joinToString(" · ")
         })+listOf(if(video.runtimeTicks>0) Tr.text(UiText.MIN_012 ,(video.runtimeTicks/600_000_000)) else "")).filter(String::isNotBlank).joinToString("   |   ")
     }
-    private fun overlay(size: Float) = TvUi.text(this, "", size).apply {
-        typeface = android.graphics.Typeface.MONOSPACE
-        setPadding(16, 12, 16, 12); setBackgroundColor(0xB8101722.toInt()); visibility = View.GONE
-        isFocusable = false
+    private var episodeRevision by mutableIntStateOf(0)
+    @Composable private fun PlaybackScreen() {
+        val revision=episodeRevision
+        val actions=listOf(
+            PlaybackAction("player_sources",Tr.text(UiText.SOURCES_254)) { chooseSource() },
+            PlaybackAction("player_rewind",Tr.text(UiText.REWIND_CONTROL)) { seekControls(-1,0) },
+            PlaybackAction("play_pause","▶") { player?.let { it.playWhenReady=!it.playWhenReady } },
+            PlaybackAction("player_forward",Tr.text(UiText.FORWARD_CONTROL)) { seekControls(1,0) },
+            PlaybackAction("player_subtitles",Tr.text(UiText.SUBTITLE_TRACKS_180)) { chooseTrack(C.TRACK_TYPE_TEXT) },
+            PlaybackAction("player_audio",Tr.text(UiText.AUDIO_TRACKS_179)) { chooseTrack(C.TRACK_TYPE_AUDIO) },
+            PlaybackAction("player_more",Tr.text(UiText.PLAYBACK_OPTIONS_138)) { showMenu() }
+        )
+        val episodeActions=if(item?.type=="Episode" && revision>=0) buildList {
+            if(neighbors.previous!=null) add(PlaybackAction("previous_episode",Tr.text(UiText.PREVIOUS_EPISODE_139),!changingEpisode) { neighbors.previous?.let(::switchEpisode) })
+            if(neighbors.next!=null) add(PlaybackAction("next_episode",Tr.text(UiText.NEXT_EPISODE_140),!changingEpisode) { neighbors.next?.let(::switchEpisode) })
+            if(app.settings.introSeconds>0) add(PlaybackAction("skip_intro",Tr.text(UiText.SKIP_INTRO_141),!changingEpisode) { skipOpening() })
+            if(app.settings.outroSeconds>0) add(PlaybackAction("skip_outro",Tr.text(UiText.SKIP_OUTRO_142),!changingEpisode) { finishEpisode() })
+        } else emptyList()
+        FullscreenPlayback(playerView,player,title,mediaInfo,status,osd,debug,seekPreview,controllerVisible,controllerFocus,{ controllerFocus=it },actions,episodeActions,::seekControls)
+        val dialogOpen=activeDialog!=null
+        LaunchedEffect(controllerVisible,controllerInteraction,dialogOpen) {
+            if(controllerVisible && !dialogOpen) { delay(4500);controllerVisible=false }
+        }
+    }
+    private fun seekControls(direction: Int,repeats: Int) {
+        val p=player ?: return
+        if(!p.isCurrentMediaItemSeekable) return
+        val target=SeekPolicy.target(p.currentPosition,p.duration,direction,repeats,app.settings.seekSeconds,app.settings.longSeekSeconds)
+        control?.markSeek();p.seekTo(target);position=target;controllerInteraction=SystemClock.elapsedRealtime()
     }
     override fun onStart() {
         super.onStart(); if(session == null) return
+        app.imageCache.playback(true)
         active = true
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if(!registered) runCatching {
@@ -259,15 +232,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
             catch(e: Exception) { android.util.Log.e("BronyaTVPlayback", "Unable to prepare media", e); setStatus(e.message ?: Tr.text(UiText.CANNOT_FETCH_SOURCE_PRESS_MENU_TO_145)) }
         }
     }
-    private fun updateEpisodeButtons() {
-        if(!::previousEpisode.isInitialized) return
-        val episode=item?.type=="Episode"
-        previousEpisode.visibility=if(episode && neighbors.previous!=null) View.VISIBLE else View.GONE
-        nextEpisode.visibility=if(episode && neighbors.next!=null) View.VISIBLE else View.GONE
-        skipIntro.visibility=if(episode && app.settings.introSeconds>0) View.VISIBLE else View.GONE
-        skipOutro.visibility=if(episode && app.settings.outroSeconds>0) View.VISIBLE else View.GONE
-        listOf(previousEpisode,nextEpisode,skipIntro,skipOutro).forEach { it.isEnabled=!changingEpisode }
-    }
+    private fun updateEpisodeButtons() { episodeRevision++ }
     private fun refreshNeighbors() {
         val s=session ?: return;val video=item ?: return
         updateEpisodeButtons()
@@ -350,7 +315,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
             outroDeadline=now+5000;setStatus(Tr.text(UiText.NEXT_EPISODE_IN_SEC_BACK_TO_152))
         } else finishEpisode()
     }
-    private fun cancelOutro() { outroDeadline=0;if(::status.isInitialized) setStatus("") }
+    private fun cancelOutro() { outroDeadline=0;setStatus("") }
     private fun finishEpisode() {
         val p=player ?: return
         outroHandled=true;cancelOutro()
@@ -414,7 +379,13 @@ class PlaybackActivity : TvActivity(), Player.Listener {
         // HTTP/2 multiplexing shares one TCP receive window. Range workers need independent TCP connections.
         if(connections>1) builder.protocols(listOf(okhttp3.Protocol.HTTP_1_1))
         val transportClient=builder.build()
-        val httpClient=transportClient.newBuilder().addInterceptor(transferBudget.interceptor()).build();playbackHttp=httpClient
+        // Subtitle documents use the control transport, like PlaybackInfo. A paused single
+        // video response can hold its range permit indefinitely while waiting for text.
+        val subtitleUrls=current.version.streams.filter { it.type=="Subtitle" && it.external }.map { app.api.subtitleUrl(s,item!!.id,current.version,it) }.toSet()
+        val mediaTransfers=transferBudget.interceptor()
+        val httpClient=transportClient.newBuilder().addInterceptor { chain ->
+            if(chain.request().url.toString() in subtitleUrls) chain.proceed(chain.request()) else mediaTransfers.intercept(chain)
+        }.build();playbackHttp=httpClient
         val http=OkHttpDataSource.Factory(httpClient).setDefaultRequestProperties(current.headers)
         val range=RangePlaybackStatus(connections,prefetchBudget);rangeStatus=range
         val upstream=androidx.media3.datasource.DataSource.Factory {
@@ -621,6 +592,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
     private fun report(event: String) {
         val s = session ?: return; val v = item ?: return; val current = spec ?: return
         val pos = player?.currentPosition ?: position; val paused = !(player?.playWhenReady ?: wantedPlay)
+        app.progress.update(s,v.id,pos,player?.playbackState==Player.STATE_ENDED)
         reportScope.launch { withTimeoutOrNull(5000) { runCatching { app.api.report(s, event, v.id, current, pos, paused) } } }
     }
     private fun diskSummary(detailed:Boolean):String {
@@ -659,7 +631,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
         }.create()
         displayDialog(dialog,false)
     }
-    private fun displayDialog(dialog:AlertDialog,parentMenu:Boolean=true) {
+    private fun displayDialog(dialog: TvDialog,parentMenu: Boolean=true) {
         activeDialog=dialog
         dialog.setOnDismissListener { if(activeDialog===dialog) activeDialog=null }
         dialog.setOnCancelListener {
@@ -668,7 +640,6 @@ class PlaybackActivity : TvActivity(), Player.Listener {
             if(parentMenu && active) main.post { if(active) showMenu() }
         }
         dialog.show()
-        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.takeIf { it.text==Tr.text(UiText.CANCEL_196) }?.setOnClickListener { dialog.cancel() }
     }
     private fun chooseSpeed() {
         val values=listOf(.5f,.75f,1f,1.25f,1.5f,2f)
@@ -691,15 +662,12 @@ class PlaybackActivity : TvActivity(), Player.Listener {
     private fun chooseTime() {
         val p=player ?: return
         if(!p.isCurrentMediaItemSeekable) { message(Tr.text(UiText.THIS_SOURCE_DOES_NOT_SUPPORT_SEEKING_202));return }
-        val field=TvUi.input(this,Tr.text(UiText.HH_MM_SS_OR_MM_SS_203)).apply { setText(SeekPolicy.time(p.currentPosition)) }
-        val dialog=TvUi.dialog(this).setTitle(Tr.text(UiText.JUMP_TO_TIME_184)).setView(field).setPositiveButton(Tr.text(UiText.JUMP_204),null).setNegativeButton(Tr.text(UiText.CANCEL_196),null).create()
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val target=SeekPolicy.parseTime(field.text.toString())
-                if(target==null) { field.error=Tr.text(UiText.ENTER_A_VALID_TIME_SUCH_AS_205);field.requestFocus() }
-                else { control?.markSeek();p.seekTo(if(p.duration>0) target.coerceAtMost((p.duration-1).coerceAtLeast(0)) else target);dialog.dismiss() }
-            }
-        }
+        val dialog=TvUi.dialog(this).setTitle(Tr.text(UiText.JUMP_TO_TIME_184)).setInput(Tr.text(UiText.HH_MM_SS_OR_MM_SS_203),SeekPolicy.time(p.currentPosition))
+            .button(Tr.text(UiText.JUMP_204),false) { d ->
+                val target=SeekPolicy.parseTime(d.input)
+                if(target==null) d.inputError=Tr.text(UiText.ENTER_A_VALID_TIME_SUCH_AS_205)
+                else { control?.markSeek();p.seekTo(if(p.duration>0) target.coerceAtMost((p.duration-1).coerceAtLeast(0)) else target);d.dismiss() }
+            }.setNegativeButton(Tr.text(UiText.CANCEL_196),null).create()
         displayDialog(dialog)
     }
     private fun chooseSource() {
@@ -729,19 +697,14 @@ class PlaybackActivity : TvActivity(), Player.Listener {
         }
     }
     private fun showDiagnostics() {
-        val text=TvUi.text(this,Tr.text(UiText.COLLECTING_DIAGNOSTICS_211),13f).apply {
-            typeface=android.graphics.Typeface.MONOSPACE;setPadding(22,14,22,14)
-        }
-        val scroll=ScrollView(this).apply { addView(text);isFocusable=true;isFocusableInTouchMode=true }
-        val dialog=TvUi.dialog(this).setTitle(Tr.text(UiText.PLAYBACK_DIAGNOSTICS_191)).setView(scroll)
-            .setPositiveButton(Tr.text(UiText.OFF_187),null).setNeutralButton(Tr.text(UiText.REFRESH_212),null).setNegativeButton(Tr.text(UiText.COPY_213),null).create()
+        val dialog=TvUi.dialog(this).setTitle(Tr.text(UiText.PLAYBACK_DIAGNOSTICS_191)).setMessage(Tr.text(UiText.COLLECTING_DIAGNOSTICS_211)).create()
         fun refresh() { lifecycleScope.launch {
             val link=withContext(Dispatchers.IO) { network.linkDetails() }
             val p=player ?: return@launch;val current=spec ?: return@launch;val net=lastNetwork
             val tcp=receiveSocketFactory?.effectiveBytes?.takeIf { it>0 }?.let { "${it/1024}KB" } ?: Tr.text(UiText.WAITING_FOR_CONNECTION_025)
             val rt=Runtime.getRuntime()
             val soc=if(android.os.Build.VERSION.SDK_INT>=31) android.os.Build.SOC_MODEL else android.os.Build.HARDWARE
-            text.text="BronyaTV ${tv.ember.client.BuildConfig.VERSION_NAME} · ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} · Android ${android.os.Build.VERSION.RELEASE}\n"+
+            dialog.message="BronyaTV ${tv.ember.client.BuildConfig.VERSION_NAME} · ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} · Android ${android.os.Build.VERSION.RELEASE}\n"+
                 Tr.text(UiText.SOC_HARDWARE_BOARD_AVAILABLE_CPU_CORES_214 ,(soc),(android.os.Build.BOARD),(rt.availableProcessors()))+
                 Tr.text(UiText.APP_MAX_HEAP_MIB_USED_HEAP_215 ,(rt.maxMemory()/1048576),((rt.totalMemory()-rt.freeMemory())/1048576))+
                 stats.outputSummary(p)+"\n"+stats.displaySummary(windowManager.defaultDisplay)+"\n\n"+stats.details(p,current.version)+Tr.text(UiText.NETWORK_RECEIVE_INCLUDES_PREFETCH_AND_WAITING_216)+
@@ -758,30 +721,13 @@ class PlaybackActivity : TvActivity(), Player.Listener {
                 Tr.text(UiText.ORIGINAL_URL_LATEST_STREAM_URL_230 ,(PlayerStatsMonitor.redact(current.url)),(PlayerStatsMonitor.redact(stats.resolvedUrl.ifBlank { current.url })))+
                 Tr.text(UiText.SERVER_URL_QUERY_VALUES_ARE_HIDDEN_231 ,(PlayerStatsMonitor.redact(session?.server.orEmpty())))
         } }
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener { refresh() }
-            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
-                (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText(Tr.text(UiText.BRONYATV_PLAYBACK_DIAGNOSTICS_232),text.text))
-                message(Tr.text(UiText.DIAGNOSTICS_COPIED_233))
-            }
-            refresh();scroll.requestFocus()
-        }
-        dialog.setOnKeyListener { _,key,event ->
-            if(event.action!=KeyEvent.ACTION_DOWN) false
-            else when {
-                key==KeyEvent.KEYCODE_DPAD_UP -> {
-                    scroll.requestFocus();scroll.scrollBy(0,-(scroll.height/3).coerceAtLeast(80));true
-                }
-                key==KeyEvent.KEYCODE_DPAD_DOWN && scroll.hasFocus() -> {
-                    if(scroll.canScrollVertically(1)) scroll.scrollBy(0,(scroll.height/3).coerceAtLeast(80))
-                    else dialog.getButton(AlertDialog.BUTTON_POSITIVE).requestFocus()
-                    true
-                }
-                else -> false
-            }
-        }
-        displayDialog(dialog)
-        dialog.window?.setLayout((resources.displayMetrics.widthPixels*0.86).toInt(),(resources.displayMetrics.heightPixels*0.88).toInt())
+        dialog.buttons.add(Triple(Tr.text(UiText.OFF_187),true) { })
+        dialog.buttons.add(Triple(Tr.text(UiText.REFRESH_212),false) { refresh() })
+        dialog.buttons.add(Triple(Tr.text(UiText.COPY_213),false) {
+            (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText(Tr.text(UiText.BRONYATV_PLAYBACK_DIAGNOSTICS_232),dialog.message))
+            message(Tr.text(UiText.DIAGNOSTICS_COPIED_233))
+        })
+        dialog.setOnShowListener { refresh() };displayDialog(dialog)
     }
     private fun chooseTrack(type: Int) {
         val p = player ?: return
@@ -810,17 +756,20 @@ class PlaybackActivity : TvActivity(), Player.Listener {
         val choices = tv.ember.client.settings.PlayerChoice.entries.filter { it != tv.ember.client.settings.PlayerChoice.INTERNAL && ExternalPlayers.available(this, it) }
         if(choices.isEmpty()) { message(Tr.text(UiText.VLC_MX_PLAYER_AND_JUST_PLAYER_236)); return }
         TvUi.dialog(this).setTitle(Tr.text(UiText.EXTERNAL_PLAYER_237)).setItems(choices.map { it.label }.toTypedArray()) { _, index ->
-            val current = spec ?: return@setItems
-            try {
-                val pos = player?.currentPosition ?: position
-                ExternalPlayers.launch(this, choices[index], current, item?.name.orEmpty(), pos)
-                finish()
-            } catch(e: Exception) { message(e.message ?: Tr.text(UiText.EXTERNAL_PLAYER_FAILED_TO_START_238)) }
+            val current=spec ?: return@setItems;val s=session ?: return@setItems;val video=item ?: return@setItems
+            sourceJob=lifecycleScope.launch {
+                try {
+                    val info=app.api.playbackInfo(s,video.id,current.version.id)
+                    val source=info.versions.firstOrNull { it.id==current.version.id } ?: error(Tr.text(UiText.VERSION_UNAVAILABLE))
+                    val fresh=app.api.playbackSpec(s,video.id,source,info.playSessionId)
+                    ExternalPlayers.launch(this@PlaybackActivity,choices[index],fresh,video.name,player?.currentPosition ?: position);finish()
+                } catch(e: CancellationException) { throw e } catch(e: Exception) { message(e.message ?: Tr.text(UiText.EXTERNAL_PLAYER_FAILED_TO_START_238)) }
+            }
         }.create().also { displayDialog(it) }
     }
     private fun cancelSeekPreview() {
         main.removeCallbacks(commitSeek);pendingSeek=null
-        if(::seekPreview.isInitialized) seekPreview.visibility=View.GONE
+        seekPreview.visibility=View.GONE
     }
     private fun commitSeekPreview() {
         main.removeCallbacks(commitSeek)
@@ -831,11 +780,12 @@ class PlaybackActivity : TvActivity(), Player.Listener {
     // Framework Activity callback; lint inherits the restriction on AndroidX's internal base class.
     @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if(event.action==KeyEvent.ACTION_DOWN && controllerVisible) controllerInteraction=SystemClock.elapsedRealtime()
         val p=player
-        if(p!=null && ::playerView.isInitialized) {
+        if(activeDialog==null && p!=null && ::playerView.isInitialized) {
             val key=event.keyCode
             val directional=key in listOf(KeyEvent.KEYCODE_DPAD_LEFT,KeyEvent.KEYCODE_DPAD_RIGHT) &&
-                (!playerView.isControllerFullyVisible || pendingSeek!=null)
+                (!controllerVisible || pendingSeek!=null)
             val dedicated=key in listOf(KeyEvent.KEYCODE_MEDIA_REWIND,KeyEvent.KEYCODE_MEDIA_FAST_FORWARD)
             if((directional || dedicated) && p.isCurrentMediaItemSeekable) {
                 if(event.action==KeyEvent.ACTION_DOWN) {
@@ -861,6 +811,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
         return super.dispatchKeyEvent(event)
     }
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if(activeDialog==null && !controllerVisible && keyCode in listOf(KeyEvent.KEYCODE_DPAD_CENTER,KeyEvent.KEYCODE_ENTER,KeyEvent.KEYCODE_DPAD_UP,KeyEvent.KEYCODE_DPAD_DOWN)) { controllerVisible=true;controllerInteraction=SystemClock.elapsedRealtime();return true }
         when(keyCode) {
             KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_SETTINGS -> { showMenu(); return true }
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> { player?.let { it.playWhenReady = !it.playWhenReady }; return true }
@@ -872,10 +823,12 @@ class PlaybackActivity : TvActivity(), Player.Listener {
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putLong("position", player?.currentPosition ?: position)
         outState.putBoolean("playing", player?.playWhenReady ?: wantedPlay)
+        outState.putBoolean("controls",controllerVisible);outState.putString("control_focus",controllerFocus)
         super.onSaveInstanceState(outState)
     }
     override fun onStop() {
         cancelSeekPreview()
+        app.imageCache.playback(false)
         active=false;retryJob?.cancel();loadJob?.cancel();monitorJob?.cancel();neighborJob?.cancel();sourceJob?.cancel();playerBuildJob?.cancel()
         activeDialog?.dismiss();activeDialog=null;outroDeadline=0
         if(registered) { runCatching { connectivity.unregisterNetworkCallback(connectionCallback) }; registered = false }

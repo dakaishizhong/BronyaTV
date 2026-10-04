@@ -87,6 +87,15 @@ class ParallelRangeReader(private val client:OkHttpClient, private val url:Strin
         try {
             if(closed.get()) { call.cancel();throw InterruptedIOException(Tr.text(UiText.PARALLEL_RECEIVE_STOPPED_105)) }
             return call.execute().use { response ->
+                if(initial && response.code==416) {
+                    val size=Regex("bytes \\*/(\\d+)",RegexOption.IGNORE_CASE).matchEntire(response.header("Content-Range").orEmpty())?.groupValues?.get(1)?.toLongOrNull()
+                    // Like Media3's HTTP source, an exact EOF reopen is an empty successful range.
+                    // Missing/malformed totals and positions beyond EOF remain HTTP failures.
+                    if(size!=null && position==size) {
+                        total=size;responseHeaders=response.headers.toMultimap();resolvedUrl=response.request.url.toString()
+                        return@use Chunk(ByteArray(0)).apply { done=true }
+                    }
+                }
                 if(response.code!=206) {
                     if(initial && response.code==200) throw RangeUnavailableException(Tr.text(UiText.SERVER_DOES_NOT_SUPPORT_PARALLEL_RANGE_106))
                     if(response.code==200) throw IOException(Tr.text(UiText.SOURCE_OR_RANGE_RESPONSE_CHANGED_REFRESH_107))

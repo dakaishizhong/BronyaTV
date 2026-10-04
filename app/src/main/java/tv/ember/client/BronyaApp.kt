@@ -13,16 +13,21 @@ class BronyaApp : Application() {
     lateinit var settings: PlaybackSettings
     lateinit var api: EmbyApi
     val launches=PlaybackLaunchStore()
+    val progress=tv.ember.client.data.TransientProgress()
     val playbackCache by lazy { tv.ember.client.cache.PlaybackDiskCache(this) }
+    val metadataCache by lazy { tv.ember.client.cache.MetadataStore(java.io.File(filesDir,"metadata-v1")) }
+    val imageCache by lazy { tv.ember.client.cache.ImageCache(this) { settings.imageCacheMb*1048576L } }
     override fun onCreate() {
         super.onCreate()
         tv.ember.client.i18n.AppLanguage.wrap(this)
         sessions = SessionStore(this)
         settings = PlaybackSettings(this)
         api = EmbyApi(HttpClient.api, sessions.deviceId)
+        api.metadataStore=metadataCache
     }
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         if(level>=TRIM_MEMORY_RUNNING_LOW) tv.ember.client.ui.PosterLoader.trim()
+        if(level>=TRIM_MEMORY_RUNNING_LOW) imageCache.trim(level>=TRIM_MEMORY_RUNNING_CRITICAL)
     }
 }

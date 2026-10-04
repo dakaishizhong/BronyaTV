@@ -29,6 +29,9 @@ class PlaybackSettings(context: Context) {
     var mode: BufferMode
         get() = runCatching { BufferMode.valueOf(p.getString("mode", "AUTO")!!) }.getOrDefault(BufferMode.AUTO)
         set(v) { p.edit().putString("mode", v.name).apply() }
+    var imageCacheMb: Int
+        get()=p.getInt("image_cache_mb",256).takeIf { it in listOf(0,64,128,256,512,1024) } ?: 256
+        set(v) { require(v in listOf(0,64,128,256,512,1024));p.edit().putInt("image_cache_mb",v).apply() }
     var bufferMb: Int
         get() = p.getInt("buffer_mb", 0).takeIf { it in listOf(0, 16, 32, 64, 128, 256, 512, 1024, 2048) } ?: 0
         set(v) { require(v in listOf(0, 16, 32, 64, 128, 256, 512, 1024, 2048)); p.edit().putInt("buffer_mb", v).apply() }

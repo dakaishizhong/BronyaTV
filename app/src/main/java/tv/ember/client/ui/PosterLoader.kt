@@ -1,57 +1,19 @@
 package tv.ember.client.ui
 
-import tv.ember.client.i18n.Tr
-import tv.ember.client.i18n.UiText
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.util.LruCache
 import android.widget.ImageView
 import kotlinx.coroutines.*
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
-import okhttp3.Request
+import tv.ember.client.BronyaApp
 import tv.ember.client.data.Session
-import tv.ember.client.network.HttpClient
-import tv.ember.client.network.awaitResponse
 
-/** Modest memory cache only; recycled TV cards cancel their own requests. */
+/** Compatibility adapter for the remaining media Surface integration. */
 object PosterLoader {
-    private val requests=Semaphore(3)
-    private val cache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory()/32).coerceIn(2*1024*1024,12*1024*1024).toInt()) {
-        override fun sizeOf(key: String, value: Bitmap) = value.byteCount
+    fun load(scope: CoroutineScope,image: ImageView,url: String,session: Session,large: Boolean=false): Job = scope.launch {
+        val app=image.context.applicationContext as BronyaApp
+        val width=if(image.width>0) image.width else if(large) 1280 else 480
+        val height=if(image.height>0) image.height else if(large) 720 else 185
+        val bitmap=app.imageCache.load(session,url,width,height)
+        if(bitmap!=null) image.setImageBitmap(bitmap)
     }
-    fun load(scope: CoroutineScope, image: ImageView, url: String, session: Session,large: Boolean=false): Job {
-        image.setImageDrawable(null)
-        return scope.launch {
-            val key = "${session.userId}:${url}:${large}"
-            val cached = cache.get(key)
-            if (cached != null) { image.setImageBitmap(cached); return@launch }
-            try {
-                val req = Request.Builder().url(url).header("X-Emby-Token", session.token).build()
-                val data = requests.withPermit { withContext(Dispatchers.IO) {
-                    HttpClient.api.newCall(req).awaitResponse().use { response ->
-                        if(!response.isSuccessful) null else response.body?.source()?.let { source ->
-                            // Reject oversized posters before a malicious image can consume TV memory.
-                            if(source.request(4L * 1024 * 1024 + 1)) null else source.readByteArray()
-                        }
-                    }
-                } }
-                if (data != null) {
-                    val bitmap = withContext(Dispatchers.Default) {
-                        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                        BitmapFactory.decodeByteArray(data, 0, data.size, bounds)
-                        val options = BitmapFactory.Options().apply {
-                            var sample = 1
-                            while(bounds.outWidth / sample > (if(large) 1280 else 480) || bounds.outHeight / sample > 720) sample *= 2
-                            inSampleSize = sample
-                        }
-                        BitmapFactory.decodeByteArray(data, 0, data.size, options)
-                    }
-                    if(bitmap != null) { cache.put(key, bitmap); image.setImageBitmap(bitmap) }
-                }
-            } catch(e: CancellationException) { throw e } catch(_: Exception) { /* Poster failure never blocks browsing. */ }
-        }
-    }
-    fun clear() { cache.evictAll() }
-    fun trim() { cache.trimToSize(cache.maxSize()/2) }
+    fun clear() { /* Account isolation is part of every image key. */ }
+    fun trim() { /* BronyaApp trims the shared image memory cache. */ }
 }
