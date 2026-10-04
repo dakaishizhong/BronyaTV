@@ -25,7 +25,7 @@ object TvUi {
     fun railWidth(context: Context)=context.resources.displayMetrics.let { metrics ->
         val paint=android.graphics.Paint().apply { textSize=10.5f*scale(context)*metrics.scaledDensity;typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL) }
         val names=listOf(UiText.HOME_267,UiText.MOVIES_316,UiText.SERIES_317,UiText.FAVORITES_318,UiText.SEARCH_295,UiText.SETTINGS_268)
-        maxOf((metrics.widthPixels/metrics.density*.077f).toInt(),kotlin.math.ceil(names.maxOf { paint.measureText(Tr.text(it)) }/metrics.density+45f).toInt())
+        maxOf((metrics.widthPixels/metrics.density*.077f).toInt(),kotlin.math.ceil(names.maxOf { paint.measureText(Tr.text(it)) }/metrics.density+45f*scale(context)).toInt())
     }
     fun gutter(context: Context)=unit(context,14)
     fun cardGap(context: Context)=unit(context,8)

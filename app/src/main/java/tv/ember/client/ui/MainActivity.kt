@@ -174,7 +174,7 @@ class MainActivity: TvActivity() {
         val selected=Tr.text(section(current) ?: history.toList().asReversed().firstNotNullOfOrNull { section(it)?.takeUnless { value -> value==UiText.HOME_267 } } ?: UiText.MOVIES_316)
         TvShell(selected,::navigate,if(current.query==null) hero else MediaUi.backdropItem,homeFocus,{ railFocused=it }) {
             Column(Modifier.fillMaxSize().onFocusChanged { if(it.hasFocus) railFocused="" }.focusGroup().padding(horizontal=(14*scale).dp,vertical=(12*scale).dp)) {
-                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End) { TvAction("⋯","browse_menu") { showMenu() };Spacer(Modifier.width(12.dp));TvClock() }
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End,verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) { TvIconAction(TvGlyph.More,Tr.text(UiText.LIBRARY_OPTIONS),"browse_menu") { showMenu() };Spacer(Modifier.width(12.dp));TvClock() }
                 if(s!=null) {
                     key(current.id) { if(current.query==null) Home(current,s) else Browse(current,s) }
                 }
@@ -218,7 +218,7 @@ class MainActivity: TvActivity() {
                         .focusProperties { down=focusMap["${row.key}:${row.items.firstOrNull()?.id}"] ?: FocusRequester.Default }
                         .background(if(focused) Cyan.copy(alpha=.1f) else androidx.compose.ui.graphics.Color.Transparent)
                         .clickable { openLibrary(row.library) },horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
-                        Section(row.title);Text("›",color=if(focused) Cyan else Muted,fontSize=(22*scale).sp)
+                        Section(row.title);TvIcon(TvGlyph.ChevronRight,if(focused) Cyan else Muted,Modifier.size((18*scale).dp))
                     }
                 }
                 BoxWithConstraints(Modifier.fillMaxWidth()) {

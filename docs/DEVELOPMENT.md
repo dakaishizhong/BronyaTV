@@ -122,3 +122,17 @@ adb shell am instrument -w -r -e class tv.ember.client.LosslessAudioDeviceTest t
 外部字幕文本与 PlaybackInfo 使用控制传输，视频前台和预取仍共享原有 1/2/4/8 媒体取流预算。这避免单连接视频响应在缓冲暂停时长期占用唯一许可，导致已选外部字幕无法加载；`TvIntegrationTest` 验证单连接/四连接 MP4 的真实 SRT cue、音轨切换与生命周期。媒体流总并发策略没有放宽。
 
 本地签名包流程可用 `python3 scripts/compose_release_smoke.py --apk releases/v1.6.0/BronyaTV-1.6.0-release.apk` 在专用测试模拟器上复现；默认 serial 为 emulator-5556，需先启动 tests/mock_emby.py。脚本在该模拟器卸载测试包并安装签名包，通过原生按键检查登录、分类、版本直选、播放 Menu/Back、设置和搜索，将英文截图保存到 artifacts/compose-release。TV Material 按钮通过 OK 激活；输入框 Up/Down 显式调用 Compose 焦点移动，避免编辑器截获方向键。
+
+## 播放控件视觉回归（1.6.1）
+
+`PlaybackUiDeviceTest` 在真实 Media3 播放期间检查播放/暂停键位于屏幕正中、左右键遍历六个控件、焦点不会改变按钮位置、OK 暂停/继续和进度条跳转。移除扬声器快捷入口后，音轨仍可从播放菜单选择。详情及全部设置编辑类别没有左上角返回按钮，遥控器 Back 返回后恢复原焦点。
+
+签名包原生输入检查及英文截图（脚本需要 Python 3 和 Pillow）：
+
+```bash
+python3 scripts/compose_release_smoke.py \
+  --apk releases/v1.6.1/BronyaTV-1.6.1-release.apk --version 1.6.1 \
+  --output artifacts/compose-release-1.6.1
+```
+
+脚本会在专用模拟器卸载旧的测试安装，再安装签名包。使用本地 Emby 测试服务，不代表实体电视或生产服务器验证。

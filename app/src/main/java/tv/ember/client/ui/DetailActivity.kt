@@ -45,7 +45,7 @@ class DetailActivity: TvActivity() {
     private var windowFocused by mutableStateOf(false)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        focusedControl=savedInstanceState?.getString("focus") ?: "detail_play"
+        focusedControl=savedInstanceState?.getString("focus")?.takeUnless { it=="detail_back" } ?: "detail_play"
         detailFirst=savedInstanceState?.getInt("first") ?: 0;detailOffset=savedInstanceState?.getInt("offset") ?: 0
         choice=savedInstanceState?.getString("player")?.let { runCatching { PlayerChoice.valueOf(it) }.getOrNull() } ?: app.settings.player
         selected=savedInstanceState?.getString("source").orEmpty()
@@ -104,7 +104,7 @@ class DetailActivity: TvActivity() {
         val versionScroll=rememberLazyListState();val relatedScroll=rememberLazyListState()
         TvShell(Tr.text(UiText.HOME_267),::navigateTo,video) {
             LazyColumn(Modifier.fillMaxSize().padding(horizontal=(14*scale).dp),state=scroll,contentPadding=PaddingValues(vertical=(18*scale).dp),verticalArrangement=Arrangement.spacedBy((8*scale).dp)) {
-                item(key="top") { Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) { TvAction("‹",tag="detail_back",modifier=control("detail_back")) { onBackPressedDispatcher.onBackPressed() };TvClock() } }
+                item(key="top") { Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End) { TvClock() } }
                 if(video==null) item(key="loading") {
                     Text(if(error.isBlank()) Tr.text(UiText.FETCHING_MOVIE_DETAILS_246) else error,color=Paper)
                     if(error.isNotBlank()) TvAction(Tr.text(UiText.RETRY_248),onClick=::load)
@@ -172,7 +172,7 @@ class DetailActivity: TvActivity() {
                     withFrameNanos { };withFrameNanos { }
                     if(focusTargets[desired]==null) {
                         val keys=buildList { addAll(listOf("top","title","overview","versions","actions"));if(video.resumeTicks>0) add("resume");if(error.isNotBlank()) add("error");if(video.people.isNotEmpty()) add("people");if(related.isNotEmpty()) add("related") }
-                        val key=when { desired=="detail_back" -> "top";desired.startsWith("version_") -> "versions";desired.startsWith("related_") && related.isNotEmpty() -> "related";else -> "actions" }
+                        val key=when { desired.startsWith("version_") -> "versions";desired.startsWith("related_") && related.isNotEmpty() -> "related";else -> "actions" }
                         scroll.scrollToItem(keys.indexOf(key).coerceAtLeast(0));withFrameNanos { };withFrameNanos { }
                     }
                     if(focusTargets[desired]==null) {

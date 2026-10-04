@@ -7,6 +7,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -26,7 +27,7 @@ import tv.ember.client.i18n.UiText
 
 internal data class SettingsTile(val title: String,val index: Int,val color: Int,val values: List<Pair<String,String>>)
 
-/** First Compose for TV screen. Existing setting editors and player remain independent. */
+/** TV settings overview; editing keeps each tile's established setting category. */
 @Composable
 internal fun SettingsDashboard(tiles: List<SettingsTile>,initialFocus: Int,scale: Float,
                                onFocused: (Int)->Unit,onOpen: (Int)->Unit,onFocusSidebar: ()->Unit) {
@@ -46,10 +47,10 @@ internal fun SettingsDashboard(tiles: List<SettingsTile>,initialFocus: Int,scale
                     group.forEachIndexed { column,tile ->
                         val position=rowIndex*3+column
                         var focused by remember { mutableStateOf(false) }
-                        Column(Modifier.weight(1f).background(Color(0xE00C1C26),RoundedCornerShape(14.dp))
-                            .border(if(focused) 2.dp else 1.dp,if(focused) accent else Color(0xFF244350),RoundedCornerShape(14.dp))
+                        Column(Modifier.weight(1f).background(Color(0xE00C1C26),RoundedCornerShape((12*scale).dp))
+                            .border(((if(focused) 1.5f else 1f)*scale).dp,if(focused) accent else text.copy(alpha=.12f),RoundedCornerShape((12*scale).dp))
                             .padding((12*scale).dp)) {
-                            Button(onClick={ onOpen(tile.index) },modifier=Modifier.fillMaxWidth().height((38*scale).dp)
+                            Button(onClick={ onOpen(tile.index) },modifier=Modifier.fillMaxWidth().height((42*scale).dp)
                                 .testTag("settings_tile_$position").focusRequester(requests[position])
                                 .focusProperties {
                                     if(column>0) left=requests[position-1]
@@ -66,9 +67,11 @@ internal fun SettingsDashboard(tiles: List<SettingsTile>,initialFocus: Int,scale
                                 colors=ButtonDefaults.colors(containerColor=Color.Transparent,contentColor=text,
                                     focusedContainerColor=accent.copy(alpha=.14f),focusedContentColor=accent),
                                 contentPadding=PaddingValues(horizontal=(4*scale).dp)) {
-                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy((9*scale).dp)) {
-                                    Box(Modifier.size((18*scale).dp).background(Color(tile.color),RoundedCornerShape(5.dp)))
-                                    Text(tile.title,fontSize=(17*scale).sp,maxLines=1,overflow=TextOverflow.Ellipsis)
+                                Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy((10*scale).dp)) {
+                                    val tint=Color(tile.color)
+                                    val glyph=listOf(TvGlyph.Play,TvGlyph.Subtitles,TvGlyph.Server,TvGlyph.Remote,TvGlyph.Appearance,TvGlyph.Account)[position]
+                                    Box(Modifier.size((28*scale).dp).background(tint.copy(alpha=.18f),RoundedCornerShape((7*scale).dp)),contentAlignment=Alignment.Center) { TvIcon(glyph,tint,Modifier.size((18*scale).dp)) }
+                                    Text(tile.title,fontSize=(16*scale).sp,lineHeight=(20*scale).sp,fontWeight=FontWeight.Medium,maxLines=1,overflow=TextOverflow.Ellipsis)
                                 }
                             }
                             Spacer(Modifier.height((10*scale).dp))

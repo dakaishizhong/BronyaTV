@@ -4,7 +4,7 @@
 
 An Emby playback client for Android TV. Dark movie backdrops, cyan remote focus indicators, and landscape media cards bring your movies and series to the big screen. Supports Android 6.0 and later, with English and Simplified Chinese interfaces.
 
-[Latest APK: 1.6.0](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.6.0/BronyaTV-1.6.0-release.apk) · [Release notes](https://github.com/dakaishizhong/BronyaTV/releases) · [Build and development guide (Chinese)](docs/DEVELOPMENT.md)
+[Latest APK: 1.6.1](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.6.1/BronyaTV-1.6.1-release.apk) · [Release notes](https://github.com/dakaishizhong/BronyaTV/releases) · [Build and development guide (Chinese)](docs/DEVELOPMENT.md)
 
 ## Features
 
@@ -30,7 +30,7 @@ An Emby playback client for Android TV. Dark movie backdrops, cyan remote focus 
 Version 1.4.0 uses a new signing key. When moving from 1.3.0 or earlier, uninstall the old version, install the new APK, and sign in again. Old application data will not be retained. Later releases using the 1.4.0 key can update this installation. You can also install with ADB:
 
 ```bash
-adb install -r BronyaTV-1.6.0-release.apk
+adb install -r BronyaTV-1.6.1-release.apk
 ```
 
 Enter your server URL, username, and password. HTTPS, custom ports, and reverse proxy paths are supported, for example `https://emby.example.com/emby`. URLs without a scheme use HTTPS. After a successful login, the encrypted session is saved; the password is not stored.
@@ -41,7 +41,7 @@ Choose a version in **Details → Video versions**, then select Play or Resume. 
 
 Use **Settings → Interface & diagnostics → Interface language** to switch between English and Simplified Chinese. You can also choose **Language** on the sign-in screen. The choice persists across restarts; server-provided titles and descriptions keep their original language.
 
-Use the direction buttons to move focus and OK to open content or choose an action. Category pages show films first. Select a server-library tab to enter it directly, or open **Filter & sort** for optional conditions. Each condition applies immediately. Press Menu or select **⋯** for refresh and sorting shortcuts. During playback, the Menu button or **Playback options** opens audio, subtitle, speed, aspect ratio, and source controls. The centered control bar uses circular source, seek, pause, subtitle, audio and options icons, with a label for the focused control.
+Use the direction buttons to move focus and OK to open content or choose an action. Category pages show films first. Select a server-library tab to enter it directly, or open **Filter & sort** for optional conditions. Each condition applies immediately. Press Menu or select **⋯** for refresh and sorting shortcuts. During playback, the Menu button or **Playback options** opens audio, subtitle, speed, aspect ratio, and source controls. Play/Pause stays exactly at screen center. Circular source, seek, subtitle and options controls use consistent vector icons and a label for the focused control. The timeline shows playback and buffered progress, with a focused thumb for remote seeking. Audio tracks remain available in Playback options. Pages use the remote Back key; there are no top-left Back buttons.
 
 When the control bar is hidden, briefly press Left / Right to preview a seek position. Hold a direction button to advance by the configured long-press step, then release to seek. Press Back to cancel. When the bar is visible, Left / Right selects controls. Fast-forward and rewind buttons are also supported. The defaults are 10 seconds for a short press and 30 seconds per long-press step; adjust them under **Settings → Remote control**.
 
@@ -61,21 +61,23 @@ Title, overview, cast and descriptive version metadata use a separate 24 MiB per
 
 ## Screenshots
 
-These screenshots show version 1.6.0 with a mock Emby server. Movies and metadata are test fixtures.
+These screenshots show version 1.6.1 with a mock Emby server. Movies and metadata are test fixtures.
 
 | Home | Details |
 | --- | --- |
-| ![BronyaTV home](docs/screenshots/1.6.0/home.png) | ![BronyaTV details](docs/screenshots/1.6.0/detail.png) |
+| ![BronyaTV home](docs/screenshots/1.6.1/home.png) | ![BronyaTV details](docs/screenshots/1.6.1/detail.png) |
 
 | Settings | Playback |
 | --- | --- |
-| ![BronyaTV settings](docs/screenshots/1.6.0/settings.png) | ![BronyaTV playback](docs/screenshots/1.6.0/player.png) |
+| ![BronyaTV settings](docs/screenshots/1.6.1/settings.png) | ![BronyaTV playback](docs/screenshots/1.6.1/player.png) |
 
-![BronyaTV search](docs/screenshots/1.6.0/search.png)
+| Settings editor | Search |
+| --- | --- |
+| ![Settings editor](docs/screenshots/1.6.1/settings-editor.png) | ![BronyaTV search](docs/screenshots/1.6.1/search.png) |
 
 | Movies | Sign in |
 | --- | --- |
-| ![Movies](docs/screenshots/1.6.0/category.png) | ![Sign in](docs/screenshots/1.6.0/login.png) |
+| ![Movies](docs/screenshots/1.6.1/category.png) | ![Sign in](docs/screenshots/1.6.1/login.png) |
 
 ## Development
 

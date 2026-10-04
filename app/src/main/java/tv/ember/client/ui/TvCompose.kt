@@ -12,11 +12,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.*
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.*
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.*
@@ -53,15 +55,28 @@ fun TvActivity.tvContent(content: @Composable ()->Unit) {
                          enabled: Boolean=true,onFocus: ()->Unit={},onClick: ()->Unit) {
     var focused by remember { mutableStateOf(false) }
     val scale=LocalTvScale.current
-    Button(onClick=onClick,enabled=enabled,modifier=modifier.heightIn(min=(34*scale).dp).testTag(tag)
+    val icon=actionGlyph(tag)
+    val caption=if(icon!=null) label.removePrefix("▶").removePrefix("ⓘ").trimStart() else label
+    val shape=RoundedCornerShape(8.dp)
+    Button(onClick=onClick,enabled=enabled,modifier=modifier.heightIn(min=(36*scale).dp).testTag(tag).semantics { this.selected=selected }
         .onFocusChanged { focused=it.isFocused;if(it.isFocused) onFocus() }
-        .border(if(focused || selected) 1.5.dp else 1.dp,if(focused || selected) Cyan else Color(0xFF264550),RoundedCornerShape(8.dp)),
-        shape=ButtonDefaults.shape(shape=RoundedCornerShape(8.dp)),border=ButtonDefaults.border(focusedBorder=Border.None),
+        .shadow(if(focused) (4*scale).dp else 0.dp,shape,clip=false,ambientColor=Cyan.copy(alpha=.25f),spotColor=Cyan.copy(alpha=.25f))
+        .border(if(focused) 1.5.dp else 1.dp,if(focused) Cyan else if(selected) Cyan.copy(alpha=.65f) else Paper.copy(alpha=.13f),shape),
+        shape=ButtonDefaults.shape(shape=shape),border=ButtonDefaults.border(focusedBorder=Border.None),
         scale=ButtonDefaults.scale(focusedScale=1f),
-        colors=ButtonDefaults.colors(containerColor=if(primary) Cyan else if(selected) Cyan.copy(alpha=.13f) else Color(TvUi.panel),
-            contentColor=if(primary) Ink else Paper,focusedContainerColor=if(primary) Color(0xFF8AFFFF) else Cyan.copy(alpha=.18f),focusedContentColor=if(primary) Ink else Cyan),
-        contentPadding=PaddingValues(horizontal=(12*scale).dp,vertical=(5*scale).dp)) {
-        Text(label,fontSize=(14*scale).sp,maxLines=1,overflow=TextOverflow.Ellipsis)
+        colors=ButtonDefaults.colors(containerColor=if(primary) Cyan else if(selected) Cyan.copy(alpha=.12f) else Color(TvUi.panel).copy(alpha=.88f),
+            contentColor=if(primary) Ink else Paper,focusedContainerColor=if(primary) Color(0xFF24E6E5) else Cyan.copy(alpha=.15f),focusedContentColor=if(primary) Ink else Cyan),
+        contentPadding=PaddingValues(horizontal=(12*scale).dp,vertical=(6*scale).dp)) {
+        icon?.let { TvIcon(it,if(primary) Ink else if(focused) Cyan else Paper,Modifier.size((16*scale).dp));Spacer(Modifier.width((7*scale).dp)) }
+        Text(caption,fontSize=(14*scale).sp,lineHeight=(18*scale).sp,maxLines=1,overflow=TextOverflow.Ellipsis)
+    }
+}
+@Composable fun TvIconAction(glyph: TvGlyph,label: String,tag: String,onClick: ()->Unit) {
+    val scale=LocalTvScale.current;var focused by remember { mutableStateOf(false) };val shape=RoundedCornerShape(8.dp)
+    Button(onClick,modifier=Modifier.size((36*scale).dp).testTag(tag).semantics { contentDescription=label }.onFocusChanged { focused=it.isFocused }
+        .border(1.dp,if(focused) Cyan else Paper.copy(alpha=.12f),shape),shape=ButtonDefaults.shape(shape),border=ButtonDefaults.border(focusedBorder=Border.None),
+        scale=ButtonDefaults.scale(focusedScale=1f),colors=ButtonDefaults.colors(containerColor=Color(TvUi.panel).copy(alpha=.75f),focusedContainerColor=Cyan.copy(alpha=.15f),focusedContentColor=Cyan),contentPadding=PaddingValues(0.dp)) {
+        TvIcon(glyph,if(focused) Cyan else Paper,Modifier.size((18*scale).dp))
     }
 }
 @Composable fun TvField(value: String,onValue: (String)->Unit,label: String,tag: String,modifier: Modifier=Modifier,
@@ -121,22 +136,23 @@ fun TvActivity.tvContent(content: @Composable ()->Unit) {
         }
         Row(Modifier.fillMaxSize()) {
             Column(Modifier.width(TvUi.railWidth(context).dp).fillMaxHeight().background(Ink.copy(alpha=.94f)).padding(horizontal=5.dp,vertical=(16*scale).dp)) {
-                Text("▶",Modifier.align(Alignment.CenterHorizontally),color=Cyan,fontSize=(30*scale).sp)
+                Box(Modifier.size((28*scale).dp).align(Alignment.CenterHorizontally).background(Cyan,RoundedCornerShape((7*scale).dp)),contentAlignment=Alignment.Center) { TvIcon(TvGlyph.Play,Ink,Modifier.size((19*scale).dp)) }
+                Spacer(Modifier.height((6*scale).dp))
                 Text("BronyaTV",Modifier.align(Alignment.CenterHorizontally),color=Paper,fontWeight=FontWeight.Bold,fontSize=(10*scale).sp)
                 Spacer(Modifier.height((24*scale).dp))
                 labels.take(5).forEachIndexed { i,label ->
-                    RailAction(label,listOf("⌂","◉","▣","☆","⌕")[i],selected==label,
+                    RailAction(label,listOf(TvGlyph.Home,TvGlyph.Movies,TvGlyph.Series,TvGlyph.Favorite,TvGlyph.Search)[i],selected==label,
                         Modifier.focusRequester(if(i==0 && homeRequester!=null) homeRequester else requests[i]),
                         { onRailFocused(label) }) { onNavigate(label) }
                     Spacer(Modifier.height((9*scale).dp))
                 }
                 Spacer(Modifier.weight(1f))
-                RailAction("Emby","▶",false) {
+                RailAction("Emby",TvGlyph.Server,false) {
                     TvDialogBuilder(context).setTitle("Emby").setMessage(listOf(session?.userName,session?.server).filterNotNull().joinToString("\n"))
                         .setPositiveButton(Tr.text(UiText.SETTINGS_268)) { _,_-> onNavigate(labels[5]) }.setNegativeButton(Tr.text(UiText.CANCEL_196),null).show()
                 }
                 Spacer(Modifier.height((9*scale).dp))
-                RailAction(labels[5],"⚙",selected==labels[5],Modifier.focusRequester(requests[5]),{ onRailFocused(labels[5]) }) { onNavigate(labels[5]) }
+                RailAction(labels[5],TvGlyph.Settings,selected==labels[5],Modifier.focusRequester(requests[5]),{ onRailFocused(labels[5]) }) { onNavigate(labels[5]) }
             }
             CompositionLocalProvider(LocalRailFocus provides { val i=labels.indexOf(selected).coerceAtLeast(0);(if(i==0 && homeRequester!=null) homeRequester else requests[i]).requestFocus() }) {
                 Box(Modifier.weight(1f).fillMaxHeight()) { content() }
@@ -144,16 +160,16 @@ fun TvActivity.tvContent(content: @Composable ()->Unit) {
         }
     }
 }
-@Composable private fun RailAction(label: String,symbol: String,selected: Boolean,modifier: Modifier=Modifier,onFocus: ()->Unit={},onClick: ()->Unit) {
+@Composable private fun RailAction(label: String,icon: TvGlyph,selected: Boolean,modifier: Modifier=Modifier,onFocus: ()->Unit={},onClick: ()->Unit) {
     var focused by remember { mutableStateOf(false) }
     val scale=LocalTvScale.current
-    Button(onClick,modifier=modifier.fillMaxWidth().height((34*scale).dp).testTag("nav_$label").semantics { this.selected=selected }
+    Button(onClick,modifier=modifier.fillMaxWidth().height((36*scale).dp).testTag("nav_$label").semantics { this.selected=selected }
         .onFocusChanged { focused=it.isFocused;if(it.isFocused) onFocus() }
         .border(if(focused || selected) 1.dp else 0.dp,if(focused || selected) Cyan else Color.Transparent,RoundedCornerShape(7.dp)),
         colors=ButtonDefaults.colors(containerColor=if(selected) Cyan.copy(alpha=.1f) else Color.Transparent,contentColor=Paper,
-            focusedContainerColor=Cyan.copy(alpha=.18f),focusedContentColor=Cyan),shape=ButtonDefaults.shape(shape=RoundedCornerShape(7.dp)),border=ButtonDefaults.border(focusedBorder=Border.None),scale=ButtonDefaults.scale(focusedScale=1f),contentPadding=PaddingValues(4.dp)) {
+            focusedContainerColor=Cyan.copy(alpha=.15f),focusedContentColor=Cyan),shape=ButtonDefaults.shape(shape=RoundedCornerShape(7.dp)),border=ButtonDefaults.border(focusedBorder=Border.None),scale=ButtonDefaults.scale(focusedScale=1f),contentPadding=PaddingValues((4*scale).dp)) {
         Row(verticalAlignment=Alignment.CenterVertically) {
-            Text(symbol,fontSize=(17*scale).sp);Spacer(Modifier.width(3.dp));Text(label,fontSize=(10.5f*scale).sp,maxLines=1)
+            TvIcon(icon,if(focused || selected) Cyan else Paper.copy(alpha=.88f),Modifier.size((17*scale).dp));Spacer(Modifier.width((6*scale).dp));Text(label,fontSize=(10.5f*scale).sp,fontWeight=FontWeight.Medium,maxLines=1)
         }
     }
 }

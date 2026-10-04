@@ -4,7 +4,7 @@
 
 面向 Android TV 的 Emby 播放客户端。深色影片背景、青色遥控器焦点和横向媒体卡片，让电影与剧集更适合大屏观看。支持 Android 6.0 及以上系统。
 
-[最新 APK：1.6.0](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.6.0/BronyaTV-1.6.0-release.apk) · [版本发布说明](https://github.com/dakaishizhong/BronyaTV/releases) · [构建与开发](docs/DEVELOPMENT.md)
+[最新 APK：1.6.1](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.6.1/BronyaTV-1.6.1-release.apk) · [版本发布说明](https://github.com/dakaishizhong/BronyaTV/releases) · [构建与开发](docs/DEVELOPMENT.md)
 
 ## 功能
 
@@ -30,7 +30,7 @@
 1.4.0 使用新的签名密钥。从 1.3.0 或更早版本迁移时，需要先卸载旧版，再安装新版并重新登录；旧版应用数据不会保留。以后沿用 1.4.0 密钥的版本可覆盖升级。也可使用 ADB：
 
 ```bash
-adb install -r BronyaTV-1.6.0-release.apk
+adb install -r BronyaTV-1.6.1-release.apk
 ```
 
 输入服务器地址、账号和密码。地址支持 HTTPS、自定义端口和反向代理路径，例如 `https://emby.example.com/emby`。省略协议时使用 HTTPS。登录成功后会自动保存加密会话，密码不保存。
@@ -43,7 +43,7 @@ adb install -r BronyaTV-1.6.0-release.apk
 
 在“Settings → Interface & diagnostics → Interface language”选择“简体中文”；中文界面的入口是“设置 → 界面与诊断 → 界面语言”。登录页也提供语言选择。重启后保留选择，服务器影片名称和简介保持原文。
 
-方向键移动焦点，确定键打开内容或选择操作。播放时，菜单键或顶部“播放选项”可切换轨道、倍速、画面比例、字幕及片源。
+方向键移动焦点，确定键打开内容或选择操作。播放/暂停键固定在屏幕正中，两侧为片源、快退、快进、字幕及更多选项。进度条显示已播放和缓冲区间，聚焦时用圆形游标提示跳转位置。移除扬声器快捷按钮，音轨选择仍在“播放选项”菜单中；菜单还提供倍速、画面比例及片源切换。各页不显示左上角返回按钮，使用遥控器返回键。
 
 控制栏隐藏时，左右短按预览跳转位置；长按按设定步长持续移动，松开后跳转，返回键取消。控制栏显示时，左右键用于选择按钮。快进、快退键也可直接使用。短按默认 10 秒，长按每次默认 30 秒，在“设置 → 遥控器”分别调整。
 
@@ -63,21 +63,23 @@ adb install -r BronyaTV-1.6.0-release.apk
 
 ## 界面
 
-以下截图来自 1.6.0 的模拟 Emby 测试服务器，影片和元数据为测试内容。
+以下截图来自 1.6.1 的模拟 Emby 测试服务器，影片和元数据为测试内容。
 
 | 首页 | 详情 |
 | --- | --- |
-| ![BronyaTV 首页](docs/screenshots/1.6.0/home.png) | ![BronyaTV 详情](docs/screenshots/1.6.0/detail.png) |
+| ![BronyaTV 首页](docs/screenshots/1.6.1/home.png) | ![BronyaTV 详情](docs/screenshots/1.6.1/detail.png) |
 
 | 设置 | 播放 |
 | --- | --- |
-| ![BronyaTV 设置](docs/screenshots/1.6.0/settings.png) | ![BronyaTV 播放](docs/screenshots/1.6.0/player.png) |
+| ![BronyaTV 设置](docs/screenshots/1.6.1/settings.png) | ![BronyaTV 播放](docs/screenshots/1.6.1/player.png) |
 
-![BronyaTV 搜索](docs/screenshots/1.6.0/search.png)
+| 设置编辑 | 搜索 |
+| --- | --- |
+| ![设置编辑](docs/screenshots/1.6.1/settings-editor.png) | ![BronyaTV 搜索](docs/screenshots/1.6.1/search.png) |
 
 | 电影分类 | 登录 |
 | --- | --- |
-| ![电影分类](docs/screenshots/1.6.0/category.png) | ![登录](docs/screenshots/1.6.0/login.png) |
+| ![电影分类](docs/screenshots/1.6.1/category.png) | ![登录](docs/screenshots/1.6.1/login.png) |
 
 ## 开发
 

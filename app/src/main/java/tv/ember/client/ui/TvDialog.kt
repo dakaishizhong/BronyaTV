@@ -58,7 +58,7 @@ class TvDialog(context: Context): androidx.activity.ComponentDialog(context) {
                 val messageScroll=rememberScrollState();val scope=rememberCoroutineScope()
                 androidx.tv.material3.Surface(shape=androidx.compose.foundation.shape.RoundedCornerShape(16.dp)) {
                     Column(Modifier.fillMaxWidth().padding((24*scale).dp)) {
-                        Text(heading,color=Paper,fontSize=(24*scale).sp)
+                        Text(heading,color=Paper,fontSize=(24*scale).sp,lineHeight=(30*scale).sp,fontWeight=androidx.compose.ui.text.font.FontWeight.Medium)
                         Spacer(Modifier.height(12.dp))
                         if(options.isNotEmpty()) {
                             LazyColumn(Modifier.fillMaxWidth().weight(1f,false).heightIn(max=(260*scale).dp),state=rememberLazyListState(selected.coerceIn(0,options.lastIndex)),verticalArrangement=Arrangement.spacedBy(7.dp)) {
@@ -77,7 +77,7 @@ class TvDialog(context: Context): androidx.activity.ComponentDialog(context) {
                                         else scope.launch { messageScroll.scrollBy((if(event.key==Key.DirectionDown) 100 else -100)*scale) }
                                     };true
                                 } else false
-                            }.verticalScroll(messageScroll).focusable(),color=Paper,fontSize=(14*scale).sp)
+                            }.verticalScroll(messageScroll).focusable(),color=Paper,fontSize=(14*scale).sp,lineHeight=(20*scale).sp)
                         inputLabel?.let { label ->
                             TvField(input,{ input=it },label,"dialog_input",Modifier.fillMaxWidth().focusRequester(focus))
                             if(inputError.isNotBlank()) Text(inputError,color=androidx.compose.ui.graphics.Color(TvUi.error))

@@ -53,7 +53,7 @@ class SettingsActivity: TvActivity() {
         val state=rememberLazyListState(editorFirst,editorOffset)
         val requests=remember { mutableMapOf<String,FocusRequester>() }
         Column(Modifier.fillMaxSize().padding((18*scale).dp)) {
-            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) { TvAction("‹","settings_back") { category=-1 };Text(Tr.text(UiText.SETTINGS_268),color=Paper,fontSize=(28*scale).sp);TvClock() }
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) { Text(Tr.text(UiText.SETTINGS_268),color=Paper,fontSize=(28*scale).sp,lineHeight=(34*scale).sp);TvClock() }
             LazyRow(horizontalArrangement=Arrangement.spacedBy(7.dp),contentPadding=PaddingValues(vertical=12.dp)) {
                 itemsIndexed(listOf(UiText.PLAYBACK_333,UiText.REMOTE_CONTROL_334,UiText.NETWORK_CACHE_335,UiText.AUDIO_SUBTITLES_336,UiText.ACCOUNT_INFO_337),key={ i,_-> i }) { i,label ->
                     val request=remember { FocusRequester() };requests["tab$i"]=request

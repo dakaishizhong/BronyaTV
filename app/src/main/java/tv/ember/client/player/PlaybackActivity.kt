@@ -164,7 +164,6 @@ class PlaybackActivity : TvActivity(), Player.Listener {
             PlaybackAction("play_pause","▶") { player?.let { it.playWhenReady=!it.playWhenReady } },
             PlaybackAction("player_forward",Tr.text(UiText.FORWARD_CONTROL)) { seekControls(1,0) },
             PlaybackAction("player_subtitles",Tr.text(UiText.SUBTITLE_TRACKS_180)) { chooseTrack(C.TRACK_TYPE_TEXT) },
-            PlaybackAction("player_audio",Tr.text(UiText.AUDIO_TRACKS_179)) { chooseTrack(C.TRACK_TYPE_AUDIO) },
             PlaybackAction("player_more",Tr.text(UiText.PLAYBACK_OPTIONS_138)) { showMenu() }
         )
         val episodeActions=if(item?.type=="Episode" && revision>=0) buildList {
