@@ -48,7 +48,12 @@ jobs:
             cd "$release_dir"
             sha256sum --check SHA256SUMS
           )
-          assets=("$apk" "$release_dir/SHA256SUMS" --repo "$GITHUB_REPOSITORY")
+          assets=("$apk" "$release_dir/SHA256SUMS")
+          evidence="$release_dir/BronyaTV-$version-remote-validation.zip"
+          if [[ -s "$evidence" ]]; then
+            assets+=("$evidence")
+          fi
+          assets+=(--repo "$GITHUB_REPOSITORY")
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
             gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --title "BronyaTV $version" --notes-file "$release_dir/RELEASE-NOTES.md"
