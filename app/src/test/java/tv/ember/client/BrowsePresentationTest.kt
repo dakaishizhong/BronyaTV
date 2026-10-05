@@ -43,4 +43,10 @@ class BrowsePresentationTest {
         assertEquals("movie",item.backdropId);assertEquals("own",item.backdropTag)
         assertTrue(item.communityRating.isEmpty());assertTrue(item.genres.isEmpty());assertTrue(item.people.isEmpty())
     }
+    @Test fun cinemaCopyUsesServerOriginalTitleAndStudioWhenPresent() {
+        val item=VideoItem.parse(JSONObject("""{"Id":"dune2","Name":"沙丘 2","OriginalTitle":"Dune: Part Two","Studios":[{"Name":"WARNER BROS. PICTURES"}]}"""))
+        assertEquals("Dune: Part Two",item.originalTitle);assertEquals("WARNER BROS. PICTURES",item.studio)
+        val missing=VideoItem.parse(JSONObject("""{"Id":"dune2"}"""))
+        assertEquals("",missing.originalTitle);assertEquals("",missing.studio)
+    }
 }

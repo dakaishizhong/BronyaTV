@@ -1,3 +1,7 @@
+# 当前约定
+
+以下公有领域素材说明属于 1.7.0 及此前版本的历史记录。后续新示例、预览和截图使用用户提供的 Compose TV 文档资源，见 [CINEMA-REFERENCE.md](CINEMA-REFERENCE.md) 与 [cinema-reference.json](cinema-reference.json)。当前素材生成脚本和本地 Emby 接口已采用新资源。
+
 # Public-domain movie images
 
 These are real stills from six public-domain classic films. Each exact image was checked against Wikimedia Commons: `LicenseShortName` and `UsageTerms` are **Public domain**, and `Copyrighted` is **False**. [SOURCES.json](SOURCES.json) records the original download URL, file/license page, author credit, year, copyright-expiry evidence and SHA-256 hash. The source pages identify the applicable author-death/publication expiry; this statement applies to these selected images, not to modern remasters, music or replacement artwork.

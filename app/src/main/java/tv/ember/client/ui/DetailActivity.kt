@@ -10,6 +10,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -103,39 +106,29 @@ class DetailActivity: TvActivity() {
         val scroll=rememberLazyListState(detailFirst,detailOffset)
         val versionScroll=rememberLazyListState();val relatedScroll=rememberLazyListState()
         TvShell(Tr.text(UiText.HOME_267),::navigateTo,video) {
-            LazyColumn(Modifier.fillMaxSize().padding(horizontal=(14*scale).dp),state=scroll,contentPadding=PaddingValues(vertical=(18*scale).dp),verticalArrangement=Arrangement.spacedBy((8*scale).dp)) {
+            LazyColumn(Modifier.fillMaxSize().padding(horizontal=(40*scale).dp),state=scroll,contentPadding=PaddingValues(vertical=(18*scale).dp),verticalArrangement=Arrangement.spacedBy((8*scale).dp)) {
                 item(key="top") { Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End) { TvClock() } }
                 if(video==null) item(key="loading") {
                     Text(if(error.isBlank()) Tr.text(UiText.FETCHING_MOVIE_DETAILS_246) else error,color=Paper)
                     if(error.isNotBlank()) TvAction(Tr.text(UiText.RETRY_248),onClick=::load)
                 } else {
-                    item(key="title") { Text(video.name,color=Paper,fontWeight=FontWeight.Bold,fontSize=(44*scale).sp,lineHeight=(50*scale).sp,maxLines=2);Text(MediaUi.metadata(video),color=Muted,fontSize=(14*scale).sp) }
-                    item(key="overview") { Text(video.overview.ifBlank { Tr.text(UiText.NO_OVERVIEW_PROVIDED_BY_THE_SERVER_250) },Modifier.widthIn(max=(530*scale).dp),color=Paper,fontSize=(14*scale).sp,maxLines=4,overflow=TextOverflow.Ellipsis) }
-                    item(key="versions") {
-                        Section(Tr.text(UiText.MEDIA_VERSIONS))
-                        if(versions.size==1) {
-                            if(selected==versions[0].id) Text(versions[0].name,color=Cyan,fontSize=(15*scale).sp)
-                            else TvAction(versions[0].name,"version_${versions[0].id}",control("version_${versions[0].id}")) { selected=versions[0].id;error="" }
-                            Text(versions[0].displayDetails(),color=Muted,fontSize=(12*scale).sp)
-                        } else LazyRow(state=versionScroll,horizontalArrangement=Arrangement.spacedBy(10.dp),contentPadding=PaddingValues(3.dp)) {
-                            items(versions,key={ it.id }) { version ->
-                                Column(Modifier.width((260*scale).dp)) {
-                                    TvAction(version.name,"version_${version.id}",Modifier.fillMaxWidth().then(control("version_${version.id}")),selected=selected==version.id) { selected=version.id;error="" }
-                                    Spacer(Modifier.height(5.dp));Text(version.displayDetails(),color=Muted,fontSize=(12*scale).sp,maxLines=2)
-                                }
-                            }
-                        }
+                    item(key="title") {
+                        if(video.studio.isNotBlank()) { Text(video.studio,color=Cyan,fontSize=(11*scale).sp,letterSpacing=1.2.sp);Spacer(Modifier.height((8*scale).dp)) }
+                        MediaBadges(video);Spacer(Modifier.height((12*scale).dp))
+                        Text(video.name,color=Paper,fontWeight=FontWeight.ExtraBold,fontSize=(42*scale).sp,lineHeight=(50*scale).sp,maxLines=2)
+                        if(video.originalTitle.isNotBlank() && video.originalTitle!=video.name) Text(video.originalTitle,color=Muted,fontSize=(18*scale).sp)
+                        Text(MediaUi.metadata(video),color=Muted,fontSize=(14*scale).sp)
                     }
+                    item(key="overview") { Text(video.overview.ifBlank { Tr.text(UiText.NO_OVERVIEW_PROVIDED_BY_THE_SERVER_250) },Modifier.widthIn(max=(530*scale).dp),color=Muted,fontSize=(14*scale).sp,lineHeight=(22*scale).sp,maxLines=3,overflow=TextOverflow.Ellipsis) }
                     item(key="actions") {
-                        LazyRow(horizontalArrangement=Arrangement.spacedBy(8.dp),contentPadding=PaddingValues(3.dp)) {
-                            item(key="play") { TvAction(if(video.resumeTicks>0) Tr.text(UiText.RESUME_251) else Tr.text(UiText.PLAY_252),"detail_play",control("detail_play"),primary=true,enabled=!busy && selected.isNotBlank()) { play(video.resumeTicks/10000) } }
-                            if(video.resumeTicks>0) item(key="start") { TvAction(Tr.text(UiText.PLAY_FROM_START_253),"detail_start",control("detail_start"),enabled=!busy) { play(0) } }
-                            item(key="info") { TvAction(Tr.text(UiText.MORE_INFO_255),"detail_info",control("detail_info")) { TvUi.dialog(this@DetailActivity).setTitle(video.name).setMessage(video.overview+"\n\n"+MediaUi.metadata(video)).setPositiveButton(Tr.text(UiText.OFF_187),null).show() } }
-                            item(key="player") { TvAction(Tr.text(UiText.PLAYER_257,choice.label),"detail_player",control("detail_player")) {
-                                TvUi.dialog(this@DetailActivity).setTitle(Tr.text(UiText.CHOOSE_PLAYER_258)).setItems(PlayerChoice.entries.map { it.label+if(ExternalPlayers.available(this@DetailActivity,it)) "" else Tr.text(UiText.NOT_INSTALLED_259) }.toTypedArray()) { _,i ->
-                                    val next=PlayerChoice.entries[i];if(ExternalPlayers.available(this@DetailActivity,next)) choice=next else message(Tr.text(UiText.INSTALL_ON_YOUR_TV_FIRST_260,next.label))
-                                }.show()
-                            } }
+                        TvAction(Tr.text(UiText.PLAY_NOW),"detail_play",control("detail_play"),primary=true,enabled=!busy && selected.isNotBlank(),large=true) { play(video.resumeTicks/10000) }
+                    }
+                    item(key="versions") {
+                        Spacer(Modifier.height((16*scale).dp));Section(Tr.text(UiText.MEDIA_VERSIONS))
+                        LazyRow(state=versionScroll,horizontalArrangement=Arrangement.spacedBy((16*scale).dp),contentPadding=PaddingValues(vertical=(12*scale).dp,horizontal=(4*scale).dp)) {
+                            items(versions,key={ it.id }) { version ->
+                                VersionCard(version,selected==version.id,Modifier.width((260*scale).dp).then(control("version_${version.id}"))) { selected=version.id;error="" }
+                            }
                         }
                     }
                     if(video.resumeTicks>0) item(key="resume") { Text(Tr.text(UiText.WATCHED_261,MediaUi.percent(video),MediaUi.remaining(video)),color=Cyan,fontSize=(12*scale).sp) }
@@ -147,7 +140,7 @@ class DetailActivity: TvActivity() {
                                 Row(Modifier.width((170*scale).dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                                     if(person.id.isNotBlank() && person.imageTag.isNotBlank()) {
                                         val width=(42*scale*LocalContext.current.resources.displayMetrics.density).toInt()
-                                        CachedImage(app,s,app.api.imageUrl(s,VideoItem(person.id,person.name,"Person",imageTag=person.imageTag),width),width,width,Modifier.size((42*scale).dp))
+                                        CachedImage(app,s,app.api.imageUrl(s,VideoItem(person.id,person.name,"Person",imageTag=person.imageTag),width),width,width,Modifier.size((42*scale).dp).clip(CircleShape))
                                     }
                                     Column { Text(person.name,color=Paper,fontSize=(12*scale).sp);Text(person.role.ifBlank { person.type },color=Muted,fontSize=(10*scale).sp) }
                                 }
@@ -157,7 +150,7 @@ class DetailActivity: TvActivity() {
                     if(related.isNotEmpty() && s!=null) item(key="related") {
                         Section(Tr.text(UiText.RELATED_TITLES_266))
                         LazyRow(state=relatedScroll,horizontalArrangement=Arrangement.spacedBy((8*scale).dp),contentPadding=PaddingValues(3.dp)) {
-                            items(related,key={ it.id }) { other -> MediaCard(app,s,other,Modifier.width((160*scale).dp).then(control("related_${other.id}"))) { startActivity(Intent(this@DetailActivity,DetailActivity::class.java).putExtra("item_id",other.id)) } }
+                            items(related,key={ it.id }) { other -> MediaCard(app,s,other,control("related_${other.id}"),morph=true) { startActivity(Intent(this@DetailActivity,DetailActivity::class.java).putExtra("item_id",other.id)) } }
                         }
                     }
                 }
@@ -171,7 +164,7 @@ class DetailActivity: TvActivity() {
                     if(desired.startsWith("related_") && related.isEmpty() && !loadFinished) return@LaunchedEffect
                     withFrameNanos { };withFrameNanos { }
                     if(focusTargets[desired]==null) {
-                        val keys=buildList { addAll(listOf("top","title","overview","versions","actions"));if(video.resumeTicks>0) add("resume");if(error.isNotBlank()) add("error");if(video.people.isNotEmpty()) add("people");if(related.isNotEmpty()) add("related") }
+                        val keys=buildList { addAll(listOf("top","title","overview","actions","versions"));if(video.resumeTicks>0) add("resume");if(error.isNotBlank()) add("error");if(video.people.isNotEmpty()) add("people");if(related.isNotEmpty()) add("related") }
                         val key=when { desired.startsWith("version_") -> "versions";desired.startsWith("related_") && related.isNotEmpty() -> "related";else -> "actions" }
                         scroll.scrollToItem(keys.indexOf(key).coerceAtLeast(0));withFrameNanos { };withFrameNanos { }
                     }

@@ -2,6 +2,15 @@ package tv.ember.client.i18n
 
 /** User-facing text. Server titles, descriptions and search queries remain unchanged. */
 enum class UiText(val english: String,val chinese: String) {
+    CINEMA_LIBRARY("YOUR PRIVATE CINEMA","私人家庭影院"),
+    CHOOSE_LOGIN_USER("Choose a user","选择登录用户"),
+    PUBLIC_USERS_HINT("Enter your server address to see its public profiles, or sign in with a username.","输入服务器地址以查看公开用户，也可直接填写用户名登录。"),
+    ACCOUNT_CREDENTIALS("Account credential validation","账户凭据验证"),
+    SWITCH_USER("Switch user","切换用户"),
+    PASSWORD_REQUIRED("Password required","需要密码"),
+    NO_PASSWORD_REQUIRED("No password required","无需密码"),
+    SETTINGS_SUBTITLE("Personalize playback, cache and your TV experience.","配置播放、缓存与遥控器体验。"),
+    HARDWARE_HUD("Playback monitor","播放监控"),
     FILTER_SORT("Filter & sort","筛选与排序"),
     RESET_FILTERS("Reset filters","重置筛选"),
     REWIND_CONTROL("Seek backward","快退"),
@@ -447,5 +456,26 @@ enum class UiText(val english: String,val chinese: String) {
     INTERFACE_LANGUAGE("Interface language","界面语言"),
     BROWSE_MENU("Menu","菜单"),
     RESUME_STATUS("Continue watching · {0}","继续观看 · {0}"),
-    SERVER_SEARCH_ORDER("Server search order","服务器搜索排序");
+    SERVER_SEARCH_ORDER("Server search order","服务器搜索排序"),
+    LOGIN_SCREEN("Sign in","登录"),
+    CINEMA_LOGIN_TITLE("Media library sign-in & accounts","媒体库登录与账户"),
+    CINEMA_LOGIN_DESCRIPTION("Choose a family member or enter credentials · Connect to your private media center for direct 4K HDR playback","选择家庭成员或键入账户凭据 · 连接私有媒体中心直解 4K HDR"),
+    CINEMA_LOGIN_BUTTON("Sign in to Emby library","登录 Emby 媒体库"),
+    CINEMA_SERVER("Server address","服务器地址"),
+    CINEMA_USER("User","用户"),
+    PLAY_NOW("Play now","立即播放"),
+    PLAYER_HUD_BUTTON("Hardware monitoring HUD","硬件监控 HUD"),
+    PLAYER_EXIT("Exit playback","退出播放"),
+    PLAYER_SUBTITLE_LABEL("Subtitles: {0}","字幕: {0}"),
+    PLAYER_AUDIO_LABEL("Audio: {0}","音轨: {0}"),
+    PLAYER_ASPECT_LABEL("Aspect: {0}","画幅: {0}"),
+    PREVIOUS_SECTION("Previous chapter / episode","上一章节 / 上一集"),
+    NEXT_SECTION("Next chapter / episode","下一章节 / 下一集"),
+    PLAYER_HUD_TITLE("ExoPlayer playback monitoring","ExoPlayer 直解监控"),
+    HUD_VIDEO_FORMAT("Video format","视频流格式"),
+    HUD_RESOLUTION("Output resolution","输出分辨率"),
+    HUD_BITRATE("Transfer bitrate","实时解码码率"),
+    HUD_AUDIO("Audio output","音频直通输出"),
+    HUD_DROPPED("Dropped frames","丢帧统计"),
+    HUD_BUFFER("Preloaded buffer","预载缓冲区");
 }

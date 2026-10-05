@@ -42,6 +42,7 @@ class TvDialog(context: Context): androidx.activity.ComponentDialog(context) {
     var selected=-1
     var optionAction: ((TvDialog,Int)->Unit)?=null
     var singleChoice=false
+    var sidePanel=false
     var inputLabel: String?=null
     var input by mutableStateOf("")
     var inputError by mutableStateOf("")
@@ -96,12 +97,14 @@ class TvDialog(context: Context): androidx.activity.ComponentDialog(context) {
                 LaunchedEffect(messageScroll.maxValue>0) { if(messageScroll.maxValue>0 && options.isEmpty() && inputLabel==null) messageFocus.requestFocus() }
             }
         } })
-        window?.setLayout((context.resources.displayMetrics.widthPixels*.76f).toInt(),WindowManager.LayoutParams.WRAP_CONTENT)
+        window?.setLayout((context.resources.displayMetrics.widthPixels*(if(sidePanel) .42f else .76f)).toInt(),if(sidePanel) WindowManager.LayoutParams.MATCH_PARENT else WindowManager.LayoutParams.WRAP_CONTENT)
+        if(sidePanel) window?.apply { setGravity(android.view.Gravity.END);setDimAmount(.35f) }
     }
 }
 class TvDialogBuilder(private val context: Context) {
     private val dialog=TvDialog(context)
     fun setTitle(title: String)=apply { dialog.heading=title }
+    fun setSidePanel()=apply { dialog.sidePanel=true }
     fun setMessage(message: String)=apply { dialog.message=message }
     fun setItems(items: Array<String>,action: (TvDialog,Int)->Unit)=apply { dialog.options=items.toList();dialog.optionAction=action }
     fun setSingleChoiceItems(items: Array<String>,selected: Int,action: (TvDialog,Int)->Unit)=apply { dialog.options=items.toList();dialog.selected=selected;dialog.optionAction=action;dialog.singleChoice=true }

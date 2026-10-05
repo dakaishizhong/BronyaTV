@@ -22,7 +22,7 @@ private data class SettingEntry(val key: String,val label: String,val value: Str
 class SettingsActivity: TvActivity() {
     private var category by mutableIntStateOf(-1)
     private var revision by mutableIntStateOf(0)
-    private var dashboardFocus=0
+    private var dashboardFocus=-1
     private var lastFocus=""
     private var editorFirst=0
     private var editorOffset=0
@@ -31,7 +31,7 @@ class SettingsActivity: TvActivity() {
     private var diskUsage by mutableStateOf("")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        category=savedInstanceState?.getInt("category",-1) ?: -1;dashboardFocus=savedInstanceState?.getInt("dashboard",0) ?: 0
+        category=savedInstanceState?.getInt("category",-1) ?: -1;dashboardFocus=savedInstanceState?.getInt("dashboard",-1) ?: -1
         lastFocus=savedInstanceState?.getString("focus").orEmpty();editorFirst=savedInstanceState?.getInt("first",0) ?: 0;editorOffset=savedInstanceState?.getInt("offset",0) ?: 0
         tvContent {
             TvShell(Tr.text(UiText.SETTINGS_268),::navigate,MediaUi.backdropItem) {
@@ -66,7 +66,9 @@ class SettingsActivity: TvActivity() {
                     else {
                         val request=remember(entry.key) { FocusRequester() }
                         DisposableEffect(entry.key) { requests[entry.key]=request;onDispose { if(requests[entry.key]===request) requests.remove(entry.key) } }
-                        TvAction(entry.label+"    "+entry.value,entry.key,Modifier.fillMaxWidth().focusRequester(request),onFocus={ lastFocus=entry.key },onClick=entry.action)
+                        TvAction(entry.label+"    "+entry.value,entry.key,Modifier.fillMaxWidth().focusRequester(request)
+                            .focusProperties { if(entry.key==entries.firstOrNull { it.action!=null }?.key) up=requests["tab$category"] ?: FocusRequester.Default },
+                            onFocus={ lastFocus=entry.key },onClick=entry.action)
                     }
                 }
             }
@@ -187,6 +189,7 @@ class SettingsActivity: TvActivity() {
         navigateTo(name);finish()
     }
     @Composable private fun Dashboard() {
+        @Suppress("UNUSED_VARIABLE") val stamp=revision
         val session=app.sessions.load()
         val p=app.settings
         fun enabled(value: Boolean)=if(value) Tr.text(UiText.ON_186) else Tr.text(UiText.OFF_187)
@@ -200,7 +203,34 @@ class SettingsActivity: TvActivity() {
             SettingsTile(Tr.text(UiText.ACCOUNT_INFO_337),4,0xFFAE59FF.toInt(),listOf(Tr.text(UiText.ACCOUNT_279) to session?.userName.orEmpty(),Tr.text(UiText.SERVICE_404) to "Emby",Tr.text(UiText.APPLICATION_405) to "BronyaTV",Tr.text(UiText.VERSION_403) to tv.ember.client.BuildConfig.VERSION_NAME))
         )
         val rail=LocalRailFocus.current
-        SettingsDashboard(tiles,dashboardFocus,LocalTvScale.current,onFocused={ dashboardFocus=it },onOpen={ index -> category=index;lastFocus="tab$index";editorFirst=0;editorOffset=0;refreshUsage() },onFocusSidebar=rail)
+        val scale=LocalTvScale.current;val first=remember { FocusRequester() }
+        SettingsDashboard(tiles,dashboardFocus,scale,onFocused={ dashboardFocus=it },onOpen={ index -> category=index;lastFocus="tab$index";editorFirst=0;editorOffset=0;refreshUsage() },onFocusSidebar=rail) {
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy((20*scale).dp)) {
+                QuickSettingBlock(Tr.text(UiText.DEFAULT_PLAYER_338),Modifier.weight(1f)) {
+                    Row(horizontalArrangement=Arrangement.spacedBy((6*scale).dp)) {
+                        PlayerChoice.entries.take(3).forEachIndexed { i,value ->
+                            TvAction(value.label,"quick_player_${value.name}",Modifier.weight(1f).then(if(i==0) Modifier.focusRequester(first) else Modifier),selected=p.player==value) {
+                                if(ExternalPlayers.available(this@SettingsActivity,value)) { p.player=value;revision++ }
+                                else message(Tr.text(UiText.INSTALL_FIRST_339,value.label))
+                            }
+                        }
+                    }
+                }
+                QuickSettingBlock(Tr.text(UiText.MEMORY_CACHE_LIMIT_354),Modifier.weight(1f)) {
+                    LazyRow(horizontalArrangement=Arrangement.spacedBy((6*scale).dp)) {
+                        items((listOf(0,64,128,256,512)+p.bufferMb).distinct()) { size ->
+                            TvAction(if(size==0) Tr.text(UiText.AUTO_220) else "$size MB","quick_buffer_$size",selected=p.bufferMb==size) { p.bufferMb=size;revision++ }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height((16*scale).dp))
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy((20*scale).dp)) {
+                QuickSettingToggle(Tr.text(UiText.AUTO_PLAY_NEXT_EPISODE_340),p.autoNextEpisode,"quick_autonext",Modifier.weight(1f)) { p.autoNextEpisode=!p.autoNextEpisode;revision++ }
+                QuickSettingToggle(Tr.text(UiText.PERFORMANCE_OVERLAY_399),p.osd,"quick_osd",Modifier.weight(1f)) { p.osd=!p.osd;revision++ }
+            }
+        }
+        LaunchedEffect(Unit) { if(dashboardFocus<0) first.requestFocus() }
     }
     private fun duration(title: String,value: Int,save: (Int)->Unit) {
         TvUi.dialog(this).setTitle(title).setMessage(Tr.text(UiText.ENTER_SECONDS_DISABLES_SKIPPING_MAXIMUM_407)).setInput(Tr.text(UiText.SEC_406),"$value")

@@ -33,7 +33,7 @@ class ComposeMigrationDeviceTest {
     private val context get()=instrumentation.targetContext
     private val app get()=context.applicationContext as BronyaApp
     private val server get()=InstrumentationRegistry.getArguments().getString("fixtureServer") ?: "http://10.0.2.2:8765"
-    private val session get()=Session(server,"fixture-token","u1","Demo TV")
+    private val session get()=Session(server,"fixture-token","u1","CinemaMaster")
     private fun ready(tag: String) { compose.waitUntil(60000) { compose.onAllNodesWithTag(tag).fetchSemanticsNodes(atLeastOneRootRequired=false).isNotEmpty() } }
     private fun click(tag: String) { ready(tag);compose.onNodeWithTag(tag).performSemanticsAction(SemanticsActions.RequestFocus) { it() };compose.waitForIdle();compose.onNodeWithTag(tag).performSemanticsAction(SemanticsActions.OnClick) { it() } }
     private fun pick(tag: String,index: Int) { click("picker_$tag");click("dialog_option_$index") }
@@ -56,12 +56,11 @@ class ComposeMigrationDeviceTest {
             compose.onNodeWithTag("login_username").performTextReplacement("demo")
             focus("login_server");key(KeyEvent.KEYCODE_DPAD_DOWN);compose.onNodeWithTag("login_username").assertIsFocused()
             key(KeyEvent.KEYCODE_DPAD_DOWN);compose.onNodeWithTag("login_password").assertIsFocused()
-            key(KeyEvent.KEYCODE_DPAD_DOWN);compose.onNodeWithTag("login_reveal").assertIsFocused()
             key(KeyEvent.KEYCODE_DPAD_DOWN);compose.onNodeWithTag("login_connect").assertIsFocused()
             compose.onNodeWithTag("login_password").performTextReplacement("demo");scenario.recreate()
             ready("login_password");assertEquals("",compose.onNodeWithTag("login_password").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.EditableText].text)
             capture("login");compose.onNodeWithTag("login_password").performTextReplacement("demo");click("login_connect")
-            ready("hero_details");assertEquals("u1",app.sessions.load()!!.userId)
+            ready("media_demo");assertEquals("u1",app.sessions.load()!!.userId)
             instrumentation.runOnMainSync { ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).forEach { it.finish() } }
         }
     }
@@ -101,11 +100,11 @@ class ComposeMigrationDeviceTest {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             ready("media_film3");click("nav_Movies");ready("media_film0")
             compose.onAllNodesWithTag("picker_genre").assertCountEquals(0);capture("category")
-            click("browse_filters");ready("picker_genre");pick("genre",2);ready("media_film1")
+            key(KeyEvent.KEYCODE_MENU);click("dialog_option_1");ready("picker_genre");pick("genre",2);ready("media_film1")
             compose.waitUntil(60000) { compose.onAllNodesWithTag("media_film0").fetchSemanticsNodes().isEmpty() }
             pick("year",1);pick("watch",1);ready("media_film9")
-            pick("sort",1);ready("media_film39");focus("media_film39")
-            click("media_film39");ready("detail_play");key(KeyEvent.KEYCODE_BACK);ready("media_film39");compose.onNodeWithTag("media_film39").assertIsFocused()
+            pick("sort",1);ready("media_film41");focus("media_film41")
+            click("media_film41");ready("detail_play");key(KeyEvent.KEYCODE_BACK);ready("media_film41");compose.onNodeWithTag("media_film41").assertIsFocused()
             pick("genre",0);pick("year",0);pick("watch",0)
             compose.waitUntil(60000) { compose.onAllNodesWithTag("page_next").fetchSemanticsNodes().singleOrNull()?.config?.contains(androidx.compose.ui.semantics.SemanticsProperties.Disabled)==false };click("page_next");ready("media_film0")
             compose.onNodeWithTag("page_previous").assertIsEnabled();focus("media_film0");click("media_film0");ready("detail_play");key(KeyEvent.KEYCODE_BACK)
@@ -142,7 +141,7 @@ class ComposeMigrationDeviceTest {
     }
     @Test fun imagesAreSizedSharedBoundedAndClearedIndependentlyOfMetadata()=runBlocking {
         val cache=app.imageCache;cache.clear();val initial=cache.snapshot()
-        val item=VideoItem("demo","A Trip to the Moon","Movie",imageTag="cache-test")
+        val item=VideoItem("demo","沙丘 2","Movie",imageTag="cache-test")
         val url=app.api.imageUrl(session,item,160)
         val values=coroutineScope { (0 until 16).map { async { cache.load(session,url,160,90) } }.awaitAll() }
         assertNotNull(values.first());assertTrue(values.all { it===values.first() });assertTrue(values.first()!!.width<=320);assertTrue(values.first()!!.height<=180)

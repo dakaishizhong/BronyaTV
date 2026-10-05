@@ -103,11 +103,18 @@ class EmbyApi(private val client: OkHttpClient, private val deviceId: String) {
         val u = j.getJSONObject("User")
         return@withContext Session(server, j.getString("AccessToken"), u.getString("Id"), u.optString("Name", username))
     }
+    suspend fun publicUsers(serverInput: String): List<PublicUser> = withContext(Dispatchers.IO) {
+        JSONArray(request(normalizeServer(serverInput),"Users/Public")).objects().mapNotNull {
+            val id=it.optString("Id");val name=it.optString("Name")
+            if(id.isBlank() || name.isBlank()) null else PublicUser(id,name,it.optBoolean("HasPassword"),
+                it.optString("Tag"),it.optString("Description"),it.optString("AvatarInitials"))
+        }.distinctBy { it.id }
+    }
     suspend fun validate(s: Session) { request(s.server, "Users/${s.userId}", s.token) }
     suspend fun views(s: Session): List<VideoItem> = withContext(Dispatchers.IO) { JSONObject(metadata(s, "Users/${s.userId}/Views")).optJSONArray("Items").objects().map(VideoItem::parse) }
     suspend fun cachedViews(s: Session): List<VideoItem>?=withContext(Dispatchers.IO) { cached(s,"Users/${s.userId}/Views")?.let { JSONObject(it).optJSONArray("Items").objects().map(VideoItem::parse) } }
-    private val resumeQuery=mapOf("Limit" to "16","MediaTypes" to "Video","Fields" to "Overview,MediaSources","EnableImageTypes" to "Primary,Backdrop")
-    private val latestQuery=mapOf("Limit" to "24","IncludeItemTypes" to "Movie,Episode","Fields" to "Overview,MediaSources")
+    private val resumeQuery=mapOf("Limit" to "16","MediaTypes" to "Video","Fields" to "Overview,MediaSources,Studios,OriginalTitle,Genres,CommunityRating","EnableImageTypes" to "Primary,Backdrop")
+    private val latestQuery=mapOf("Limit" to "24","IncludeItemTypes" to "Movie,Episode","Fields" to "Overview,MediaSources,Studios,OriginalTitle,Genres,CommunityRating")
     private fun latestQuery(parent: String)=if(parent.isBlank()) latestQuery else latestQuery+("ParentId" to parent)
     suspend fun resume(s: Session): List<VideoItem> = withContext(Dispatchers.IO) { JSONObject(metadata(s,"Users/${s.userId}/Items/Resume",resumeQuery)).optJSONArray("Items").objects().map(VideoItem::parse) }
     suspend fun latest(s: Session,parent: String=""): List<VideoItem> = withContext(Dispatchers.IO) { JSONArray(metadata(s,"Users/${s.userId}/Items/Latest",latestQuery(parent))).objects().map(VideoItem::parse) }

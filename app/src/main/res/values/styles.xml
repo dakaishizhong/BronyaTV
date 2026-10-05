@@ -1,6 +1,6 @@
 <resources>
-    <color name="background">#030E14</color>
-    <color name="accent">#00E1E5</color>
+    <color name="background">#07080B</color>
+    <color name="accent">#38D39F</color>
     <style name="Theme.BronyaTV" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans-serif</item>
         <item name="android:alertDialogTheme">@style/Theme.BronyaTV.Dialog</item>
@@ -17,8 +17,8 @@
     <style name="Theme.BronyaTV.Dialog" parent="android:style/Theme.Material.Dialog.Alert">
         <item name="android:windowBackground">@drawable/dialog_surface</item>
         <item name="android:colorAccent">@color/accent</item>
-        <item name="android:textColorPrimary">#F5F6FA</item>
-        <item name="android:textColorSecondary">#A2A9B7</item>
+        <item name="android:textColorPrimary">#F1F3F9</item>
+        <item name="android:textColorSecondary">#8E95A5</item>
         <item name="android:fontFamily">sans-serif</item>
         <item name="android:windowMinWidthMajor">52%</item>
         <item name="android:windowMinWidthMinor">68%</item>

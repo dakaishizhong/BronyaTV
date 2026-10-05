@@ -2,7 +2,6 @@ package tv.ember.client.ui
 
 import android.content.Context
 import android.graphics.Color
-import android.graphics.Typeface
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.WindowManager
@@ -13,20 +12,16 @@ import tv.ember.client.i18n.*
 
 /** Shared palette, viewport proportions and Activity/Surface interoperability. All controls use Compose. */
 object TvUi {
-    val bg=Color.rgb(3,14,20)
-    val panel=Color.rgb(12,28,38)
-    val raised=Color.rgb(24,44,56)
-    val accent=Color.rgb(0,225,229)
-    val text=Color.rgb(245,246,250)
-    val muted=Color.rgb(162,169,183)
+    val bg=Color.rgb(7,8,11)
+    val panel=Color.rgb(15,17,24)
+    val raised=Color.rgb(21,24,34)
+    val accent=Color.rgb(56,211,159)
+    val text=Color.rgb(241,243,249)
+    val muted=Color.rgb(142,149,165)
     val error=Color.rgb(255,151,156)
     fun scale(context: Context)=context.resources.displayMetrics.let { it.heightPixels/it.density/540f }
     fun unit(context: Context,n: Int)=(n*scale(context)).toInt().coerceAtLeast(1)
-    fun railWidth(context: Context)=context.resources.displayMetrics.let { metrics ->
-        val paint=android.graphics.Paint().apply { textSize=10.5f*scale(context)*metrics.scaledDensity;typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL) }
-        val names=listOf(UiText.HOME_267,UiText.MOVIES_316,UiText.SERIES_317,UiText.FAVORITES_318,UiText.SEARCH_295,UiText.SETTINGS_268)
-        maxOf((metrics.widthPixels/metrics.density*.077f).toInt(),kotlin.math.ceil(names.maxOf { paint.measureText(Tr.text(it)) }/metrics.density+45f*scale(context)).toInt())
-    }
+    fun railWidth(context: Context)=unit(context,56)
     fun gutter(context: Context)=unit(context,14)
     fun cardGap(context: Context)=unit(context,8)
     fun cardWidth(context: Context)=context.resources.displayMetrics.let {

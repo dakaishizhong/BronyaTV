@@ -60,14 +60,14 @@ assert len(fields)==5
 key(4)
 for field,value in zip(fields[:3],['http://10.0.2.2:8765','demo','demo']):
     click(field);adb('shell','input','text',value);key(4)
-click(find('连接服务器'));find('A Trip to the Moon');click(find('设置'))
+click(find('连接服务器'));find('沙丘 2');click(find('设置'))
 click(find('网络接收缓冲'));click(find('4096KB'));find('网络接收缓冲：4096KB')
 key(4);adb('shell','am','force-stop','tv.ember.client')
 upgrade=adb('install','-r',str(root/'artifacts/EmberTV-1.0.3-release.apk')).decode()
 assert 'Success' in upgrade,upgrade
 (out/'install-upgrade.log').write_text(upgrade)
 adb('shell','am','start','-n','tv.ember.client/.ui.MainActivity')
-find('A Trip to the Moon');click(find('设置'));find('网络接收缓冲：系统自动')
+find('沙丘 2');click(find('设置'));find('网络接收缓冲：系统自动')
 focus_to('分段接收');key(23);click(find('4 路'));focus_to('分段接收');find('分段接收：4 路独立连接')
 capture('release-parallel-setting');key(4)
 key(20);key(23)

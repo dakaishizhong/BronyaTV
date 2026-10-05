@@ -149,3 +149,21 @@ python3 scripts/compose_release_smoke.py \
 公开测试图片、来源、许可、SHA-256 见 [tests/media](../tests/media/README.md)。`python3 scripts/create_test_assets.py` 无需下载即可生成慢缩放视频、双音轨和 SRT/ASS；素材指纹改变时替换旧生成文件。`scripts/create_dts_test_asset.py` 同样使用公共领域电影剧照，音频为原始测试信号。HEVC 的 PQ 标记用于路径回归，不作为 HDR 效果参考片。
 
 `SearchInputTest` 覆盖输入合并、即时提交、取消、中文/全角和服务器排序分页；`SearchDeviceTest` 检查空页不请求筛选、自动搜索、过期慢响应、历史、媒体范围及页面复用。`PlaybackUiDeviceTest` 同时检查按钮直径、轴线与镜像间距。签名包检查脚本示例：`python3 scripts/compose_release_smoke.py --apk releases/v1.7.0/BronyaTV-1.7.0-release.apk --version 1.7.0`。
+
+## 1.7.1 Cinema UI 与遥控器修复
+
+当前界面遵循用户提供的 Cinema UI 文档。主页无播放/详情操作栏，主页及分类无右上角按钮；侧栏展开时移动内容。登录保留用户卡片及凭据表单；播放器采用 44/56/44 基准 dp 的三个圆形按钮，播放按钮横向居中，字幕/音轨/画幅独立靠右。详细实现和原生逐键结果见 [Cinema UI](CINEMA-UI-VALIDATION.md) 与 [遥控器验证](REMOTE-DPAD-VALIDATION.md)。
+
+后续示例统一使用 [cinema-reference.json](../tests/media/cinema-reference.json)。第一次准备素材时 `scripts/create_test_assets.py` 下载文档中的图片，再生成测试视频；已有素材复用本地文件，测试资源不进入 APK。
+
+1.7.1 使用新的正式签名。私有密钥及 `signing.properties` 不上传 GitHub，后续版本必须保留并沿用。当前原生遥控器测试使用 Debug 应用和匹配的设备测试 APK：
+
+```bash
+adb reverse tcp:8765 tcp:8765
+adb shell am instrument -w -r \
+  -e class tv.ember.client.NativeRemoteNavigationDeviceTest \
+  -e fixtureServer http://127.0.0.1:8765 \
+  tv.ember.client.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+正式签名包与 Debug 包签名不同，使用独立测试模拟器安装。1.7.1 正式包已完成安装、登录与实际播放检查，完整范围见 [发布验证](../releases/v1.7.1/VALIDATION.md)。历史版本脚本保留历史验证用途。

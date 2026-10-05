@@ -31,7 +31,7 @@ assert len(fields)==5
 for field,value in zip(fields[:3],['http://10.0.2.2:8097/emby','embertest','Ember-Test-Only-2026']):
     click_node(field);run('shell','input','text',value);key(4)
 click_node(find_text('连接服务器'))
-find_text('A Trip to the Moon');shot('release-home.png')
+find_text('沙丘 2');shot('release-home.png')
 click_node(find_text('设置'))
 for _ in range(12):
     focused=[n for n in nodes() if n.attrib.get('focused')=='true']

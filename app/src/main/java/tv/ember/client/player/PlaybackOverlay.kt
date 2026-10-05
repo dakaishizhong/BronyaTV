@@ -3,35 +3,32 @@ package tv.ember.client.player
 import android.view.View
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.*
-import androidx.compose.ui.graphics.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.*
 import androidx.compose.ui.geometry.Offset
-import androidx.tv.material3.*
+import androidx.compose.ui.graphics.*
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.ProgressBarRangeInfo
-import androidx.compose.ui.semantics.progressBarRangeInfo
-import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.*
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-import androidx.tv.material3.Text
-import tv.ember.client.ui.*
+import androidx.tv.material3.*
+import tv.ember.client.data.MediaChapter
 import tv.ember.client.i18n.*
+import tv.ember.client.ui.*
 
 @Stable internal class PlaybackText {
     var text by mutableStateOf<CharSequence>("")
@@ -43,106 +40,137 @@ internal data class PlaybackAction(val key: String,val label: String,val enabled
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable internal fun FullscreenPlayback(view: PlayerView,player: ExoPlayer?,title: PlaybackText,info: PlaybackText,
     status: PlaybackText,osd: PlaybackText,debug: PlaybackText,seek: PlaybackText,showControls: Boolean,
-    focus: String,onFocus: (String)->Unit,actions: List<PlaybackAction>,episodeActions: List<PlaybackAction>,onSeek: (Int,Int)->Unit) {
+    focus: String,onFocus: (String)->Unit,actions: List<PlaybackAction>,badges:List<String>,hudRows:List<Pair<String,String>>,
+    chapters:List<MediaChapter>,onSeek: (Int,Int)->Unit) {
     val scale=LocalTvScale.current;val root=remember { FocusRequester() }
-    val requests=remember { mutableMapOf<String,FocusRequester>() }
-    Box(Modifier.fillMaxSize().testTag("playback_surface").background(Color.Black).focusRequester(root).focusable()) {
-        AndroidView(factory={ view },modifier=Modifier.fillMaxSize())
-        if(status.visibility==View.VISIBLE) Text(status.text.toString(),Modifier.testTag("playback_status").align(Alignment.TopCenter).padding(top=(110*scale).dp).background(Ink.copy(alpha=.88f)).padding(12.dp),color=Paper,fontSize=(17*scale).sp)
-        if(osd.visibility==View.VISIBLE) Text(osd.text.toString(),Modifier.align(Alignment.TopEnd).widthIn(max=(350*scale).dp).padding(15.dp).background(Ink.copy(alpha=.9f)).padding(10.dp),color=Paper,fontSize=(12*scale).sp)
-        if(debug.visibility==View.VISIBLE) Text(debug.text.toString(),Modifier.align(Alignment.CenterStart).widthIn(max=(520*scale).dp).padding(12.dp).background(Ink.copy(alpha=.9f)).padding(10.dp),color=Paper,fontSize=(11*scale).sp)
-        if(showControls) {
-            PlaybackControlPanel(player,title.text.toString(),info.text.toString(),actions,episodeActions,requests,onFocus,onSeek,Modifier.align(Alignment.BottomCenter))
-        }
-        if(seek.visibility==View.VISIBLE) Text(seek.text.toString(),Modifier.testTag("seek_preview").align(Alignment.BottomCenter).padding(bottom=(140*scale).dp).background(Ink.copy(alpha=.95f)).border(1.dp,Cyan).padding(18.dp),color=Paper,fontSize=(20*scale).sp)
-        LaunchedEffect(showControls) {
-            if(showControls) { withFrameNanos {}; (requests[focus] ?: requests["play_pause"])?.requestFocus() } else root.requestFocus()
-        }
-    }
-}
-@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-@Composable private fun PlaybackControlPanel(player: ExoPlayer?,title: String,info: String,actions: List<PlaybackAction>,episodeActions: List<PlaybackAction>,
-    requests: MutableMap<String,FocusRequester>,onFocus: (String)->Unit,onSeek: (Int,Int)->Unit,modifier: Modifier) {
-    val scale=LocalTvScale.current
-    val timeline=remember { FocusRequester() };requests["playback_timeline"]=timeline
-    val buttonRequests=remember { listOf("player_sources","player_subtitles","player_rewind","play_pause","player_forward","player_diagnostics","player_more").associateWith { FocusRequester() } }
-    DisposableEffect(Unit) {
-        requests.putAll(buttonRequests)
-        onDispose { buttonRequests.forEach { (key,request) -> if(requests[key]===request) requests.remove(key) };requests.remove("playback_timeline") }
-    }
-    var timelineFocused by remember { mutableStateOf(false) }
+    val keys=listOf("previous_section","play_pause","next_section","player_subtitles","player_audio","player_aspect","player_hud","player_exit","playback_timeline")
+    val requests=remember { keys.associateWith { FocusRequester() } }
     var position by remember(player) { mutableLongStateOf(0) };var duration by remember(player) { mutableLongStateOf(0) }
-    var buffered by remember(player) { mutableLongStateOf(0) }
-    var playing by remember(player) { mutableStateOf(player?.playWhenReady==true) }
+    var buffered by remember(player) { mutableLongStateOf(0) };var playing by remember(player) { mutableStateOf(player?.playWhenReady==true) }
     DisposableEffect(player) {
-        val listener=object: Player.Listener { override fun onPlayWhenReadyChanged(playWhenReady: Boolean,reason: Int) { playing=playWhenReady } }
+        val listener=object:Player.Listener { override fun onPlayWhenReadyChanged(playWhenReady:Boolean,reason:Int) { playing=playWhenReady } }
         player?.addListener(listener);onDispose { player?.removeListener(listener) }
     }
     LaunchedEffect(player) { while(true) { position=player?.currentPosition ?: 0;duration=(player?.duration ?: 0).coerceAtLeast(0);buffered=player?.bufferedPosition ?: position;kotlinx.coroutines.delay(500) } }
-    Column(modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent,Color.Black.copy(alpha=.8f),Color.Black.copy(alpha=.96f)))).padding(horizontal=(40*scale).dp,vertical=(22*scale).dp)) {
-        if(episodeActions.isNotEmpty()) LazyRow(horizontalArrangement=Arrangement.spacedBy(8.dp),contentPadding=PaddingValues(3.dp)) {
-            items(episodeActions,key={ it.key }) { action ->
-                val request=remember { FocusRequester() };requests[action.key]=request
-                TvAction(action.label,action.key,Modifier.focusRequester(request),enabled=action.enabled,onFocus={ onFocus(action.key) },onClick=action.action)
+    val chapter=chapters.lastOrNull { it.startTicks/10000<=position }?.name.orEmpty()
+    @Composable fun TextControl(key:String,modifier:Modifier=Modifier) {
+        actions.first { it.key==key }.let { action ->
+            PlayerControlButton(action,modifier.focusRequester(requests.getValue(key)).focusProperties { down=requests.getValue("playback_timeline") },onFocus={ onFocus(key) })
+        }
+    }
+    Box(Modifier.fillMaxSize().testTag("playback_surface").background(Color.Black).focusRequester(root).focusable()) {
+        AndroidView(factory={ view },modifier=Modifier.fillMaxSize())
+        if(status.visibility==View.VISIBLE) Text(status.text.toString(),Modifier.testTag("playback_status").align(Alignment.Center).background(Ink.copy(alpha=.88f)).padding(12.dp),color=Paper,fontSize=(17*scale).sp)
+        if(showControls) {
+            Row(Modifier.align(Alignment.TopCenter).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha=.85f),Color.Transparent)))
+                .padding((36*scale).dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.Top) {
+                Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy((4*scale).dp)) {
+                    Row(horizontalArrangement=Arrangement.spacedBy((8*scale).dp)) { badges.forEachIndexed { index,badge -> MetaBadge(badge,if(index==0) Cyan else Amber) } }
+                    Text(title.text.toString(),Modifier.testTag("playback_title"),color=Paper,fontSize=(22*scale).sp,fontWeight=FontWeight.Bold,maxLines=1,overflow=TextOverflow.Ellipsis)
+                    Text(listOf(chapter.takeIf(String::isNotBlank) ?: info.text.toString(),"${SeekPolicy.time(position)} / ${SeekPolicy.time(duration)}").filter(String::isNotBlank).joinToString("  ·  "),color=Muted,fontSize=(12*scale).sp)
+                }
+                Spacer(Modifier.width((16*scale).dp))
+                Row(horizontalArrangement=Arrangement.spacedBy((12*scale).dp)) { TextControl("player_hud");TextControl("player_exit") }
+            }
+            PlaybackControlPanel(position,duration,buffered,playing,chapter,actions,requests,onFocus,onSeek,Modifier.align(Alignment.BottomCenter))
+        }
+        if(osd.visibility==View.VISIBLE) {
+            Column(Modifier.align(Alignment.TopEnd).padding(top=(96*scale).dp,end=(36*scale).dp).width((320*scale).dp)
+                .testTag("player_hud_panel").background(Color.Black.copy(alpha=.88f),RoundedCornerShape(16.dp)).border(1.dp,CardBorder,RoundedCornerShape(16.dp)).padding((16*scale).dp),verticalArrangement=Arrangement.spacedBy((8*scale).dp)) {
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+                    Text(Tr.text(UiText.PLAYER_HUD_TITLE),color=Cyan,fontWeight=FontWeight.Bold,fontSize=(12*scale).sp)
+                    Text("Media3",color=Subtle,fontSize=(10*scale).sp)
+                }
+                hudRows.forEach { (label,value) ->
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy((8*scale).dp)) {
+                        Text(label,Modifier.width((88*scale).dp),color=Muted,fontSize=(11*scale).sp)
+                        Text(value,Modifier.weight(1f),color=Paper,fontSize=(11*scale).sp,fontFamily=FontFamily.Monospace)
+                    }
+                }
             }
         }
-        Text(title,color=Paper,fontSize=(26*scale).sp,lineHeight=(32*scale).sp,fontWeight=FontWeight.Bold,maxLines=1,overflow=TextOverflow.Ellipsis)
-        Text(info,color=Paper.copy(alpha=.7f),fontSize=(12*scale).sp,lineHeight=(18*scale).sp,maxLines=1,overflow=TextOverflow.Ellipsis)
-        Spacer(Modifier.height((8*scale).dp))
-        val fraction=if(duration>0) (position.toFloat()/duration).coerceIn(0f,1f) else 0f
-        val bufferedFraction=if(duration>0) (buffered.toFloat()/duration).coerceIn(fraction,1f) else fraction
-        Canvas(Modifier.fillMaxWidth().height((22*scale).dp).testTag("playback_timeline").focusRequester(timeline)
-            .focusProperties { down=buttonRequests.getValue("play_pause") }
-            .semantics { contentDescription=Tr.text(UiText.PLAYBACK_PROGRESS);progressBarRangeInfo=ProgressBarRangeInfo(fraction,0f..1f);stateDescription="${SeekPolicy.time(position)} / ${SeekPolicy.time(duration)}" }
-            .onFocusChanged { timelineFocused=it.isFocused;if(it.isFocused) onFocus("playback_timeline") }
-            .onPreviewKeyEvent { event ->
-                if(event.key in listOf(Key.DirectionLeft,Key.DirectionRight)) {
-                    if(event.type==KeyEventType.KeyDown) onSeek(if(event.key==Key.DirectionLeft) -1 else 1,event.nativeKeyEvent.repeatCount)
-                    true
-                } else false
-            }.focusable()) {
-            val inset=(7*scale).dp.toPx();val y=size.height/2;val track=(4*scale).dp.toPx()
-            val start=Offset(inset,y);val end=Offset(size.width-inset,y)
-            val played=Offset(inset+(end.x-inset)*fraction,y)
-            drawLine(Paper.copy(alpha=.16f),start,end,track,StrokeCap.Round)
-            if(bufferedFraction>0) drawLine(Paper.copy(alpha=.3f),start,Offset(inset+(end.x-inset)*bufferedFraction,y),track,StrokeCap.Round)
-            if(fraction>0) drawLine(Brush.horizontalGradient(listOf(Color(0xFF00B8C6),Cyan)),start,played,track,StrokeCap.Round)
-            if(timelineFocused) drawCircle(Cyan.copy(alpha=.16f),(10*scale).dp.toPx(),played)
-            drawCircle(Cyan,(if(timelineFocused) 6f else 4.5f)*scale*density,played)
-            drawCircle(Paper,(if(timelineFocused) 3f else 2f)*scale*density,played)
+        if(debug.visibility==View.VISIBLE) Text(debug.text.toString(),Modifier.align(Alignment.CenterStart).widthIn(max=(520*scale).dp).padding(12.dp).background(Ink.copy(alpha=.9f)).padding(10.dp),color=Paper,fontSize=(11*scale).sp)
+        if(seek.visibility==View.VISIBLE) Text(seek.text.toString(),Modifier.testTag("seek_preview").align(Alignment.Center).background(Ink.copy(alpha=.95f)).border(1.dp,Cyan).padding(18.dp),color=Paper,fontSize=(20*scale).sp)
+        LaunchedEffect(showControls) {
+            if(showControls) {
+                withFrameNanos {}
+                val desired=focus.takeUnless { key -> actions.firstOrNull { it.key==key }?.enabled==false }
+                (requests[desired] ?: requests.getValue("play_pause")).requestFocus()
+            } else root.requestFocus()
         }
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) { Text(SeekPolicy.time(position),color=Paper,fontSize=(11*scale).sp);Text(SeekPolicy.time(duration),color=Paper,fontSize=(11*scale).sp) }
-        Spacer(Modifier.height((7*scale).dp))
-        var focusedKey by remember { mutableStateOf("play_pause") }
-        val ordered=buttonRequests.keys.toList()
-        @Composable fun Control(key: String) {
-            actions.firstOrNull { it.key==key }?.let { action ->
-                val index=ordered.indexOf(key)
-                val label=if(key=="play_pause") Tr.text(if(playing) UiText.PAUSE_CONTROL else UiText.PLAY_CONTROL) else action.label
-                PlaybackIconButton(key,label,playing,action.enabled,Modifier.focusRequester(buttonRequests.getValue(key)).focusProperties {
-                    up=timeline
-                    left=if(index>0) buttonRequests.getValue(ordered[index-1]) else FocusRequester.Cancel
-                    right=if(index<ordered.lastIndex) buttonRequests.getValue(ordered[index+1]) else FocusRequester.Cancel
-                },onFocus={ focusedKey=key;onFocus(key) },onClick=action.action)
-            }
-        }
-        Row(Modifier.fillMaxWidth().height((54*scale).dp),horizontalArrangement=Arrangement.spacedBy((16*scale).dp,Alignment.CenterHorizontally),verticalAlignment=Alignment.CenterVertically) {
-            ordered.forEach { Control(it) }
-        }
-        Text(if(focusedKey=="play_pause") Tr.text(if(playing) UiText.PAUSE_CONTROL else UiText.PLAY_CONTROL) else actions.firstOrNull { it.key==focusedKey }?.label.orEmpty(),Modifier.align(Alignment.CenterHorizontally).height((18*scale).dp),color=Paper.copy(alpha=.7f),fontSize=(11*scale).sp,lineHeight=(16*scale).sp)
-
     }
 }
 
-@Composable private fun PlaybackIconButton(key: String,label: String,playing: Boolean,enabled: Boolean,modifier: Modifier,onFocus: ()->Unit,onClick: ()->Unit) {
-    val scale=LocalTvScale.current;val primary=key=="play_pause";var focused by remember { mutableStateOf(false) }
-    Button(onClick=onClick,enabled=enabled,modifier=modifier.size((42*scale).dp).testTag(key)
-        .onFocusChanged { focused=it.isFocused;if(it.isFocused) onFocus() }.semantics { contentDescription=label }
-        .shadow(if(focused) (8*scale).dp else 0.dp,CircleShape,clip=false,ambientColor=Cyan.copy(alpha=.35f),spotColor=Cyan.copy(alpha=.35f))
-        .border(((if(focused) 1.5f else 1f)*scale).dp,if(focused) Cyan else if(primary) Cyan.copy(alpha=.6f) else Paper.copy(alpha=.18f),CircleShape),
-        shape=ButtonDefaults.shape(CircleShape),border=ButtonDefaults.border(focusedBorder=Border.None),scale=ButtonDefaults.scale(focusedScale=1f),
-        colors=ButtonDefaults.colors(containerColor=if(primary) Cyan.copy(alpha=.1f) else Ink.copy(alpha=.65f),contentColor=Paper,focusedContainerColor=Cyan.copy(alpha=.16f),focusedContentColor=Cyan),contentPadding=PaddingValues(0.dp)) {
-        val glyph=when(key) { "play_pause" -> if(playing) TvGlyph.Pause else TvGlyph.Play;"player_rewind" -> TvGlyph.Rewind;"player_forward" -> TvGlyph.Forward;"player_sources" -> TvGlyph.Sources;"player_subtitles" -> TvGlyph.Subtitles;"player_diagnostics" -> TvGlyph.Info;else -> TvGlyph.More }
-        TvIcon(glyph,if(!enabled) Muted else if(focused || primary) Cyan else Paper.copy(alpha=.9f),Modifier.size((22*scale).dp))
+@Composable private fun PlaybackControlPanel(position:Long,duration:Long,buffered:Long,playing:Boolean,chapter:String,
+    actions:List<PlaybackAction>,requests:Map<String,FocusRequester>,onFocus:(String)->Unit,onSeek:(Int,Int)->Unit,modifier:Modifier) {
+    val scale=LocalTvScale.current;val timeline=requests.getValue("playback_timeline")
+    var timelineFocused by remember { mutableStateOf(false) }
+    val fraction=if(duration>0) (position.toFloat()/duration).coerceIn(0f,1f) else 0f
+    val bufferFraction=if(duration>0) (buffered.toFloat()/duration).coerceIn(fraction,1f) else fraction
+    Column(modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent,Color.Black.copy(alpha=.95f))))
+        .padding(horizontal=(48*scale).dp,vertical=(28*scale).dp),verticalArrangement=Arrangement.spacedBy((16*scale).dp)) {
+        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+            Text(SeekPolicy.time(position),color=Cyan,fontSize=(13*scale).sp,fontFamily=FontFamily.Monospace)
+            Text(chapter,color=Muted,fontSize=(12*scale).sp)
+            Text("-"+SeekPolicy.time((duration-position).coerceAtLeast(0)),color=Muted,fontSize=(13*scale).sp,fontFamily=FontFamily.Monospace)
+        }
+        Canvas(Modifier.fillMaxWidth().height((6*scale).dp).testTag("playback_timeline").focusRequester(timeline)
+            .focusProperties { down=requests.getValue("play_pause");up=requests.getValue("player_hud") }
+            .semantics { contentDescription=Tr.text(UiText.PLAYBACK_PROGRESS);progressBarRangeInfo=ProgressBarRangeInfo(fraction,0f..1f);stateDescription="${SeekPolicy.time(position)} / ${SeekPolicy.time(duration)}" }
+            .onFocusChanged { timelineFocused=it.isFocused;if(it.isFocused) onFocus("playback_timeline") }
+            .onPreviewKeyEvent { event -> if(event.key in listOf(Key.DirectionLeft,Key.DirectionRight)) { if(event.type==KeyEventType.KeyDown) onSeek(if(event.key==Key.DirectionLeft) -1 else 1,event.nativeKeyEvent.repeatCount);true } else false }.focusable()) {
+            val start=Offset(size.height/2,size.height/2);val end=Offset(size.width-size.height/2,size.height/2)
+            drawLine(Paper.copy(alpha=.15f),start,end,size.height,StrokeCap.Round)
+            if(bufferFraction>0) drawLine(Paper.copy(alpha=.3f),start,Offset(start.x+(end.x-start.x)*bufferFraction,end.y),size.height,StrokeCap.Round)
+            if(fraction>0) drawLine(Cyan,start,Offset(start.x+(end.x-start.x)*fraction,end.y),size.height,StrokeCap.Round)
+            if(timelineFocused) drawCircle(Cyan,(6*scale).dp.toPx(),Offset(start.x+(end.x-start.x)*fraction,end.y))
+        }
+        // Anchor transport controls to the viewport, independent of translated track labels.
+        BoxWithConstraints(Modifier.fillMaxWidth().height((56*scale).dp)) {
+            val transportWidth=(184*scale).dp // 44 + 20 + 56 + 20 + 44
+            val parametersWidth=((maxWidth-transportWidth)/2-(20*scale).dp).coerceAtLeast(0.dp)
+            val parameterMaxWidth=((parametersWidth-(20*scale).dp)/3).coerceAtLeast(0.dp)
+            Row(Modifier.align(Alignment.Center).testTag("playback_transport"),horizontalArrangement=Arrangement.spacedBy((20*scale).dp),verticalAlignment=Alignment.CenterVertically) {
+                listOf("previous_section","play_pause","next_section").forEach { key ->
+                    val action=actions.first { it.key==key }
+                    val label=if(key=="play_pause") Tr.text(if(playing) UiText.PAUSE_CONTROL else UiText.PLAY_CONTROL) else action.label
+                    PlayerCircleButton(action.copy(label=label),playing,Modifier.focusRequester(requests.getValue(key)).focusProperties { up=timeline },onFocus={ onFocus(key) })
+                }
+            }
+            Row(Modifier.align(Alignment.CenterEnd).widthIn(max=parametersWidth).testTag("playback_parameters"),horizontalArrangement=Arrangement.spacedBy((10*scale).dp)) {
+                listOf("player_subtitles","player_audio","player_aspect").forEach { key ->
+                    PlayerControlButton(actions.first { it.key==key },Modifier.widthIn(max=parameterMaxWidth).focusRequester(requests.getValue(key)).focusProperties { up=timeline },onFocus={ onFocus(key) })
+                }
+            }
+        }
+    }
+}
+
+@Composable private fun PlayerCircleButton(action:PlaybackAction,playing:Boolean,modifier:Modifier,onFocus:()->Unit) {
+    val scale=LocalTvScale.current;val primary=action.key=="play_pause";var focused by remember { mutableStateOf(false) };val size=if(primary) 56 else 44
+    Surface(onClick=action.action,enabled=action.enabled,modifier=modifier.size((size*scale).dp).testTag(action.key)
+        .semantics { contentDescription=action.label;role=Role.Button }.onFocusChanged { focused=it.isFocused;if(it.isFocused) onFocus() }
+        .shadow(if(focused) (24*scale).dp else 0.dp,CircleShape,clip=false,ambientColor=Cyan.copy(alpha=.35f),spotColor=Cyan.copy(alpha=.35f))
+        .border(((if(focused) 2 else 1)*scale).dp,if(focused) Cyan else CardBorder,CircleShape),
+        shape=ClickableSurfaceDefaults.shape(CircleShape),border=ClickableSurfaceDefaults.border(focusedBorder=Border.None),scale=ClickableSurfaceDefaults.scale(focusedScale=1.045f),
+        colors=ClickableSurfaceDefaults.colors(containerColor=if(primary) Cyan.copy(alpha=.9f) else Paper.copy(alpha=.1f),contentColor=if(primary) Color.Black else Paper,
+            focusedContainerColor=if(primary) Cyan else Paper.copy(alpha=.25f),focusedContentColor=if(primary) Color.Black else Paper,
+            disabledContainerColor=Paper.copy(alpha=.1f),disabledContentColor=Muted)) {
+        val glyph=when(action.key) { "previous_section"->TvGlyph.SkipPrevious;"next_section"->TvGlyph.SkipNext;else->if(playing) TvGlyph.Pause else TvGlyph.Play }
+        TvIcon(glyph,if(primary) Color.Black else if(action.enabled) Paper else Muted,Modifier.align(Alignment.Center).size((size*.5f*scale).dp))
+    }
+}
+
+@Composable private fun PlayerControlButton(action:PlaybackAction,modifier:Modifier=Modifier,onFocus:()->Unit) {
+    val scale=LocalTvScale.current;var focused by remember { mutableStateOf(false) };val shape=RoundedCornerShape((10*scale).dp)
+    // Surface keeps remote focus/click behavior without Button's unrelated minimum size.
+    Surface(onClick=action.action,enabled=action.enabled,modifier=modifier.testTag(action.key).semantics { contentDescription=action.label;role=Role.Button }
+        .onFocusChanged { focused=it.isFocused;if(it.isFocused) onFocus() }
+        .shadow(if(focused) (24*scale).dp else 0.dp,shape,clip=false,ambientColor=Cyan.copy(alpha=.35f),spotColor=Cyan.copy(alpha=.35f))
+        .border(((if(focused) 2 else 1)*scale).dp,if(focused) Cyan else CardBorder,shape),
+        shape=ClickableSurfaceDefaults.shape(shape),border=ClickableSurfaceDefaults.border(focusedBorder=Border.None),scale=ClickableSurfaceDefaults.scale(focusedScale=1.045f),
+        colors=ClickableSurfaceDefaults.colors(containerColor=Paper.copy(alpha=.1f),contentColor=Paper,focusedContainerColor=Paper.copy(alpha=.25f),focusedContentColor=Cyan)) {
+        Text(action.label,Modifier.padding(horizontal=(14*scale).dp,vertical=(8*scale).dp),fontSize=(12*scale).sp,lineHeight=(16*scale).sp,
+            style=LocalTextStyle.current.copy(lineHeightStyle=LineHeightStyle(LineHeightStyle.Alignment.Center,LineHeightStyle.Trim.None)),maxLines=1,overflow=TextOverflow.Ellipsis)
     }
 }

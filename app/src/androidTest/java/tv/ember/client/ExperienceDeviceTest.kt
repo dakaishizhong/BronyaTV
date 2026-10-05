@@ -39,7 +39,7 @@ class ExperienceDeviceTest {
     }
     @Before fun setup() {
         tv.ember.client.i18n.AppLanguage.save(context,"zh")
-        app.sessions.save(Session(fixtureServer,"fixture-token","u1","Demo TV"))
+        app.sessions.save(Session(fixtureServer,"fixture-token","u1","CinemaMaster"))
         app.settings.streamConnections=4;app.settings.seekSeconds=10
         app.settings.introSeconds=0;app.settings.outroSeconds=0;app.settings.autoNextEpisode=true
         app.settings.subtitleLanguage="zh";app.settings.audioLanguage=""
@@ -50,7 +50,7 @@ class ExperienceDeviceTest {
         ActivityScenario.launch(LoginActivity::class.java).use { scenario ->
             compose.waitUntil(30000) { compose.onAllNodesWithTag("login_password").fetchSemanticsNodes().isNotEmpty() }
             assertEquals(fixtureServer,compose.onNodeWithTag("login_server").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.EditableText].text)
-            assertEquals("Demo TV",compose.onNodeWithTag("login_username").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.EditableText].text)
+            assertEquals("CinemaMaster",compose.onNodeWithTag("login_username").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.EditableText].text)
             assertEquals("",compose.onNodeWithTag("login_password").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.EditableText].text)
             compose.onNodeWithTag("login_username").performTextReplacement("demo");compose.onNodeWithTag("login_password").performTextReplacement("demo")
             compose.onNodeWithTag("login_connect").performSemanticsAction(SemanticsActions.OnClick) { it() }

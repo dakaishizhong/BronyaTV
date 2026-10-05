@@ -43,7 +43,7 @@ class TvIntegrationTest {
     }
     @Before fun setup() {
         tv.ember.client.i18n.AppLanguage.save(context,"zh")
-        app.sessions.save(Session(fixtureServer, "fixture-token", "u1", "Demo TV"))
+        app.sessions.save(Session(fixtureServer, "fixture-token", "u1", "CinemaMaster"))
         // Keep transport/retry tests independent of the previous disk-prefetch device scenarios.
         app.settings.diskCacheMb=0;app.settings.osd = false; app.settings.debugEnabled = false; app.settings.receiveBufferKb = 0; app.settings.streamConnections=InstrumentationRegistry.getArguments().getString("connections")?.toIntOrNull() ?: 1
         fixture("/fixture/control?fail=0")
@@ -56,7 +56,7 @@ class TvIntegrationTest {
     }
     @Test fun homeDisplaysServerContentAndHasRemoteFocus() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            await { text("A Trip to the Moon") && text("The Great Train Robbery") }
+            await { text("沙丘 2") && text("奥本海默") }
             compose.onNodeWithTag("nav_首页").assertIsFocused();compose.onNodeWithTag("nav_设置").assertExists()
         }
     }

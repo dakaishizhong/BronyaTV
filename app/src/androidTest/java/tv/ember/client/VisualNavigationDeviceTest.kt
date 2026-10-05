@@ -42,7 +42,7 @@ class VisualNavigationDeviceTest {
     }
     @Before fun setup() {
         tv.ember.client.i18n.AppLanguage.save(context,"en")
-        app.sessions.save(Session(fixtureServer,"fixture-token","u1","Demo TV"));app.settings.introSeconds=0;app.settings.outroSeconds=0
+        app.sessions.save(Session(fixtureServer,"fixture-token","u1","CinemaMaster"));app.settings.introSeconds=0;app.settings.outroSeconds=0
     }
     @Test fun languageSelectionPersistsAcrossRecreatedScreens() {
         ActivityScenario.launch(SettingsActivity::class.java).use {
@@ -56,39 +56,42 @@ class VisualNavigationDeviceTest {
     }
     @Test fun searchFiltersAndHistoryUseRealServerResults() {
         ActivityScenario.launch(MainActivity::class.java).use {
-            ready("media_film3");click("nav_Search")
-            compose.onNodeWithTag("search_query").performTextReplacement("Trip");click("search_submit")
+            ready("media_film3");key(KeyEvent.KEYCODE_MENU);click("dialog_option_2")
+            compose.onNodeWithTag("search_query").performTextReplacement("Dune");click("search_submit")
             ready("media_demo");compose.onNodeWithTag("media_demo").assertExists();compose.onAllNodesWithTag("media_film0").assertCountEquals(0)
-            compose.onNodeWithTag("filter__Trip").assertExists();capture("search")
+            compose.onNodeWithTag("filter__Dune").assertExists();capture("search")
         }
     }
-    @Test fun sidebarCanOpenFavoritesAndReturnHomeWithRemoteFocus() {
+    @Test fun remoteMenuCanOpenFavoritesAndReturnHomeWithRemoteFocus() {
         ActivityScenario.launch(MainActivity::class.java).use {
             ready("media_film3");focus("nav_Home");key(KeyEvent.KEYCODE_DPAD_DOWN);compose.onNodeWithTag("nav_Movies").assertIsFocused()
-            click("nav_Favorites");ready("media_demo");key(KeyEvent.KEYCODE_BACK);ready("hero_details");compose.onNodeWithTag("nav_Home").assertExists()
+            key(KeyEvent.KEYCODE_MENU);click("dialog_option_3");ready("media_demo");key(KeyEvent.KEYCODE_BACK);ready("media_demo");compose.onNodeWithTag("nav_Home").assertExists()
         }
     }
-    @Test fun homeFitsFiveCardsAndRemoteFocusStaysOnArtwork() {
+    @Test fun homeFocusMorphsThePosterAndUpdatesTheHeroWithoutChangingHeight() {
         ActivityScenario.launch(MainActivity::class.java).use {
-            ready("media_film3")
-            listOf("demo","film0","film1","film2","film3","film4").forEach { id ->
-                val rect=compose.onNodeWithTag("artwork_$id",useUnmergedTree=true).fetchSemanticsNode().boundsInRoot
-                assertEquals(16.0/9.0,rect.width.toDouble()/rect.height,.06)
-                assertTrue(rect.right<=context.resources.displayMetrics.widthPixels);assertTrue(rect.bottom<=context.resources.displayMetrics.heightPixels)
-                listOf("media_title_$id","media_info_$id").forEach { tag ->
-                    compose.onNodeWithTag(tag,useUnmergedTree=true).assertIsDisplayed()
-                    val text=compose.onNodeWithTag(tag,useUnmergedTree=true).fetchSemanticsNode()
-                    assertEquals("Both rows must show complete card captions",text.size.height.toFloat(),text.boundsInRoot.height,1f)
-                }
+            ready("media_demo")
+            focus("nav_Home")
+            val expanded=compose.onNodeWithTag("navigation_sidebar",useUnmergedTree=true).fetchSemanticsNode().boundsInRoot.width
+            val poster=compose.onNodeWithTag("artwork_demo",useUnmergedTree=true).fetchSemanticsNode().boundsInRoot
+            assertEquals(140.0/180.0,poster.width.toDouble()/poster.height,.06)
+            focus("media_demo")
+            compose.waitUntil(15000) {
+                val art=compose.onNodeWithTag("artwork_demo",useUnmergedTree=true).fetchSemanticsNode().boundsInRoot
+                art.width/art.height>1.4f
             }
-            focus("media_film0");val before=compose.onNodeWithTag("media_film0").fetchSemanticsNode().boundsInRoot
-            repeat(4) { key(KeyEvent.KEYCODE_DPAD_RIGHT) };compose.onNodeWithTag("media_film4").assertIsFocused()
-            val after=compose.onNodeWithTag("media_film0").fetchSemanticsNode().boundsInRoot;assertEquals(before,after)
-            key(KeyEvent.KEYCODE_MENU);ready("dialog_option_0");key(KeyEvent.KEYCODE_BACK)
-            focus("media_demo");val rowTop=compose.onNodeWithTag("media_film0").fetchSemanticsNode().boundsInRoot.top
-            key(KeyEvent.KEYCODE_DPAD_DOWN);compose.onNodeWithTag("home_library_movies").assertIsFocused();key(KeyEvent.KEYCODE_DPAD_DOWN);compose.onNodeWithTag("media_film0").assertIsFocused()
-            assertEquals(rowTop,compose.onNodeWithTag("media_film0").fetchSemanticsNode().boundsInRoot.top,1f)
-            key(KeyEvent.KEYCODE_DPAD_UP);compose.onNodeWithTag("media_demo").assertIsFocused();capture("home")
+            val landscape=compose.onNodeWithTag("artwork_demo",useUnmergedTree=true).fetchSemanticsNode().boundsInRoot
+            assertEquals(260.0/180.0,landscape.width.toDouble()/landscape.height,.06)
+            assertEquals(poster.height*1.035f,landscape.height,2f)
+            val collapsed=compose.onNodeWithTag("navigation_sidebar",useUnmergedTree=true).fetchSemanticsNode().boundsInRoot.width
+            assertTrue("Sidebar collapses after entering content",collapsed<expanded)
+            compose.onNodeWithTag("hero_title",useUnmergedTree=true).assertTextEquals("沙丘 2")
+            key(KeyEvent.KEYCODE_DPAD_LEFT);compose.onNodeWithTag("nav_Home").assertIsFocused()
+            compose.onNodeWithTag("home_rows").performScrollToNode(hasTestTag("home_library_movies"))
+            focus("home_library_movies");key(KeyEvent.KEYCODE_DPAD_DOWN)
+            compose.onNodeWithTag("media_film0").assertIsFocused()
+            compose.onNodeWithTag("hero_title",useUnmergedTree=true).assertTextEquals("奥本海默")
+            capture("home")
         }
     }
     @Test fun detailsAndSettingsKeepPrimaryActionsReachable() {
@@ -113,8 +116,33 @@ class VisualNavigationDeviceTest {
             await { var advanced=false;scenario.onActivity { a -> advanced=nodes(a.window.decorView).filterIsInstance<PlayerView>().first().player!!.currentPosition>position+500 };advanced }
         }
     }
+    @Test fun choosingAReferenceProfileClearsThePreviousPassword() {
+        ActivityScenario.launch(LoginActivity::class.java).use {
+            ready("login_user_u2")
+            compose.onNodeWithTag("login_password").performTextReplacement("demo")
+            click("login_user_u2")
+            compose.onNodeWithTag("login_username").assertTextEquals("Sarah")
+            compose.onNodeWithTag("login_password").assertTextEquals("")
+            click("login_user_u3")
+            compose.onNodeWithTag("login_username").assertTextEquals("Kids")
+            compose.onNodeWithTag("login_password").assertTextEquals("")
+        }
+    }
+    @Test fun quickSettingsPersistAfterActivityRecreation() {
+        val previousBuffer=app.settings.bufferMb;val previousNext=app.settings.autoNextEpisode
+        try {
+            ActivityScenario.launch(SettingsActivity::class.java).use { scenario ->
+                ready("quick_buffer_256");click("quick_buffer_256")
+                assertEquals(256,app.settings.bufferMb)
+                click("quick_autonext");assertEquals(!previousNext,app.settings.autoNextEpisode)
+                scenario.recreate();ready("quick_buffer_256")
+                compose.onNodeWithTag("quick_buffer_256").assertIsSelected()
+                assertEquals(!previousNext,app.settings.autoNextEpisode)
+            }
+        } finally { app.settings.bufferMb=previousBuffer;app.settings.autoNextEpisode=previousNext }
+    }
     @Test fun unreachableServerShowsRetryWithoutCrashingHome() {
-        app.sessions.save(Session("http://127.0.0.1:9","fixture-token","u1","Demo TV"))
+        app.sessions.save(Session("http://127.0.0.1:9","fixture-token","u1","CinemaMaster"))
         ActivityScenario.launch(MainActivity::class.java).use { ready("browse_retry");compose.onNodeWithTag("browse_retry").assertExists() }
     }
 }

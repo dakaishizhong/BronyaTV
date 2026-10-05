@@ -18,6 +18,15 @@ class EmbyApiTest {
     private lateinit var session: Session
     @Before fun setup() { server = MockWebServer(); server.start(); api = EmbyApi(OkHttpClient(), "test-device"); session = Session(server.url("/proxy/emby").toString(), "secret", "u1", "TV") }
     @After fun teardown() { server.shutdown() }
+    @Test fun publicProfilesPreserveProxyPrefixAndDoNotSendASessionToken() = runBlocking {
+        server.enqueue(MockResponse().setBody("""[{"Id":"1","Name":"CinemaMaster","HasPassword":true},{"Id":"2","Name":"Sarah","HasPassword":true},{"Id":"3","Name":"Kids","HasPassword":false},{"Id":"3","Name":"Kids"},{"Id":""}]"""))
+        val profiles=api.publicUsers(session.server)
+        val request=server.takeRequest()
+        assertEquals("/proxy/emby/Users/Public",request.path)
+        assertEquals("GET",request.method);assertNull(request.getHeader("X-Emby-Token"))
+        assertEquals(listOf("CinemaMaster","Sarah","Kids"),profiles.map { it.name })
+        assertTrue(profiles.first().hasPassword);assertFalse(profiles.last().hasPassword)
+    }
     @Test fun passwordLoginUsesEmbyContractAndPreservesProxyPrefix() = runBlocking {
         server.enqueue(MockResponse().setBody("""{"User":{"Id":"u1","Name":"TV"},"AccessToken":"access"}"""))
         val result = api.login(session.server, "TV", "pw")

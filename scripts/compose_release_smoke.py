@@ -61,17 +61,12 @@ if not a.from_player:adb('shell','am','start','-n','tv.ember.client/.ui.MainActi
 if not (a.from_home or a.from_player):
     find('Sign in');shot('login')
     fields=[n for n in nodes() if n.get('class')=='android.widget.EditText'];assert len(fields)==3,len(fields)
-    for n,value in zip(fields,['http://127.0.0.1:8765','demo','demo']):field(n,value)
-    click(find('Connect'));find('A Trip to the Moon');find('Continue watching');find('Cinema');shot('home')
-    click(find('Movies'));find('Filter & sort');find('The Great Train Robbery');shot('category');key(4)
+    for n,value in zip(fields,['http://127.0.0.1:8765','CinemaMaster','demo']):field(n,value)
+    click(find('Connect'));find('沙丘 2');find('Continue watching');find('Cinema');shot('home')
+    click(find('Movies'));find('Filter & sort');find('奥本海默');shot('category');key(4)
 if not a.from_player:
     click(find('Details'));find('Video versions');find('1.4 Mbps');no_header_back();shot('detail')
-    # Focus above the initial primary action, move through real version controls, then return to Play.
-    key(19)
-    for _ in range(3):key(22)
-    key(23)
-    for _ in range(3):key(21)
-    key(20);key(23)
+    click(find('VP8 emulator fixture'));click(find('Resume',timeout=15))
     until=time.monotonic()+35
     while time.monotonic()<until:
         activity=adb('shell','dumpsys','activity','activities').decode()
@@ -121,5 +116,5 @@ click(find('Settings'));find('Interface & diagnostics');shot('settings')
 click(find('Network & cache'));find('Parallel receive');no_header_back();shot('settings-editor');key(4)
 key(4);click(find('Search'));find('Search movies')
 search_fields=[n for n in nodes() if n.get('class')=='android.widget.EditText'];assert len(search_fields)==1
-field(search_fields[0],'Trip');find('A Trip to the Moon');find('1 min remaining');shot('search')
+field(search_fields[0],'Dune');find('沙丘 2');find('1 min remaining');shot('search')
 print(json.dumps({'signed_release':a.version,'english_login':True,'home_rows':True,'category_facets':True,'inline_versions':True,'fresh_selected_source':'vp8','compose_player_controls':True,'play_pause_center_x':center_x,'remote_ok_pause_resume':True,'speaker_shortcut_absent':True,'header_back_absent':True,'remote_menu_back':True,'settings':True,'settings_editor':True,'search':True}),flush=True)

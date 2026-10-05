@@ -55,7 +55,7 @@ if fields:
         adb('shell', 'input', 'text', value)
         key(4)
     click(find('连接服务器'))
-find('A Trip to the Moon')
+find('沙丘 2')
 click(find('设置'))
 click(find('网络接收缓冲'))
 click(find('1024KB'))

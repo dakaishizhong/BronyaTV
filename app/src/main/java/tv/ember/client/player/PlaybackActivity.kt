@@ -97,7 +97,9 @@ class PlaybackActivity : TvActivity(), Player.Listener {
     private var retryJob: Job? = null
     private var loadJob: Job? = null
     private var monitorJob: Job? = null
-    private var showOsd = false
+    private var showOsd by mutableStateOf(false)
+    private var presentationRevision by mutableIntStateOf(0)
+    private var hudRows by mutableStateOf<List<Pair<String,String>>>(emptyList())
     private var showDebug = false
     private var active = false
     private var startedReported = false
@@ -154,30 +156,60 @@ class PlaybackActivity : TvActivity(), Player.Listener {
         mediaInfo.text=(listOf(video.year)+listOfNotNull(source?.streams?.firstOrNull { it.type=="Video" }?.let {
             listOf(if(it.width>=3800 || it.height>=2100) "4K" else if(it.height>0) "${it.height}P" else "",it.videoRange.takeUnless { range -> range in listOf("","SDR","None") }.orEmpty()).filter(String::isNotBlank).joinToString(" · ")
         })+listOf(if(video.runtimeTicks>0) Tr.text(UiText.MIN_012 ,(video.runtimeTicks/600_000_000)) else "")).filter(String::isNotBlank).joinToString("   |   ")
+        presentationRevision++
     }
     private var episodeRevision by mutableIntStateOf(0)
     @Composable private fun PlaybackScreen() {
-        val revision=episodeRevision
+        val revision=episodeRevision+presentationRevision
+        val video=spec?.version?.streams?.firstOrNull { it.type=="Video" }
+        val resolution=video?.let { if(it.width>=3800 || it.height>=2100) "4K UHD" else if(it.height>0) "${it.height}P" else "" }.orEmpty()
+        val badges=listOfNotNull((resolution+" DIRECT PLAY").trim().takeIf { spec!=null },video?.videoRange?.takeUnless { it in listOf("","None","SDR") })
         val actions=listOf(
-            PlaybackAction("player_sources",Tr.text(UiText.SOURCES_254)) { chooseSource() },
-            PlaybackAction("player_rewind",Tr.text(UiText.REWIND_CONTROL)) { seekControls(-1,0) },
+            PlaybackAction("previous_section",Tr.text(UiText.PREVIOUS_SECTION),!changingEpisode && (neighbors.previous!=null || item?.chapters?.isNotEmpty()==true)) { navigateSection(-1) },
             PlaybackAction("play_pause","▶") { player?.let { it.playWhenReady=!it.playWhenReady } },
-            PlaybackAction("player_forward",Tr.text(UiText.FORWARD_CONTROL)) { seekControls(1,0) },
-            PlaybackAction("player_diagnostics",Tr.text(UiText.PLAYBACK_DIAGNOSTICS_191)) { showDiagnostics() },
-            PlaybackAction("player_subtitles",Tr.text(UiText.SUBTITLE_TRACKS_180)) { chooseTrack(C.TRACK_TYPE_TEXT) },
-            PlaybackAction("player_more",Tr.text(UiText.PLAYBACK_OPTIONS_138)) { showMenu() }
+            PlaybackAction("next_section",Tr.text(UiText.NEXT_SECTION),!changingEpisode && (neighbors.next!=null || item?.chapters?.size?.let { it>1 }==true)) { navigateSection(1) },
+            PlaybackAction("player_subtitles",Tr.text(UiText.PLAYER_SUBTITLE_LABEL,selectedTrackLabel(C.TRACK_TYPE_TEXT))) { chooseTrack(C.TRACK_TYPE_TEXT) },
+            PlaybackAction("player_audio",Tr.text(UiText.PLAYER_AUDIO_LABEL,selectedTrackLabel(C.TRACK_TYPE_AUDIO))) { chooseTrack(C.TRACK_TYPE_AUDIO) },
+            PlaybackAction("player_aspect",Tr.text(UiText.PLAYER_ASPECT_LABEL,aspectLabel())) { chooseResize() },
+            PlaybackAction("player_hud",Tr.text(UiText.PLAYER_HUD_BUTTON)) { toggleHardwareHud() },
+            PlaybackAction("player_exit",Tr.text(UiText.PLAYER_EXIT)) { finish() }
         )
-        val episodeActions=if(item?.type=="Episode" && revision>=0) buildList {
-            if(neighbors.previous!=null) add(PlaybackAction("previous_episode",Tr.text(UiText.PREVIOUS_EPISODE_139),!changingEpisode) { neighbors.previous?.let(::switchEpisode) })
-            if(neighbors.next!=null) add(PlaybackAction("next_episode",Tr.text(UiText.NEXT_EPISODE_140),!changingEpisode) { neighbors.next?.let(::switchEpisode) })
-            if(app.settings.introSeconds>0) add(PlaybackAction("skip_intro",Tr.text(UiText.SKIP_INTRO_141),!changingEpisode) { skipOpening() })
-            if(app.settings.outroSeconds>0) add(PlaybackAction("skip_outro",Tr.text(UiText.SKIP_OUTRO_142),!changingEpisode) { finishEpisode() })
-        } else emptyList()
-        FullscreenPlayback(playerView,player,title,mediaInfo,status,osd,debug,seekPreview,controllerVisible,controllerFocus,{ controllerFocus=it },actions,episodeActions,::seekControls)
+        FullscreenPlayback(playerView,player,title,mediaInfo,status,osd,debug,seekPreview,controllerVisible,controllerFocus,{ controllerFocus=it;controllerInteraction=SystemClock.elapsedRealtime() },actions,badges,hudRows,item?.chapters.orEmpty(),::seekControls)
         val dialogOpen=activeDialog!=null
         LaunchedEffect(controllerVisible,controllerInteraction,dialogOpen) {
             if(controllerVisible && !dialogOpen) { delay(4500);controllerVisible=false }
         }
+    }
+    private fun toggleHardwareHud() {
+        showOsd=!showOsd;app.settings.osd=showOsd
+        if(showOsd) player?.let { p -> spec?.version?.let { version ->
+            hudRows=stats.cinemaHud(p,version,lastNetwork?.bytesPerSecond ?: 0L,control?.allocatedBytes?.toLong() ?: 0L)
+        } }
+        osd.visibility=if(showOsd) View.VISIBLE else View.GONE
+    }
+    private fun selectedTrackLabel(type:Int):String {
+        val p=player ?: return Tr.text(UiText.AUTO_220)
+        if(type in p.trackSelectionParameters.disabledTrackTypes) return Tr.text(if(type==C.TRACK_TYPE_AUDIO) UiText.MUTE_234 else UiText.OFF_187)
+        p.currentTracks.groups.filter { it.type==type }.forEach { group ->
+            (0 until group.length).firstOrNull { group.isTrackSelected(it) }?.let { index ->
+                val format=group.getTrackFormat(index)
+                return format.label?.takeIf(String::isNotBlank) ?: listOf(format.language?.takeUnless { it in listOf("","und") }.orEmpty(),format.sampleMimeType?.substringAfter('/').orEmpty()).filter(String::isNotBlank).joinToString(" · ").ifBlank { Tr.text(UiText.AUTO_220) }
+            }
+        }
+        return Tr.text(UiText.AUTO_220)
+    }
+    private fun aspectLabel():String = when(playerView.resizeMode) {
+        4 -> Tr.text(UiText.CROP_TO_FILL_200)
+        3 -> Tr.text(UiText.STRETCH_201)
+        else -> player?.videoFormat?.let { if(it.width>0 && it.height>0) "%.2f:1".format(java.util.Locale.ROOT,it.width.toFloat()/it.height) else null } ?: Tr.text(UiText.FIT_199)
+    }
+    private fun navigateSection(direction:Int) {
+        val p=player ?: return
+        val chapters=item?.chapters.orEmpty()
+        val target=if(direction<0) chapters.lastOrNull { it.startTicks/10000<p.currentPosition-3000 } else chapters.firstOrNull { it.startTicks/10000>p.currentPosition+500 }
+        if(target!=null) { control?.markSeek();p.seekTo(target.startTicks/10000) }
+        else if(item?.type=="Episode") (if(direction<0) neighbors.previous else neighbors.next)?.let(::switchEpisode)
+        else if(direction<0 && chapters.isNotEmpty()) { control?.markSeek();p.seekTo(0) }
     }
     private fun seekControls(direction: Int,repeats: Int) {
         val p=player ?: return
@@ -467,6 +499,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
     override fun onTracksChanged(tracks: Tracks) {
         val p = player ?: return
         title.text = item?.let { listOf(it.name,it.episodeLabel).filter(String::isNotBlank).joinToString(" · ") }.orEmpty()
+        presentationRevision++
     }
     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) { wantedPlay = playWhenReady; report("Progress") }
     override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo,newPosition: Player.PositionInfo,reason: Int) {
@@ -578,6 +611,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
                             Tr.text(UiText.MEMORY_BUFFER_MB_170 ,((control?.allocatedBytes ?: 0) / 1_048_576),((control?.policy?.targetBytes ?: 0) / 1_048_576))+diskSummary(false)
                         osd.append(Tr.text(UiText.PREFETCH_MB_TCP_RECEIVE_171 ,(net.state),(rangeStatus?.mode),((rangeStatus?.bufferedBytes ?: 0)/1048576),((rangeStatus?.budgetBytes ?: 0)/1048576),(receiveSocketFactory?.effectiveBytes?.takeIf { it > 0 }?.let { "${it / 1024}KB" } ?: Tr.text(UiText.WAITING_FOR_CONNECTION_025))) +
                             if(app.settings.receiveBufferKb > 0) Tr.text(UiText.REQUESTED_KB_172 ,(app.settings.receiveBufferKb)) else Tr.text(UiText.AUTOMATIC_173))
+                        hudRows=stats.cinemaHud(p,spec!!.version,net.bytesPerSecond,control?.allocatedBytes?.toLong() ?: 0L)
                         osd.visibility = if(showOsd) View.VISIBLE else View.GONE
                         debug.text = stats.debug(p, spec?.url.orEmpty(), session?.server.orEmpty())
                         debug.visibility = if(showDebug) View.VISIBLE else View.GONE
@@ -626,12 +660,12 @@ class PlaybackActivity : TvActivity(), Player.Listener {
             actions.add(Tr.text(UiText.RELOAD_EPISODE_LIST_194) to { neighborsForId="";neighborJob?.cancel();neighborJob=null;refreshNeighbors() })
         }
         if(app.settings.debugEnabled) actions.add(Tr.text(UiText.ADVANCED_DEBUG_INFO_195 ,(if(showDebug) Tr.text(UiText.ON_186) else Tr.text(UiText.OFF_187))) to { showDebug=!showDebug })
-        val dialog=TvUi.dialog(this).setTitle(Tr.text(UiText.PLAYBACK_OPTIONS_138)).setItems(actions.map { it.first }.toTypedArray()) { d,index ->
+        val dialog=TvUi.dialog(this).setSidePanel().setTitle(Tr.text(UiText.PLAYBACK_OPTIONS_138)).setItems(actions.map { it.first }.toTypedArray()) { d,index ->
             d.dismiss();activeDialog=null;actions[index].second()
         }.create()
         displayDialog(dialog,false)
     }
-    private fun displayDialog(dialog: TvDialog,parentMenu: Boolean=true) {
+    private fun displayDialog(dialog: TvDialog,parentMenu: Boolean=false) {
         activeDialog=dialog
         dialog.setOnDismissListener { if(activeDialog===dialog) activeDialog=null }
         dialog.setOnCancelListener {
@@ -643,26 +677,26 @@ class PlaybackActivity : TvActivity(), Player.Listener {
     }
     private fun chooseSpeed() {
         val values=listOf(.5f,.75f,1f,1.25f,1.5f,2f)
-        TvUi.dialog(this).setTitle(Tr.text(UiText.PLAYBACK_SPEED_197)).setSingleChoiceItems(values.map { Tr.text(UiText._198 ,(it)) }.toTypedArray(),values.indexOf(playbackSpeed)) { dialog,index ->
+        TvUi.dialog(this).setSidePanel().setTitle(Tr.text(UiText.PLAYBACK_SPEED_197)).setSingleChoiceItems(values.map { Tr.text(UiText._198 ,(it)) }.toTypedArray(),values.indexOf(playbackSpeed)) { dialog,index ->
             playbackSpeed=values[index];player?.setPlaybackSpeed(playbackSpeed);dialog.dismiss()
         }.setNegativeButton(Tr.text(UiText.CANCEL_196),null).create().also { displayDialog(it) }
     }
     private fun chooseResize() {
         val values=listOf(0,4,3)
-        TvUi.dialog(this).setTitle(Tr.text(UiText.ASPECT_RATIO_182)).setSingleChoiceItems(arrayOf(Tr.text(UiText.FIT_199),Tr.text(UiText.CROP_TO_FILL_200),Tr.text(UiText.STRETCH_201)),values.indexOf(playerView.resizeMode)) { dialog,index ->
-            playerView.resizeMode=values[index];app.settings.resizeMode=values[index];dialog.dismiss()
+        TvUi.dialog(this).setSidePanel().setTitle(Tr.text(UiText.ASPECT_RATIO_182)).setSingleChoiceItems(arrayOf(Tr.text(UiText.FIT_199),Tr.text(UiText.CROP_TO_FILL_200),Tr.text(UiText.STRETCH_201)),values.indexOf(playerView.resizeMode)) { dialog,index ->
+            playerView.resizeMode=values[index];app.settings.resizeMode=values[index];presentationRevision++;dialog.dismiss()
         }.setNegativeButton(Tr.text(UiText.CANCEL_196),null).create().also { displayDialog(it) }
     }
     private fun chooseSubtitleSize() {
         val values=listOf(80,100,120,140)
-        TvUi.dialog(this).setTitle(Tr.text(UiText.SUBTITLE_SIZE_183)).setSingleChoiceItems(values.map { "${it}%" }.toTypedArray(),values.indexOf(app.settings.subtitleScale)) { dialog,index ->
+        TvUi.dialog(this).setSidePanel().setTitle(Tr.text(UiText.SUBTITLE_SIZE_183)).setSingleChoiceItems(values.map { "${it}%" }.toTypedArray(),values.indexOf(app.settings.subtitleScale)) { dialog,index ->
             app.settings.subtitleScale=values[index];playerView.subtitleView?.setFractionalTextSize(.0533f*values[index]/100f);dialog.dismiss()
         }.setNegativeButton(Tr.text(UiText.CANCEL_196),null).create().also { displayDialog(it) }
     }
     private fun chooseTime() {
         val p=player ?: return
         if(!p.isCurrentMediaItemSeekable) { message(Tr.text(UiText.THIS_SOURCE_DOES_NOT_SUPPORT_SEEKING_202));return }
-        val dialog=TvUi.dialog(this).setTitle(Tr.text(UiText.JUMP_TO_TIME_184)).setInput(Tr.text(UiText.HH_MM_SS_OR_MM_SS_203),SeekPolicy.time(p.currentPosition))
+        val dialog=TvUi.dialog(this).setSidePanel().setTitle(Tr.text(UiText.JUMP_TO_TIME_184)).setInput(Tr.text(UiText.HH_MM_SS_OR_MM_SS_203),SeekPolicy.time(p.currentPosition))
             .button(Tr.text(UiText.JUMP_204),false) { d ->
                 val target=SeekPolicy.parseTime(d.input)
                 if(target==null) d.inputError=Tr.text(UiText.ENTER_A_VALID_TIME_SUCH_AS_205)
@@ -673,7 +707,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
     private fun chooseSource() {
         val s=session ?: return;val video=item ?: return
         if(sourceJob?.isActive==true) return
-        val loading=TvUi.dialog(this).setTitle(Tr.text(UiText.SWITCH_SOURCE_185)).setMessage(Tr.text(UiText.FETCHING_PLAYABLE_VERSIONS_206)).setNegativeButton(Tr.text(UiText.CANCEL_196),null).create()
+        val loading=TvUi.dialog(this).setSidePanel().setTitle(Tr.text(UiText.SWITCH_SOURCE_185)).setMessage(Tr.text(UiText.FETCHING_PLAYABLE_VERSIONS_206)).setNegativeButton(Tr.text(UiText.CANCEL_196),null).create()
         displayDialog(loading)
         sourceJob=lifecycleScope.launch {
             try {
@@ -697,7 +731,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
         }
     }
     private fun showDiagnostics() {
-        val dialog=TvUi.dialog(this).setTitle(Tr.text(UiText.PLAYBACK_DIAGNOSTICS_191)).setMessage(Tr.text(UiText.COLLECTING_DIAGNOSTICS_211)).create()
+        val dialog=TvUi.dialog(this).setSidePanel().setTitle(Tr.text(UiText.PLAYBACK_DIAGNOSTICS_191)).setMessage(Tr.text(UiText.COLLECTING_DIAGNOSTICS_211)).create()
         fun refresh() { lifecycleScope.launch {
             val link=withContext(Dispatchers.IO) { network.linkDetails() }
             val p=player ?: return@launch;val current=spec ?: return@launch;val net=lastNetwork
@@ -745,7 +779,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
             override!=null -> options.indexOfFirst { (g,i) -> g.mediaTrackGroup==override.mediaTrackGroup && i in override.trackIndices }.let { if(it<0) 0 else it+prefix.size }
             else -> 0
         }
-        TvUi.dialog(this).setTitle(when(type) { C.TRACK_TYPE_VIDEO -> Tr.text(UiText.VIDEO_TRACKS_178); C.TRACK_TYPE_AUDIO -> Tr.text(UiText.AUDIO_TRACKS_179); else -> Tr.text(UiText.SUBTITLE_TRACKS_180) }).setSingleChoiceItems(names.toTypedArray(),selected) { dialog, index ->
+        TvUi.dialog(this).setSidePanel().setTitle(when(type) { C.TRACK_TYPE_VIDEO -> Tr.text(UiText.VIDEO_TRACKS_178); C.TRACK_TYPE_AUDIO -> Tr.text(UiText.AUDIO_TRACKS_179); else -> Tr.text(UiText.SUBTITLE_TRACKS_180) }).setSingleChoiceItems(names.toTypedArray(),selected) { dialog, index ->
             val b = p.trackSelectionParameters.buildUpon().clearOverridesOfType(type).setTrackTypeDisabled(type, prefix.size==2 && index == 1)
             if(index >= prefix.size) { val (g, i) = options[index - prefix.size]; b.setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, i)) }
             p.trackSelectionParameters = b.build()
@@ -755,7 +789,7 @@ class PlaybackActivity : TvActivity(), Player.Listener {
     private fun externalDialog() {
         val choices = tv.ember.client.settings.PlayerChoice.entries.filter { it != tv.ember.client.settings.PlayerChoice.INTERNAL && ExternalPlayers.available(this, it) }
         if(choices.isEmpty()) { message(Tr.text(UiText.VLC_MX_PLAYER_AND_JUST_PLAYER_236)); return }
-        TvUi.dialog(this).setTitle(Tr.text(UiText.EXTERNAL_PLAYER_237)).setItems(choices.map { it.label }.toTypedArray()) { _, index ->
+        TvUi.dialog(this).setSidePanel().setTitle(Tr.text(UiText.EXTERNAL_PLAYER_237)).setItems(choices.map { it.label }.toTypedArray()) { _, index ->
             val current=spec ?: return@setItems;val s=session ?: return@setItems;val video=item ?: return@setItems
             sourceJob=lifecycleScope.launch {
                 try {

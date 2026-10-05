@@ -25,12 +25,15 @@ class SettingsComposeDeviceTest {
         val context=instrumentation.targetContext
         tv.ember.client.i18n.AppLanguage.save(context,"en")
         (context.applicationContext as BronyaApp).sessions.save(Session(
-            InstrumentationRegistry.getArguments().getString("fixtureServer") ?: "http://10.0.2.2:8765","fixture-token","u1","Demo TV"))
+            InstrumentationRegistry.getArguments().getString("fixtureServer") ?: "http://10.0.2.2:8765","fixture-token","u1","CinemaMaster"))
     }
     @Test fun dpadTraversesBothRowsOpensComposeEditorAndRestoresFocus() {
         ActivityScenario.launch(SettingsActivity::class.java).use { scenario ->
             fun key(code: Int) { instrumentation.sendKeyDownUpSync(code);compose.waitForIdle() }
             fun focused(index: Int) { compose.onNodeWithTag("settings_tile_$index").assertIsFocused() }
+            compose.onNodeWithTag("quick_player_INTERNAL").assertIsFocused()
+            compose.onNodeWithTag("settings_tile_0").performScrollTo().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.RequestFocus) { it() }
+            compose.waitForIdle()
             focused(0);key(KeyEvent.KEYCODE_DPAD_RIGHT);focused(1)
             key(KeyEvent.KEYCODE_DPAD_RIGHT);focused(2)
             key(KeyEvent.KEYCODE_DPAD_CENTER)

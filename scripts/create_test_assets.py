@@ -1,21 +1,30 @@
 #!/usr/bin/env python3
-import hashlib, json, pathlib, subprocess
-from PIL import Image, ImageOps
+import hashlib, json, pathlib, subprocess, urllib.request
+from PIL import Image
 r=pathlib.Path(__file__).resolve().parents[1]
 a=r/'tests/assets';a.mkdir(parents=True,exist_ok=True)
 media=r/'tests/media'
-sources=json.loads((media/'SOURCES.json').read_text())
-for entry in sources:
-    assert hashlib.sha256((media/entry['file']).read_bytes()).hexdigest()==entry['sha256'], entry['file']
-    with Image.open(media/entry['file']) as source:
-        source=source.convert('RGB')
-        backdrop=ImageOps.fit(source,(1280,720))
-        backdrop.save(a/(entry['file'].removesuffix('.jpg')+'-backdrop.jpg'),quality=90)
-        ImageOps.fit(source,(500,750)).save(a/(entry['file'].removesuffix('.jpg')+'-poster.jpg'),quality=90)
-(a/'backdrop.jpg').write_bytes((a/'trip-to-moon-backdrop.jpg').read_bytes())
-(a/'poster.jpg').write_bytes((a/'trip-to-moon-poster.jpg').read_bytes())
-# Regenerate obsolete synthetic media once; all generated assets stay out of the APK and Git.
-fingerprint=hashlib.sha256((media/'SOURCES.json').read_bytes()+b'public-domain-film-stills-v1').hexdigest()
+reference=json.loads((media/'cinema-reference.json').read_text())
+sources=reference['movies']
+resources=[(entry['id'],entry['posterUrl'],entry['backdropUrl']) for entry in sources]
+series=next(entry for entry in sources if entry.get('isSeries'))
+resources.extend(('ep'+str(i+1),episode['backdropUrl'],episode['backdropUrl']) for i,episode in enumerate(series['episodes']))
+resources.extend(('cast'+str(i+1),person['avatarUrl'],person['avatarUrl']) for entry in sources for i,person in enumerate(entry.get('cast',[])))
+for resource,poster_url,backdrop_url in resources:
+    for kind,url in [('poster',poster_url),('backdrop',backdrop_url)]:
+        destination=a/(resource+'-'+kind+'.jpg')
+        if not destination.exists():
+            print('Downloading reference resource:',resource,kind,flush=True)
+            with urllib.request.urlopen(url,timeout=60) as response:
+                raw=response.read()
+            import io
+            with Image.open(io.BytesIO(raw)) as image:
+                image.convert('RGB').save(destination,quality=92)
+(a/'backdrop.jpg').write_bytes((a/'dune2-backdrop.jpg').read_bytes())
+(a/'poster.jpg').write_bytes((a/'dune2-poster.jpg').read_bytes())
+# The document's photography also supplies our generated playback test clips.
+# These are short test videos, not copies of the named films, and stay outside the APK.
+fingerprint=hashlib.sha256((media/'cinema-reference.json').read_bytes()+b'cinema-reference-v1').hexdigest()
 marker=a/'source-fingerprint.txt'
 if not marker.exists() or marker.read_text()!=fingerprint:
     for name in ['sample.mp4','sample.mkv','hevc.mkv','vp8.webm']:
@@ -41,4 +50,4 @@ if not (a/'hevc.mkv').exists():
 if not (a/'vp8.webm').exists():
     run(['-loop','1','-framerate','12','-i',str(a/'backdrop.jpg'),'-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-t','90','-vf',"zoompan=z='1+0.03*on/1080':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d=1:s=320x180:fps=12",'-c:v','libvpx','-deadline','realtime','-cpu-used','8','-threads','2','-b:v','250k','-c:a','libvorbis',str(a/'vp8.webm')])
 marker.write_text(fingerprint)
-print('Created Public-domain movie-still clips: MP4 / MKV / HEVC / VP8; original CC0 tones and subtitles')
+print('Created reference-document example assets and synthetic MP4 / MKV / HEVC / VP8 clips')

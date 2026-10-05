@@ -1,6 +1,10 @@
 package tv.ember.client.ui
 
 import android.content.Intent
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.findViewTreeOnBackPressedDispatcherOwner
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -9,6 +13,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.*
 import androidx.compose.ui.graphics.*
@@ -48,27 +53,29 @@ fun TvActivity.tvContent(content: @Composable ()->Unit) {
 @Composable fun TvTheme(content: @Composable ()->Unit) {
     val context=LocalContext.current
     CompositionLocalProvider(LocalTvScale provides TvUi.scale(context)) {
-        MaterialTheme(colorScheme=darkColorScheme(primary=Cyan,onPrimary=Ink,surface=Color(TvUi.panel),onSurface=Paper)) { content() }
+        MaterialTheme(colorScheme=darkColorScheme(primary=Cyan,onPrimary=Ink,background=Ink,onBackground=Paper,surface=Color(TvUi.panel),onSurface=Paper)) { content() }
     }
 }
 @Composable fun TvAction(label: String,tag: String=label,modifier: Modifier=Modifier,primary: Boolean=false,selected: Boolean=false,
-                         enabled: Boolean=true,onFocus: ()->Unit={},onClick: ()->Unit) {
+                         enabled: Boolean=true,large: Boolean=false,onFocus: ()->Unit={},onClick: ()->Unit) {
     var focused by remember { mutableStateOf(false) }
     val scale=LocalTvScale.current
     val icon=actionGlyph(tag)
     val caption=if(icon!=null) label.removePrefix("▶").removePrefix("ⓘ").trimStart() else label
-    val shape=RoundedCornerShape(8.dp)
+    val shape=RoundedCornerShape(if(large) 14.dp else 12.dp)
     Button(onClick=onClick,enabled=enabled,modifier=modifier.heightIn(min=(36*scale).dp).testTag(tag).semantics { this.selected=selected }
         .onFocusChanged { focused=it.isFocused;if(it.isFocused) onFocus() }
-        .shadow(if(focused) (4*scale).dp else 0.dp,shape,clip=false,ambientColor=Cyan.copy(alpha=.25f),spotColor=Cyan.copy(alpha=.25f))
+        .shadow(if(focused) (18*scale).dp else 0.dp,shape,clip=false,ambientColor=Cyan.copy(alpha=.25f),spotColor=Cyan.copy(alpha=.25f))
         .border(if(focused) 1.5.dp else 1.dp,if(focused) Cyan else if(selected) Cyan.copy(alpha=.65f) else Paper.copy(alpha=.13f),shape),
         shape=ButtonDefaults.shape(shape=shape),border=ButtonDefaults.border(focusedBorder=Border.None),
-        scale=ButtonDefaults.scale(focusedScale=1f),
+        scale=ButtonDefaults.scale(focusedScale=if(large) 1.02f else 1f),
         colors=ButtonDefaults.colors(containerColor=if(primary) Cyan else if(selected) Cyan.copy(alpha=.12f) else Color(TvUi.panel).copy(alpha=.88f),
-            contentColor=if(primary) Ink else Paper,focusedContainerColor=if(primary) Color(0xFF24E6E5) else Cyan.copy(alpha=.15f),focusedContentColor=if(primary) Ink else Cyan),
-        contentPadding=PaddingValues(horizontal=(12*scale).dp,vertical=(6*scale).dp)) {
+            contentColor=if(primary) Ink else Paper,focusedContainerColor=if(primary) (if(large) Cyan else Color(0xFF69E5B9)) else Cyan.copy(alpha=.15f),focusedContentColor=if(primary) Ink else Cyan),
+        contentPadding=PaddingValues(horizontal=((if(large) 28 else 12)*scale).dp,vertical=((if(large) 14 else 6)*scale).dp)) {
+        Row(if(tag=="login_connect") Modifier.fillMaxWidth() else Modifier,horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically) {
         icon?.let { TvIcon(it,if(primary) Ink else if(focused) Cyan else Paper,Modifier.size((16*scale).dp));Spacer(Modifier.width((7*scale).dp)) }
-        Text(caption,fontSize=(14*scale).sp,lineHeight=(18*scale).sp,maxLines=1,overflow=TextOverflow.Ellipsis)
+        Text(caption,fontSize=((if(large) 16 else 14)*scale).sp,fontWeight=if(large) FontWeight.Bold else FontWeight.Normal,lineHeight=((if(large) 22 else 18)*scale).sp,maxLines=1,overflow=TextOverflow.Ellipsis)
+        }
     }
 }
 @Composable fun TvIconAction(glyph: TvGlyph,label: String,tag: String,onClick: ()->Unit) {
@@ -79,26 +86,64 @@ fun TvActivity.tvContent(content: @Composable ()->Unit) {
         TvIcon(glyph,if(focused) Cyan else Paper,Modifier.size((18*scale).dp))
     }
 }
+@OptIn(ExperimentalLayoutApi::class,ExperimentalComposeUiApi::class)
 @Composable fun TvField(value: String,onValue: (String)->Unit,label: String,tag: String,modifier: Modifier=Modifier,
-                        secret: Boolean=false,uri: Boolean=false,onSubmit: ()->Unit={}) {
+                        secret: Boolean=false,uri: Boolean=false,icon: TvGlyph?=null,onSubmit: ()->Unit={}) {
     var focused by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) };var keyboardWasVisible by remember { mutableStateOf(false) }
+    var editingBack by remember { mutableStateOf(false) }
     val scale=LocalTvScale.current;val keyboard=LocalSoftwareKeyboardController.current;val focusManager=LocalFocusManager.current
+    val imeVisible=WindowInsets.isImeVisible;val backOwner=LocalView.current.findViewTreeOnBackPressedDispatcherOwner()
+    LaunchedEffect(imeVisible,focused) {
+        if(imeVisible && focused) { editing=true;keyboardWasVisible=true }
+        else if(!imeVisible && keyboardWasVisible) { editing=false;keyboardWasVisible=false }
+    }
+    DisposableEffect(backOwner,focused,editing) {
+        val callback=object:OnBackPressedCallback(focused && editing) {
+            override fun handleOnBackPressed() { editing=false;keyboard?.hide() }
+        }
+        backOwner?.onBackPressedDispatcher?.addCallback(callback)
+        onDispose { callback.remove() }
+    }
     BasicTextField(value,onValue,modifier.heightIn(min=(40*scale).dp).testTag(tag)
-        .onFocusChanged { focused=it.isFocused }.onPreviewKeyEvent {
+        .onPreInterceptKeyBeforeSoftKeyboard { event ->
+            when {
+                event.key==Key.Back && (editing || editingBack) -> {
+                    if(event.type==KeyEventType.KeyDown) { editingBack=true;editing=false;keyboard?.hide() }
+                    else if(event.type==KeyEventType.KeyUp) editingBack=false
+                    true
+                }
+                !editing && event.key in listOf(Key.DirectionLeft,Key.DirectionRight) -> {
+                    if(event.type==KeyEventType.KeyDown) focusManager.moveFocus(if(event.key==Key.DirectionLeft) FocusDirection.Left else FocusDirection.Right)
+                    true
+                }
+                else -> false
+            }
+        }
+        .onFocusChanged { focused=it.isFocused;if(!it.isFocused) { editing=false;keyboardWasVisible=false } }.onPreviewKeyEvent {
             when(it.key) {
                 Key.DirectionUp,Key.DirectionDown -> {
                     if(it.type==KeyEventType.KeyDown) focusManager.moveFocus(if(it.key==Key.DirectionUp) FocusDirection.Up else FocusDirection.Down)
                     true
                 }
-                Key.DirectionCenter -> { if(it.type==KeyEventType.KeyDown) keyboard?.show();true }
+                Key.DirectionLeft,Key.DirectionRight -> {
+                    if(editing) false else {
+                        if(it.type==KeyEventType.KeyDown) focusManager.moveFocus(if(it.key==Key.DirectionLeft) FocusDirection.Left else FocusDirection.Right)
+                        true
+                    }
+                }
+                Key.DirectionCenter -> { if(it.type==KeyEventType.KeyDown) { editing=true;keyboard?.show() };true }
                 else -> false
             }
-        }.background(Color(TvUi.panel),RoundedCornerShape(8.dp)).border(1.dp,if(focused) Cyan else Color(0xFF35505C),RoundedCornerShape(8.dp)).padding((12*scale).dp),
-        singleLine=true,textStyle=TextStyle(color=Paper,fontSize=(15*scale).sp),cursorBrush=SolidColor(Cyan),
+        }.background(Color(TvUi.panel),RoundedCornerShape(12.dp)).border(1.dp,if(focused) Cyan else CardBorder,RoundedCornerShape(12.dp)).padding((12*scale).dp),
+        singleLine=true,textStyle=TextStyle(color=Paper,fontSize=((if(icon==null) 15 else 14)*scale).sp),cursorBrush=SolidColor(Cyan),
         visualTransformation=if(secret) PasswordVisualTransformation() else VisualTransformation.None,
         keyboardOptions=KeyboardOptions(keyboardType=if(secret) KeyboardType.Password else if(uri) KeyboardType.Uri else KeyboardType.Text,imeAction=ImeAction.Done),
-        keyboardActions=KeyboardActions(onDone={ keyboard?.hide();onSubmit() }),
-        decorationBox={ inner -> Box { if(value.isEmpty()) Text(label,color=Muted,fontSize=(15*scale).sp);inner() } })
+        keyboardActions=KeyboardActions(onDone={ editing=false;keyboard?.hide();onSubmit() }),
+        decorationBox={ inner -> Row(verticalAlignment=Alignment.CenterVertically) {
+            if(icon!=null) { TvIcon(icon,Cyan,Modifier.size((18*scale).dp));Spacer(Modifier.width((10*scale).dp)) }
+            Box(Modifier.weight(1f)) { if(value.isEmpty()) Text(label,color=Muted,fontSize=(14*scale).sp);inner() }
+        } })
 }
 @Composable fun TvClock() {
     var now by remember { mutableStateOf(java.text.SimpleDateFormat("HH:mm",java.util.Locale.ROOT).format(java.util.Date())) }
@@ -107,7 +152,7 @@ fun TvActivity.tvContent(content: @Composable ()->Unit) {
 }
 @Composable fun CachedImage(app: BronyaApp,session: Session,url: String,width: Int,height: Int,modifier: Modifier=Modifier) {
     val key=remember(session.server,session.userId,url,width,height) { "${session.server}:${session.userId}:$url:${width}x$height" }
-    var bitmap by remember(session.server,session.userId) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var bitmap by remember(key) { mutableStateOf<android.graphics.Bitmap?>(null) }
     val owner=LocalLifecycleOwner.current
     LaunchedEffect(key,owner) { owner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
         try { app.imageCache.load(session,url,width,height)?.let { bitmap=it };awaitCancellation() }
@@ -125,55 +170,65 @@ fun TvActivity.tvContent(content: @Composable ()->Unit) {
                         homeRequester: FocusRequester?=null,onRailFocused: (String)->Unit={},content: @Composable ()->Unit) {
     val context=LocalContext.current;val app=context.applicationContext as BronyaApp;val session=app.sessions.load()
     val scale=LocalTvScale.current
-    val names=listOf(UiText.HOME_267,UiText.MOVIES_316,UiText.SERIES_317,UiText.FAVORITES_318,UiText.SEARCH_295,UiText.SETTINGS_268)
-    val labels=names.map(Tr::text);val requests=remember { List(6) { FocusRequester() } }
-    Box(Modifier.fillMaxSize().background(Ink)) {
-        if(backdrop!=null && session!=null) {
-            val width=context.resources.displayMetrics.widthPixels.coerceAtMost(1920)
-            CachedImage(app,session,app.api.landscapeUrl(session,backdrop,true,width),width,width*9/16,Modifier.fillMaxSize())
-            Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Ink,Ink.copy(alpha=.5f),Ink.copy(alpha=.12f)))))
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent,Ink.copy(alpha=.75f),Ink))))
-        }
-        Row(Modifier.fillMaxSize()) {
-            Column(Modifier.width(TvUi.railWidth(context).dp).fillMaxHeight().background(Ink.copy(alpha=.94f)).padding(horizontal=5.dp,vertical=(16*scale).dp)) {
-                Box(Modifier.size((28*scale).dp).align(Alignment.CenterHorizontally).background(Cyan,RoundedCornerShape((7*scale).dp)),contentAlignment=Alignment.Center) { TvIcon(TvGlyph.Play,Ink,Modifier.size((19*scale).dp)) }
-                Spacer(Modifier.height((6*scale).dp))
-                Text("BronyaTV",Modifier.align(Alignment.CenterHorizontally),color=Paper,fontWeight=FontWeight.Bold,fontSize=(10*scale).sp)
-                Spacer(Modifier.height((24*scale).dp))
-                labels.take(5).forEachIndexed { i,label ->
-                    RailAction(label,listOf(TvGlyph.Home,TvGlyph.Movies,TvGlyph.Series,TvGlyph.Favorite,TvGlyph.Search)[i],selected==label,
+    val names=listOf(UiText.HOME_267,UiText.MOVIES_316,UiText.SERIES_317,UiText.SETTINGS_268)
+    val labels=names.map(Tr::text);val requests=remember { List(4) { FocusRequester() } }
+    var expanded by remember { mutableStateOf(false) }
+    val railWidth by animateDpAsState((if(expanded) 152 else 56).times(scale).dp,tween(280),label="sidebar_width")
+    Row(Modifier.fillMaxSize().background(Ink)) {
+        Column(Modifier.width(railWidth).fillMaxHeight().testTag("navigation_sidebar")
+            .onFocusChanged { expanded=it.hasFocus }.focusGroup()
+            .background(Color(0xFF06070A).copy(alpha=.98f)).border(1.dp,CardBorder)
+            .padding(horizontal=(8*scale).dp,vertical=(24*scale).dp),verticalArrangement=Arrangement.SpaceBetween) {
+            RailAction(Tr.text(UiText.LOGIN_SCREEN),TvGlyph.Account,selected==Tr.text(UiText.LOGIN_SCREEN),expanded,
+                onFocus={ onRailFocused(Tr.text(UiText.LOGIN_SCREEN)) }) {
+                context.startActivity(Intent(context,LoginActivity::class.java))
+            }
+            Column(verticalArrangement=Arrangement.spacedBy((8*scale).dp)) {
+                labels.forEachIndexed { i,label ->
+                    RailAction(label,listOf(TvGlyph.Home,TvGlyph.Movies,TvGlyph.Series,TvGlyph.Settings)[i],selected==label,expanded,
                         Modifier.focusRequester(if(i==0 && homeRequester!=null) homeRequester else requests[i]),
                         { onRailFocused(label) }) { onNavigate(label) }
-                    Spacer(Modifier.height((9*scale).dp))
                 }
-                Spacer(Modifier.weight(1f))
-                RailAction("Emby",TvGlyph.Server,false) {
-                    TvDialogBuilder(context).setTitle("Emby").setMessage(listOf(session?.userName,session?.server).filterNotNull().joinToString("\n"))
-                        .setPositiveButton(Tr.text(UiText.SETTINGS_268)) { _,_-> onNavigate(labels[5]) }.setNegativeButton(Tr.text(UiText.CANCEL_196),null).show()
-                }
-                Spacer(Modifier.height((9*scale).dp))
-                RailAction(labels[5],TvGlyph.Settings,selected==labels[5],Modifier.focusRequester(requests[5]),{ onRailFocused(labels[5]) }) { onNavigate(labels[5]) }
             }
-            CompositionLocalProvider(LocalRailFocus provides { val i=labels.indexOf(selected).coerceAtLeast(0);(if(i==0 && homeRequester!=null) homeRequester else requests[i]).requestFocus() }) {
-                Box(Modifier.weight(1f).fillMaxHeight()) { content() }
+            Box(Modifier.height((14*scale).dp).padding(start=(6*scale).dp)) {
+                if(expanded) Text("v${tv.ember.client.BuildConfig.VERSION_NAME}",color=Subtle,fontSize=(10*scale).sp)
+            }
+        }
+        CompositionLocalProvider(LocalRailFocus provides {
+            val i=labels.indexOf(selected).coerceAtLeast(0)
+            (if(i==0 && homeRequester!=null) homeRequester else requests[i]).requestFocus()
+        }) {
+            Box(Modifier.weight(1f).fillMaxHeight().testTag("navigation_content")) {
+                if(backdrop!=null && session!=null) {
+                    val width=context.resources.displayMetrics.widthPixels.coerceAtMost(1920)
+                    CinemaBackdrop(app,session,backdrop,width,Modifier.fillMaxWidth().fillMaxHeight(.67f))
+                }
+                content()
             }
         }
     }
 }
-@Composable private fun RailAction(label: String,icon: TvGlyph,selected: Boolean,modifier: Modifier=Modifier,onFocus: ()->Unit={},onClick: ()->Unit) {
+@Composable private fun RailAction(label: String,icon: TvGlyph,selected: Boolean,expanded: Boolean,
+                                  modifier: Modifier=Modifier,onFocus: ()->Unit={},onClick: ()->Unit) {
     var focused by remember { mutableStateOf(false) }
-    val scale=LocalTvScale.current
-    Button(onClick,modifier=modifier.fillMaxWidth().height((36*scale).dp).testTag("nav_$label").semantics { this.selected=selected }
+    val scale=LocalTvScale.current;val shape=RoundedCornerShape(12.dp)
+    Button(onClick,modifier=modifier.fillMaxWidth().height((44*scale).dp).testTag("nav_$label")
+        .semantics { this.selected=selected;contentDescription=label }
         .onFocusChanged { focused=it.isFocused;if(it.isFocused) onFocus() }
-        .border(if(focused || selected) 1.dp else 0.dp,if(focused || selected) Cyan else Color.Transparent,RoundedCornerShape(7.dp)),
-        colors=ButtonDefaults.colors(containerColor=if(selected) Cyan.copy(alpha=.1f) else Color.Transparent,contentColor=Paper,
-            focusedContainerColor=Cyan.copy(alpha=.15f),focusedContentColor=Cyan),shape=ButtonDefaults.shape(shape=RoundedCornerShape(7.dp)),border=ButtonDefaults.border(focusedBorder=Border.None),scale=ButtonDefaults.scale(focusedScale=1f),contentPadding=PaddingValues((4*scale).dp)) {
-        Row(verticalAlignment=Alignment.CenterVertically) {
-            TvIcon(icon,if(focused || selected) Cyan else Paper.copy(alpha=.88f),Modifier.size((17*scale).dp));Spacer(Modifier.width((6*scale).dp));Text(label,fontSize=(10.5f*scale).sp,fontWeight=FontWeight.Medium,maxLines=1)
+        .border(if(focused) 1.dp else 0.dp,if(focused) Cyan.copy(alpha=.65f) else Color.Transparent,shape),
+        colors=ButtonDefaults.colors(containerColor=if(selected) Cyan.copy(alpha=.12f) else Color.Transparent,contentColor=Paper,
+            focusedContainerColor=Cyan.copy(alpha=.25f),focusedContentColor=Cyan),shape=ButtonDefaults.shape(shape=shape),
+        border=ButtonDefaults.border(focusedBorder=Border.None),scale=ButtonDefaults.scale(focusedScale=1f),contentPadding=PaddingValues(0.dp)) {
+        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+            Box(Modifier.width((3*scale).dp).height((18*scale).dp).background(if(selected || focused) Cyan else Color.Transparent,RoundedCornerShape(2.dp)))
+            Spacer(Modifier.width((6*scale).dp))
+            TvIcon(icon,if(focused || selected) Cyan else Muted,Modifier.size((22*scale).dp))
+            if(expanded) { Spacer(Modifier.width((12*scale).dp));Text(label,fontSize=(13*scale).sp,fontWeight=FontWeight.Medium,maxLines=1,overflow=TextOverflow.Ellipsis) }
         }
     }
 }
 fun TvActivity.navigateTo(name: String) {
-    if(name==Tr.text(UiText.SETTINGS_268)) startActivity(Intent(this,SettingsActivity::class.java))
+    if(name==Tr.text(UiText.LOGIN_SCREEN)) startActivity(Intent(this,LoginActivity::class.java))
+    else if(name==Tr.text(UiText.SETTINGS_268)) startActivity(Intent(this,SettingsActivity::class.java))
     else startActivity(Intent(this,MainActivity::class.java).putExtra("navigate",name).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP))
 }

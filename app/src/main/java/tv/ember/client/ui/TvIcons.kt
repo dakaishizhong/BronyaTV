@@ -15,7 +15,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /** Shared 24-unit vectors: decorative icons have no font-dependent baseline or semantics. */
-enum class TvGlyph { Home,Movies,Series,Favorite,Search,Server,Settings,Play,Pause,Rewind,Forward,Sources,Subtitles,More,Info,Restart,Filter,ChevronRight,Screen,Remote,Appearance,Account,Check,Language }
+enum class TvGlyph { Home,Movies,Series,Favorite,Search,Server,Settings,Play,Pause,Rewind,Forward,SkipPrevious,SkipNext,Lock,Sources,Subtitles,More,Info,Restart,Filter,ChevronRight,Screen,Remote,Appearance,Account,Check,Language }
 
 @Composable fun TvIcon(glyph: TvGlyph,color: Color,modifier: Modifier=Modifier) {
     Canvas(modifier) {
@@ -41,9 +41,12 @@ enum class TvGlyph { Home,Movies,Series,Favorite,Search,Server,Settings,Play,Pau
             TvGlyph.Server -> for(y in listOf(3f,10f,17f)) { rect(3f,y,18f,4f,1f);dot(6f,y+2,0.65f);line(10f,y+2,17f,y+2) }
             TvGlyph.Settings -> { path((0..31).map { i -> val a=i*Math.PI/16;val r=if(i%4<2) 10f else 8.2f;(12+r*cos(a).toFloat()) to (12+r*sin(a).toFloat()) },true);circle(12f,12f,3.1f) }
             TvGlyph.Play -> path(listOf(8f to 5f,19f to 12f,8f to 19f),true,true)
-            TvGlyph.Pause -> { line(8f,5f,8f,19f);line(16f,5f,16f,19f) }
+            TvGlyph.Pause -> { drawRect(color,point(6f,5f),Size(4*u,14*u));drawRect(color,point(14f,5f),Size(4*u,14*u)) }
             TvGlyph.Rewind -> { triangle(11f,-1);triangle(21f,-1) }
             TvGlyph.Forward -> { triangle(3f,1);triangle(13f,1) }
+            TvGlyph.SkipPrevious -> { path(listOf(18f to 6f,9.5f to 12f,18f to 18f),true,true);drawRect(color,point(6f,6f),Size(2*u,12*u)) }
+            TvGlyph.SkipNext -> { path(listOf(6f to 6f,14.5f to 12f,6f to 18f),true,true);drawRect(color,point(16f,6f),Size(2*u,12*u)) }
+            TvGlyph.Lock -> { rect(5f,10f,14f,12f,2f);drawArc(color,180f,180f,false,point(8f,2f),Size(8*u,16*u),style=stroke) }
             TvGlyph.Sources -> for(y in listOf(6f,12f,18f)) { dot(3f,y);line(7f,y,21f,y) }
             TvGlyph.Subtitles -> { rect(2f,4f,20f,14f);line(7f,18f,7f,21f);line(7f,21f,11f,18f);for(x in listOf(7f,12f,17f)) dot(x,11f) }
             TvGlyph.More -> for(x in listOf(5f,12f,19f)) dot(x,12f,1.45f)
@@ -62,7 +65,7 @@ enum class TvGlyph { Home,Movies,Series,Favorite,Search,Server,Settings,Play,Pau
 }
 
 internal fun actionGlyph(tag: String): TvGlyph? = when(tag) {
-    "hero_play","detail_play","login_connect" -> TvGlyph.Play
+    "detail_play" -> TvGlyph.Play
     "hero_details","detail_info" -> TvGlyph.Info
     "detail_start","filter_reset","browse_retry" -> TvGlyph.Restart
     "detail_player" -> TvGlyph.Screen

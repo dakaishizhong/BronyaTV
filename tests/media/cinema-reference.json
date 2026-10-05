@@ -1,0 +1,197 @@
+{
+  "source_document": "Emby_Android_TV_Compose_完整复刻工程实现.md",
+  "movies": [
+    {
+      "file": "dune2.jpg",
+      "id": "dune2",
+      "title": "沙丘 2",
+      "subtitle": "Dune: Part Two",
+      "studio": "WARNER BROS. PICTURES",
+      "rating": "IMDb 8.6",
+      "tomatometer": "92% 烂番茄",
+      "year": 2024,
+      "duration": "2小时 46分钟",
+      "summary": "保罗·厄崔迪携手契妮以及弗雷曼人，对毁灭他家族的阴谋家展开报复。面对一生挚爱与已知宇宙命运的两难抉择，他必须竭力阻止只有他才能预见的灾难浩劫。",
+      "posterUrl": "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80",
+      "backdropUrl": "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=2000&q=80",
+      "badge": "4K DV",
+      "source": "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=2000&q=80",
+      "credit": "丹尼斯·维伦纽瓦",
+      "genres": [
+        "Science fiction",
+        "Adventure"
+      ],
+      "resource_note": "Image URL supplied in the user reference document; illustrative photography, not official movie artwork."
+    },
+    {
+      "file": "oppenheimer.jpg",
+      "id": "oppenheimer",
+      "title": "奥本海默",
+      "subtitle": "Oppenheimer",
+      "studio": "UNIVERSAL PICTURES",
+      "rating": "IMDb 8.9",
+      "tomatometer": "93% 烂番茄",
+      "year": 2023,
+      "duration": "3小时 00分钟",
+      "summary": "探索美国理论物理学家罗伯特·奥本海默主导曼哈顿计划、研制出首枚原子弹的历史进程，以及随之而来的道德漩涡与冷战审判。",
+      "posterUrl": "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80",
+      "backdropUrl": "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=2000&q=80",
+      "badge": "4K IMAX",
+      "source": "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=2000&q=80",
+      "credit": "克里斯托弗·诺兰",
+      "genres": [
+        "Drama"
+      ],
+      "resource_note": "Image URL supplied in the user reference document; illustrative photography, not official movie artwork."
+    },
+    {
+      "file": "interstellar.jpg",
+      "id": "interstellar",
+      "title": "星际穿越",
+      "subtitle": "Interstellar",
+      "studio": "PARAMOUNT PICTURES",
+      "rating": "IMDb 8.7",
+      "tomatometer": "73% 烂番茄",
+      "year": 2014,
+      "duration": "2小时 49分钟",
+      "summary": "在地球环境濒临枯竭的未来，前NASA宇航员库珀受命带领探险团队穿越神秘虫洞，前往遥远未知星系寻找人类续存的新家园。",
+      "posterUrl": "https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=600&q=80",
+      "backdropUrl": "https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=2000&q=80",
+      "badge": "REMUX",
+      "source": "https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=2000&q=80",
+      "credit": "克里斯托弗·诺兰",
+      "genres": [
+        "Science fiction",
+        "Adventure"
+      ],
+      "resource_note": "Image URL supplied in the user reference document; illustrative photography, not official movie artwork."
+    },
+    {
+      "file": "bladerunner2049.jpg",
+      "id": "bladerunner2049",
+      "title": "银翼杀手 2049",
+      "subtitle": "Blade Runner 2049",
+      "studio": "COLUMBIA PICTURES",
+      "rating": "IMDb 8.0",
+      "tomatometer": "88% 烂番茄",
+      "year": 2017,
+      "duration": "2小时 44分钟",
+      "summary": "新一代银翼杀手K在执行任务中发掘出一个尘封已久的秘密，这个颠覆性的真相驱使他踏上寻找失踪三十年的传奇猎手戴克的征途。",
+      "posterUrl": "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=600&q=80",
+      "backdropUrl": "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=2200&q=80",
+      "badge": "4K DV",
+      "source": "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=2200&q=80",
+      "credit": "丹尼斯·维伦纽瓦",
+      "genres": [
+        "Drama"
+      ],
+      "resource_note": "Image URL supplied in the user reference document; illustrative photography, not official movie artwork.",
+      "versions": [
+        {
+          "title": "4K UHD REMUX (杜比视界高码原盘)",
+          "filename": "Blade.Runner.2049.2017.2160p.UHD.TrueHD.Atmos.7.1.mkv",
+          "resolution": "3840×2160 @ 72.4 Mbps",
+          "bitrate": "72.4M",
+          "size": "68.2 GB",
+          "tag": "DV P7"
+        },
+        {
+          "title": "4K WEB-DL (官方流媒体中码版)",
+          "filename": "Blade.Runner.2049.2160p.WEB-DL.DDP5.1.Atmos.mkv",
+          "resolution": "2160p @ 24.6 Mbps",
+          "bitrate": "24.6M",
+          "size": "22.8 GB",
+          "tag": "HDR 10"
+        },
+        {
+          "title": "1080p BluRay (高压便携版)",
+          "filename": "Blade.Runner.2049.1080p.BluRay.x264.DTS.mkv",
+          "resolution": "1080p @ 12.0 Mbps",
+          "bitrate": "12.0M",
+          "size": "13.5 GB",
+          "tag": "SDR 8bit"
+        }
+      ],
+      "cast": [
+        {
+          "name": "丹尼斯·维伦纽瓦",
+          "role": "导演 Director",
+          "avatarUrl": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=120&q=80"
+        },
+        {
+          "name": "瑞恩·高斯林",
+          "role": "饰 K 探员",
+          "avatarUrl": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=120&q=80"
+        },
+        {
+          "name": "哈里森·福特",
+          "role": "饰 瑞克·戴克",
+          "avatarUrl": "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=120&q=80"
+        }
+      ]
+    },
+    {
+      "file": "severance.jpg",
+      "id": "severance",
+      "title": "人生切割术",
+      "subtitle": "Severance",
+      "studio": "APPLE TV+",
+      "rating": "IMDb 8.7",
+      "tomatometer": "97% 烂番茄",
+      "year": 2022,
+      "duration": "第 1 季 · 9 集",
+      "summary": "卢蒙工业员工自愿接受大脑切割手术将工作记忆与私人生活完全分离，当外界的神秘反抗者出现时，无暇职场乌托邦的虚伪真相被层层撕裂。",
+      "posterUrl": "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=600&q=80",
+      "backdropUrl": "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=2200&q=80",
+      "badge": "4K DV",
+      "source": "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=2200&q=80",
+      "credit": "Apple TV+",
+      "genres": [
+        "Drama"
+      ],
+      "resource_note": "Image URL supplied in the user reference document; illustrative photography, not official movie artwork.",
+      "isSeries": true,
+      "episodes": [
+        {
+          "epNumber": "EP 01",
+          "title": "地狱般的好消息 (Good News About Hell)",
+          "duration": "57 分钟",
+          "overview": "马克在办公室得到晋升，并将迎来一位接替彼得的新员工海莉。当他在下班后的现实生活中遇见一个神秘陌生人时，谜团开始浮现。",
+          "progress": 1.0,
+          "backdropUrl": "https://images.unsplash.com/photo-1497215728101-856f4ea42174?auto=format&fit=crop&w=600&q=80"
+        },
+        {
+          "epNumber": "EP 02",
+          "title": "半循环 (Half Loop)",
+          "duration": "53 分钟",
+          "overview": "团队训练海莉进行宏观数据精炼分类。马克在公司外试图查明彼得的真正死因，并暗中前往神秘的集会地点。",
+          "progress": 0.64,
+          "backdropUrl": "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=600&q=80"
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "id": "1",
+      "name": "CinemaMaster",
+      "tag": "主账号",
+      "desc": "4K REMUX 原盘直解权限",
+      "avatarInitials": "CM"
+    },
+    {
+      "id": "2",
+      "name": "Sarah",
+      "tag": "家庭影院",
+      "desc": "欧美剧集 · 追剧同步中",
+      "avatarInitials": "SA"
+    },
+    {
+      "id": "3",
+      "name": "Kids",
+      "tag": "儿童模式",
+      "desc": "动画工坊 · G/PG 级免密",
+      "avatarInitials": "KD"
+    }
+  ]
+}

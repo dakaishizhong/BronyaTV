@@ -2,9 +2,9 @@
 
 **中文** | [English](README.md)
 
-面向 Android TV 的 Emby 播放客户端。深色影片背景、青色遥控器焦点和横向媒体卡片，让电影与剧集更适合大屏观看。支持 Android 6.0 及以上系统。
+面向 Android TV 的 Emby 播放客户端。深色影片背景、翠绿遥控器焦点、获焦展开卡片和可折叠侧栏，让电影与剧集更适合大屏观看。支持 Android 6.0 及以上系统。
 
-[最新 APK：1.7.0](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.7.0/BronyaTV-1.7.0-release.apk) · [版本发布说明](https://github.com/dakaishizhong/BronyaTV/releases) · [构建与开发](docs/DEVELOPMENT.md)
+[最新 APK：1.7.1](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.7.1/BronyaTV-1.7.1-release.apk) · [版本发布说明](https://github.com/dakaishizhong/BronyaTV/releases) · [构建与开发](docs/DEVELOPMENT.md)
 
 ## 功能
 
@@ -12,7 +12,7 @@
 - 默认英文界面，支持切换为简体中文并保存语言选择。
 - 首页先展示最近播放与继续观看，下方按 Emby 顺序展示前六个真实媒体库分区，分区标题可直接进入原有目录；其余媒体库保留入口，不编造地区分类或数量。
 - 电影和剧集页优先展示影片与直接媒体库入口，按需展开“筛选与排序”，类型、年份、观看状态和排序由服务器执行；保留目录、收藏、搜索和历史。搜索输入停顿 300 毫秒后自动更新，确认键立即提交；统一全角字符与空白，取消过期请求，默认采用服务器搜索排序。
-- 首页、分类、搜索和相关推荐的视频卡片统一为 16:9，焦点边框仅包围图片。
+- 首页与相关推荐卡片获焦时展开，同步更新背景及影片元数据；分类与搜索保留固定网格。侧栏展开时占用实际布局宽度。
 - 服务器影片背景、真实画质标签、续看进度、演职人员、相关推荐及六块设置面板。
 - 详情页直接选择服务器提供的影片版本，显示实际分辨率、HDR、编码与码率；点击播放时重新协商地址。保留续播、外部播放器和播放中换源。
 - 图片磁盘缓存提供容量、已用空间与清理；元数据单独持久缓存，优先展示缓存并后台更新。
@@ -28,23 +28,23 @@
 
 ## 安装与登录
 
-1.4.0 使用新的签名密钥。从 1.3.0 或更早版本迁移时，需要先卸载旧版，再安装新版并重新登录；旧版应用数据不会保留。以后沿用 1.4.0 密钥的版本可覆盖升级。也可使用 ADB：
+1.7.1 使用新的签名密钥。从 1.7.0 或更早版本迁移时，需要先卸载旧版，再安装 1.7.1 并重新登录；卸载会删除旧版应用数据。后续沿用此新密钥的版本可覆盖升级。卸载旧版后也可使用 ADB 安装：
 
 ```bash
-adb install -r BronyaTV-1.7.0-release.apk
+adb install BronyaTV-1.7.1-release.apk
 ```
 
 输入服务器地址、账号和密码。地址支持 HTTPS、自定义端口和反向代理路径，例如 `https://emby.example.com/emby`。省略协议时使用 HTTPS。登录成功后会自动保存加密会话，密码不保存。
 
 ## 遥控器与设置
 
-分类页优先展示影片，点击服务器媒体库入口直接进入内容；按需展开“筛选与排序”，选择后立即生效。右上角 **⋯** 或遥控器菜单键提供刷新与排序快捷入口。
+分类页优先展示影片，点击服务器媒体库入口直接进入内容。遥控器菜单键提供刷新、筛选、搜索和收藏入口；主页和分类页右上角没有操作按钮。
 
 在“详情 → 影片版本”选择服务器提供的版本，再点击播放或继续播放。播放时重新获取有效地址；版本已被移除时提示重新选择。
 
-在“Settings → Interface & diagnostics → Interface language”选择“简体中文”；中文界面的入口是“设置 → 界面与诊断 → 界面语言”。登录页也提供语言选择。重启后保留选择，服务器影片名称和简介保持原文。
+在“Settings → Interface & diagnostics → Interface language”选择“简体中文”；中文界面的入口是“设置 → 界面与诊断 → 界面语言”。重启后保留选择，服务器影片名称和简介保持原文。登录页展示公开用户卡片、服务器/用户/密码输入框及登录按钮。
 
-方向键移动焦点，确定键打开内容或选择操作。七个同尺寸按钮以播放/暂停键为中心对称排列，两侧各三个：片源、字幕、快退，以及快进、诊断、更多选项。进度条显示已播放和缓冲区间，聚焦时用圆形游标提示跳转位置。移除扬声器快捷按钮，音轨选择仍在“播放选项”菜单中；菜单还提供倍速、画面比例及片源切换。各页不显示左上角返回按钮，使用遥控器返回键。
+方向键移动焦点，确定键打开内容或选择操作。播放器使用上一章节/集、播放/暂停、下一章节/集三个圆形按钮，右侧为字幕、音轨、画幅按钮；播放/暂停位于屏幕横向中心。向上进入进度条，再向上进入 HUD/退出播放按钮，向下返回播放/暂停。遥控器菜单键打开其余播放选项。页面使用遥控器返回键。
 
 控制栏隐藏时，左右短按预览跳转位置；长按按设定步长持续移动，松开后跳转，返回键取消。控制栏显示时，左右键用于选择按钮。快进、快退键也可直接使用。短按默认 10 秒，长按每次默认 30 秒，在“设置 → 遥控器”分别调整。
 
@@ -64,23 +64,19 @@ adb install -r BronyaTV-1.7.0-release.apk
 
 ## 界面
 
-以下截图来自 1.7.0 的模拟 Emby 测试服务器，图片来自许可明确的 [公共领域经典电影剧照](tests/media/README.md)，测试视频由这些剧照生成；影片与元数据为接口测试内容。
+以下为基于 1.7.0 完成 Cinema UI、尚未递增 1.7.1 版本号时的实际模拟器截图。示例图片与用户使用设计文档中的资源，见 [示例资源说明](tests/media/CINEMA-REFERENCE.md)；测试视频由参考图片生成。生产页面使用所连接 Emby 服务器的数据。
 
 | 首页 | 详情 |
 | --- | --- |
-| ![BronyaTV 首页](docs/screenshots/1.7.0/home.png) | ![BronyaTV 详情](docs/screenshots/1.7.0/detail.png) |
+| ![BronyaTV 首页](docs/screenshots/cinema-ui/home.png) | ![BronyaTV 详情](docs/screenshots/cinema-ui/detail.png) |
 
 | 设置 | 播放 |
 | --- | --- |
-| ![BronyaTV 设置](docs/screenshots/1.7.0/settings.png) | ![BronyaTV 播放](docs/screenshots/1.7.0/player.png) |
+| ![BronyaTV 设置](docs/screenshots/cinema-ui/settings.png) | ![BronyaTV 播放](docs/screenshots/cinema-ui/player.png) |
 
-| 设置编辑 | 搜索 |
+| 展开侧栏 | 登录 |
 | --- | --- |
-| ![设置编辑](docs/screenshots/1.7.0/settings-editor.png) | ![BronyaTV 搜索](docs/screenshots/1.7.0/search.png) |
-
-| 电影分类 | 登录 |
-| --- | --- |
-| ![电影分类](docs/screenshots/1.7.0/category.png) | ![登录](docs/screenshots/1.7.0/login.png) |
+| ![展开侧栏](docs/screenshots/cinema-ui/sidebar.png) | ![登录](docs/screenshots/cinema-ui/login.png) |
 
 ## 开发
 

@@ -32,53 +32,71 @@ class PlaybackUiDeviceTest {
     private fun focus(tag: String) { ready(tag);compose.onNodeWithTag(tag).performSemanticsAction(SemanticsActions.RequestFocus) { it() };compose.waitForIdle() }
     private fun key(code: Int) { instrumentation.sendKeyDownUpSync(code);compose.waitForIdle() }
     private fun click(tag: String) { focus(tag);key(KeyEvent.KEYCODE_DPAD_CENTER) }
+    private fun assertDocumentGeometry() {
+        focus("playback_timeline") // Measure the reference sizes without focus enlargement.
+        fun bounds(tag: String)=compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
+        val surface=bounds("playback_surface");val unit=surface.height/540f
+        val play=bounds("play_pause");val previous=bounds("previous_section");val next=bounds("next_section")
+        assertEquals("Play must stay at the screen's horizontal center",surface.center.x,play.center.x,1f)
+        assertEquals(56*unit,play.width,1f);assertEquals(play.width,play.height,1f)
+        listOf(previous,next).forEach { assertEquals(44*unit,it.width,1f);assertEquals(it.width,it.height,1f);assertEquals(play.center.y,it.center.y,1f) }
+        assertEquals(20*unit,play.left-previous.right,1f);assertEquals(20*unit,next.left-play.right,1f)
+        assertEquals(28*unit,surface.bottom-play.bottom,1f)
+        val timeline=bounds("playback_timeline")
+        assertEquals(48*unit,timeline.left-surface.left,1f);assertEquals(48*unit,surface.right-timeline.right,1f)
+        assertEquals(6*unit,timeline.height,1f);assertEquals(16*unit,play.top-timeline.bottom,1f)
+        val parameters=listOf("player_subtitles","player_audio","player_aspect").map { bounds(it) }
+        // Font line height and each padding edge round separately on lower-resolution output.
+        parameters.forEach { assertEquals("Text control height",32*unit,it.height,2f);assertEquals(play.center.y,it.center.y,1f) }
+        parameters.zipWithNext().forEach { (left,right) -> assertEquals(10*unit,right.left-left.right,1f) }
+        assertEquals(48*unit,surface.right-parameters.last().right,1f)
+        assertTrue("Track labels must never overlap transport controls",parameters.first().left-next.right>=20*unit-1f)
+        val hud=bounds("player_hud");val exit=bounds("player_exit")
+        listOf(hud,exit).forEach { assertEquals(36*unit,it.top-surface.top,1f);assertEquals(32*unit,it.height,2f) }
+        assertEquals(36*unit,surface.right-exit.right,1f);assertEquals(12*unit,exit.left-hud.right,1f)
+        println("Player geometry: screen=${surface.width}x${surface.height}, playCenter=${play.center}, circles=${previous.width}/${play.width}/${next.width}, textHeight=${parameters.first().height}, parameterGap=${parameters[1].left-parameters[0].right}")
+        focus("play_pause")
+        val focused=bounds("play_pause")
+        assertEquals("Focus enlargement must preserve the screen center",surface.center.x,focused.center.x,1f)
+        // TV Surface enlarges its drawing layer; its layout bounds remain unchanged.
+        assertEquals("Focus must preserve the reference layout width",play.width,focused.width,1f)
+    }
     @Before fun setup() {
-        tv.ember.client.i18n.AppLanguage.save(context,"en")
+        tv.ember.client.i18n.AppLanguage.save(context,InstrumentationRegistry.getArguments().getString("testLanguage") ?: "en")
         (context.applicationContext as BronyaApp).apply {
-            sessions.save(Session(InstrumentationRegistry.getArguments().getString("fixtureServer") ?: "http://10.0.2.2:8765","fixture-token","u1","Demo TV"))
+            sessions.save(Session(InstrumentationRegistry.getArguments().getString("fixtureServer") ?: "http://10.0.2.2:8765","fixture-token","u1","CinemaMaster"))
             settings.diskCacheMb=0;settings.introSeconds=0;settings.outroSeconds=0
         }
     }
-    @Test fun playPauseIsExactlyCenteredAndRemoteControlsOperateThePlayer() {
+    @Test fun documentControlsOperateTheRealPlayerAndTrackPanels() {
         ActivityScenario.launch<PlaybackActivity>(Intent(context,PlaybackActivity::class.java).putExtra("item_id","demo").putExtra("source_id","vp8")).use { scenario ->
             fun player(block: (Player)->Unit) { scenario.onActivity { block(descendants(it.window.decorView).filterIsInstance<PlayerView>().first().player!!) } }
-            val deadline=SystemClock.elapsedRealtime()+60000
-            while(SystemClock.elapsedRealtime()<deadline) { var ready=false;scenario.onActivity { ready=descendants(it.window.decorView).filterIsInstance<PlayerView>().firstOrNull()?.player?.playbackState==Player.STATE_READY };if(ready) break;Thread.sleep(100) }
-            player { assertEquals(Player.STATE_READY,it.playbackState) }
-            key(KeyEvent.KEYCODE_DPAD_UP);focus("play_pause")
-            val viewport=compose.onNodeWithTag("playback_surface",useUnmergedTree=true).fetchSemanticsNode().boundsInRoot
+            compose.waitUntil(90000) { var ready=false;scenario.onActivity { ready=descendants(it.window.decorView).filterIsInstance<PlayerView>().firstOrNull()?.player?.playbackState==Player.STATE_READY };ready }
+            key(KeyEvent.KEYCODE_DPAD_UP);assertDocumentGeometry()
             val center=compose.onNodeWithTag("play_pause").fetchSemanticsNode().boundsInRoot
-            assertEquals("Play/Pause must be centered on screen",viewport.center.x,center.center.x,1f)
-            val pairs=listOf("player_rewind" to "player_forward","player_subtitles" to "player_diagnostics","player_sources" to "player_more")
-            pairs.forEach { (left,right) ->
-                val l=compose.onNodeWithTag(left).fetchSemanticsNode().boundsInRoot
-                val r=compose.onNodeWithTag(right).fetchSemanticsNode().boundsInRoot
-                assertEquals("Equal control diameters",center.width,l.width,1f);assertEquals(center.width,r.width,1f)
-                assertEquals("Mirrored spacing",center.center.x-l.center.x,r.center.x-center.center.x,1f)
-                assertEquals("Shared vertical center",center.center.y,l.center.y,1f);assertEquals(center.center.y,r.center.y,1f)
-            }
-            println("Playback geometry: viewport=${viewport.width}x${viewport.height}, playPauseCenterX=${center.center.x}, diameter=${center.width}")
-            compose.onNodeWithTag("player_audio").assertDoesNotExist()
-            key(KeyEvent.KEYCODE_DPAD_CENTER);player { assertFalse("OK pauses the real player",it.playWhenReady) }
-            key(KeyEvent.KEYCODE_DPAD_LEFT);compose.onNodeWithTag("player_rewind").assertIsFocused()
-            key(KeyEvent.KEYCODE_DPAD_LEFT);compose.onNodeWithTag("player_subtitles").assertIsFocused()
-            key(KeyEvent.KEYCODE_DPAD_LEFT);compose.onNodeWithTag("player_sources").assertIsFocused()
-            key(KeyEvent.KEYCODE_DPAD_LEFT);compose.onNodeWithTag("player_sources").assertIsFocused()
-            repeat(3) { key(KeyEvent.KEYCODE_DPAD_RIGHT) };compose.onNodeWithTag("play_pause").assertIsFocused()
-            assertEquals("Focus must not move or resize the main control",center,compose.onNodeWithTag("play_pause").fetchSemanticsNode().boundsInRoot)
-            key(KeyEvent.KEYCODE_DPAD_CENTER);player { assertTrue("OK resumes the real player",it.playWhenReady) }
-            key(KeyEvent.KEYCODE_DPAD_UP);compose.onNodeWithTag("playback_timeline").assertIsFocused()
-            var before=0L;player { before=it.currentPosition }
-            key(KeyEvent.KEYCODE_DPAD_RIGHT)
+            val previous=compose.onNodeWithTag("previous_section").fetchSemanticsNode().boundsInRoot
+            val next=compose.onNodeWithTag("next_section").fetchSemanticsNode().boundsInRoot
+            assertTrue("Document has a larger primary control",center.width>previous.width)
+            assertEquals(previous.width,next.width,1f)
+            assertEquals(center.center.x-previous.center.x,next.center.x-center.center.x,1f)
+            assertEquals(center.center.y,previous.center.y,1f);assertEquals(center.center.y,next.center.y,1f)
+            compose.onNodeWithTag("previous_section").assertIsNotEnabled();compose.onNodeWithTag("next_section").assertIsNotEnabled()
+            listOf("player_sources","player_rewind","player_forward","player_diagnostics","player_more").forEach { compose.onNodeWithTag(it).assertDoesNotExist() }
+            key(KeyEvent.KEYCODE_DPAD_CENTER);player { assertFalse(it.playWhenReady) }
+            key(KeyEvent.KEYCODE_DPAD_CENTER);player { assertTrue(it.playWhenReady) }
+            key(KeyEvent.KEYCODE_DPAD_CENTER);player { assertFalse(it.playWhenReady) }
+            key(KeyEvent.KEYCODE_DPAD_RIGHT);compose.onNodeWithTag("next_section").assertIsFocused()
+            key(KeyEvent.KEYCODE_DPAD_RIGHT);compose.onNodeWithTag("player_subtitles").assertIsFocused()
+            key(KeyEvent.KEYCODE_DPAD_RIGHT);compose.onNodeWithTag("player_audio").assertIsFocused()
+            key(KeyEvent.KEYCODE_DPAD_CENTER);ready("dialog_option_0")
+            click("dialog_option_1");player { assertTrue(androidx.media3.common.C.TRACK_TYPE_AUDIO in it.trackSelectionParameters.disabledTrackTypes) }
+            focus("player_aspect");key(KeyEvent.KEYCODE_DPAD_CENTER);ready("dialog_option_0");click("dialog_option_1")
+            assertEquals(4,(context.applicationContext as BronyaApp).settings.resizeMode)
+            focus("playback_timeline");var before=0L;player { before=it.currentPosition };key(KeyEvent.KEYCODE_DPAD_RIGHT)
             compose.waitUntil(30000) { var sought=false;player { sought=it.currentPosition>before+3000 };sought }
             key(KeyEvent.KEYCODE_DPAD_DOWN);compose.onNodeWithTag("play_pause").assertIsFocused()
-            listOf("player_forward","player_diagnostics","player_more").forEach { key(KeyEvent.KEYCODE_DPAD_RIGHT);compose.onNodeWithTag(it).assertIsFocused() }
-            key(KeyEvent.KEYCODE_DPAD_CENTER);ready("dialog_option_0")
-            compose.onNodeWithText("Audio tracks").assertExists()
-            // Audio track selection remains available through More; there is no speaker shortcut.
-            compose.onNodeWithText("Audio tracks").performSemanticsAction(SemanticsActions.OnClick) { it() }
-            compose.onAllNodesWithText("Audio tracks").assertCountEquals(1)
-            key(KeyEvent.KEYCODE_BACK);ready("dialog_option_0");key(KeyEvent.KEYCODE_BACK)
+            focus("player_hud");key(KeyEvent.KEYCODE_DPAD_CENTER);ready("player_hud_panel")
+            key(KeyEvent.KEYCODE_DPAD_CENTER);compose.onNodeWithTag("player_hud_panel").assertDoesNotExist()
             scenario.onActivity { assertFalse(it.isFinishing) }
         }
     }

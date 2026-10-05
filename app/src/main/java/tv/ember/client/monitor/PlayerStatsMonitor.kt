@@ -146,6 +146,22 @@ class PlayerStatsMonitor : AnalyticsListener, VideoFrameMetadataListener {
             Tr.text(UiText.VIDEO_AUDIO_CHANNELS_083 ,(decoderMode(videoDecoder)),(videoDecoder),(a?.sampleMimeType ?: Tr.text(UiText.WAITING_029)),(a?.channelCount?.takeIf { it>0 } ?: "—"))+
             Tr.text(UiText.OUTPUT_FFPS_DROPPED_BUFFERING_TIMES_084 ,(dropped),(bufferingCount)).format(renderFps)
     }
+    fun cinemaHud(p:ExoPlayer,version:MediaVersion,bytesPerSecond:Long,allocatedBytes:Long):List<Pair<String,String>> {
+        val v=p.videoFormat;val source=version.streams.firstOrNull { it.type=="Video" }
+        val width=frameOutput.width.takeIf { it>0 } ?: videoSize.width
+        val height=frameOutput.height.takeIf { it>0 } ?: videoSize.height
+        val renderedFrames=p.videoDecoderCounters?.renderedOutputBufferCount ?: 0
+        val total=renderedFrames+dropped
+        val audio=audioOutput
+        return listOf(
+            Tr.text(UiText.HUD_VIDEO_FORMAT) to listOf(v?.codecs?.takeIf(String::isNotBlank) ?: source?.codec.orEmpty(),source?.profile.orEmpty(),source?.videoRange.orEmpty()).filter(String::isNotBlank).joinToString(" · "),
+            Tr.text(UiText.HUD_RESOLUTION) to if(width>0 && height>0) "${width} × ${height}"+(v?.frameRate?.takeIf { it>0 }?.let { " @ %.3f fps".format(it) } ?: "") else Tr.text(UiText.WAITING_FOR_DIMENSIONS_058),
+            Tr.text(UiText.HUD_BITRATE) to (v?.bitrate?.takeIf { it>0 }?.toLong()?.let(::mbps) ?: mbps(sourceBitrate))+" · NET "+mbps(bytesPerSecond.coerceAtLeast(0)*8),
+            Tr.text(UiText.HUD_AUDIO) to OutputLabels.audio(audio?.encoding ?: 0)+(audio?.let { " · ${it.sampleRate} Hz" } ?: ""),
+            Tr.text(UiText.HUD_DROPPED) to "$dropped / $total ("+"%.2f%%".format(if(total>0) dropped*100.0/total else 0.0)+")",
+            Tr.text(UiText.HUD_BUFFER) to "${allocatedBytes/1048576} MB ("+"%.1f".format((p.bufferedPosition-p.currentPosition).coerceAtLeast(0)/1000.0)+" s)"
+        )
+    }
     fun details(p:ExoPlayer,version:MediaVersion):String {
         val v=p.videoFormat;val a=p.audioFormat;val counters=p.videoDecoderCounters
         val now=SystemClock.elapsedRealtime()

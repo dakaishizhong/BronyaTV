@@ -6,6 +6,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 data class Session(val server: String, val token: String, val userId: String, val userName: String)
+data class PublicUser(val id: String,val name: String,val hasPassword: Boolean,
+    val tag: String="",val description: String="",val avatarInitials: String="")
 data class VideoItem(
     val id: String, val name: String, val type: String, val overview: String = "",
     val year: String = "", val rating: String = "", val runtimeTicks: Long = 0,
@@ -13,7 +15,8 @@ data class VideoItem(
     val sources: List<MediaVersion> = emptyList(), val episodeLabel: String = "",
     val seriesId: String = "", val seasonId: String = "", val seasonNumber: Int = -1, val episodeNumber: Int = -1,
     val backdropTag: String = "", val backdropId: String = id, val communityRating: String = "",
-    val genres: List<String> = emptyList(), val people: List<MediaPerson> = emptyList(),val collectionType: String=""
+    val genres: List<String> = emptyList(), val people: List<MediaPerson> = emptyList(),val collectionType: String="",
+    val originalTitle: String="",val studio: String="",val chapters: List<MediaChapter> = emptyList()
 ) {
     val isFolder get() = type in listOf("CollectionFolder", "Folder", "Series", "Season", "BoxSet")
     val subtitle get() = listOf(year, episodeLabel, rating, if (runtimeTicks >= 600_000_000) Tr.text(UiText.MIN_012 ,(runtimeTicks / 600_000_000)) else if(runtimeTicks > 0) Tr.text(UiText.SEC_013 ,(runtimeTicks / 10_000_000)) else "").filter { it.isNotBlank() }.joinToString("  ·  ")
@@ -33,10 +36,13 @@ data class VideoItem(
                 if((o.optJSONArray("BackdropImageTags")?.length() ?: 0)>0) o.getString("Id") else o.optString("ParentBackdropItemId",o.getString("Id")),
                 o.optDouble("CommunityRating").takeIf { it.isFinite() && it>0 }?.let { "%.1f".format(java.util.Locale.ROOT,it) }.orEmpty(),
                 o.optJSONArray("Genres").let { a -> if(a==null) emptyList() else (0 until a.length()).map { a.optString(it) }.filter(String::isNotBlank) },
-                o.optJSONArray("People").objects().map { MediaPerson(it.optString("Name"),it.optString("Type"),it.optString("Role"),it.optString("Id"),it.optString("PrimaryImageTag")) },o.optString("CollectionType"))
+                o.optJSONArray("People").objects().map { MediaPerson(it.optString("Name"),it.optString("Type"),it.optString("Role"),it.optString("Id"),it.optString("PrimaryImageTag")) },o.optString("CollectionType"),
+                o.optString("OriginalTitle"),o.optJSONArray("Studios")?.optJSONObject(0)?.optString("Name").orEmpty(),
+                o.optJSONArray("Chapters").objects().map { MediaChapter(it.optString("Name"),it.optLong("StartPositionTicks")) }.sortedBy { it.startTicks })
         }
     }
 }
+data class MediaChapter(val name: String,val startTicks: Long)
 data class MediaPerson(val name: String,val type: String,val role: String,val id: String="",val imageTag: String="")
 data class MediaStream(
     val index: Int, val type: String, val codec: String, val label: String, val language: String,

@@ -77,7 +77,7 @@ assert len(fields)==5
 for field,value in zip(fields[:3],['http://10.0.2.2:8765','demo','demo']):
     click(field);adb('shell','input','text',value);key(4)
 click(find('连接服务器'))
-find('A Trip to the Moon')
+find('沙丘 2')
 click(find('设置'));click(find('分段接收'));click(find('4 路'))
 key(4)
 adb('shell','am','force-stop','tv.ember.client')
@@ -85,7 +85,7 @@ upgrade=adb('install','-r',str(root/'artifacts/BronyaTV-1.1.0-release.apk')).dec
 assert 'Success' in upgrade
 (out/'install-upgrade.log').write_text(upgrade)
 adb('shell','am','start','-n','tv.ember.client/.ui.MainActivity')
-find('A Trip to the Moon');capture('home')
+find('沙丘 2');capture('home')
 print('Verified signed upgrade and home',flush=True)
 click(find('设置'))
 find('分段接收：4 路独立连接');capture('settings-network')
@@ -94,7 +94,7 @@ focus_to('快进 / 快退步长');key(23);click(find('10 秒'));find('快进 / �
 capture('settings-playback')
 print('Verified remote settings and saved connection count',flush=True)
 key(4)
-click(find('A Trip to the Moon'));find('选择喜欢的版本');capture('detail')
+click(find('沙丘 2'));find('选择喜欢的版本');capture('detail')
 click(find('继续播放'));click(find('Original-route recovery test'))
 time.sleep(3)
 option('显示性能信息')

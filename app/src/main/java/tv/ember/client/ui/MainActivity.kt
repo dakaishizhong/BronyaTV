@@ -203,8 +203,7 @@ class MainActivity: TvActivity() {
         }
         val selected=Tr.text(section(current) ?: history.toList().asReversed().firstNotNullOfOrNull { section(it)?.takeUnless { value -> value==UiText.HOME_267 } } ?: UiText.MOVIES_316)
         TvShell(selected,::navigate,if(current.query==null) hero else MediaUi.backdropItem,homeFocus,{ railFocused=it }) {
-            Column(Modifier.fillMaxSize().onFocusChanged { if(it.hasFocus) railFocused="" }.focusGroup().padding(horizontal=(14*scale).dp,vertical=(12*scale).dp)) {
-                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End,verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) { TvIconAction(TvGlyph.More,Tr.text(UiText.LIBRARY_OPTIONS),"browse_menu") { showMenu() };Spacer(Modifier.width(12.dp));TvClock() }
+            Column(Modifier.fillMaxSize().onFocusChanged { if(it.hasFocus) railFocused="" }.focusGroup().padding(start=(48*scale).dp,end=(48*scale).dp,top=(36*scale).dp)) {
                 if(s!=null) {
                     key(current.id) { if(current.query==null) Home(current,s) else Browse(current,s) }
                 }
@@ -225,19 +224,20 @@ class MainActivity: TvActivity() {
         val focusMap=remember(current.id) { mutableMapOf<String,FocusRequester>() }
         val scroll=rememberLazyListState(current.first,current.offset)
         hero?.let { featured ->
-            Column(Modifier.fillMaxWidth().height((156*scale).dp).padding(top=(4*scale).dp)) {
-                Text(listOf(if(featured.resumeTicks>0) Tr.text(UiText.RESUME_STATUS,MediaUi.remaining(featured)) else "",MediaUi.badges(featured).joinToString("  ")).filter(String::isNotBlank).joinToString("  ·  "),color=Cyan,fontSize=(11*scale).sp,lineHeight=(14*scale).sp)
-                Text(featured.name,color=Paper,fontWeight=FontWeight.Bold,fontSize=(36*scale).sp,lineHeight=(42*scale).sp,maxLines=1,overflow=TextOverflow.Ellipsis)
-                Text(MediaUi.metadata(featured),color=Muted,fontSize=(12*scale).sp,lineHeight=(16*scale).sp)
-                Spacer(Modifier.height((3*scale).dp));Text(featured.overview,Modifier.widthIn(max=(580*scale).dp),color=Paper,fontSize=(12*scale).sp,lineHeight=(16*scale).sp,maxLines=2,overflow=TextOverflow.Ellipsis)
-                Spacer(Modifier.height((5*scale).dp))
-                Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                    TvAction(Tr.text(if(featured.resumeTicks>0) UiText.RESUME_251 else UiText.PLAY_252),"hero_play",Modifier.width((145*scale).dp).height((36*scale).dp),primary=true) { startActivity(Intent(this@MainActivity,DetailActivity::class.java).putExtra("item_id",featured.id).putExtra("auto_play",true)) }
-                    TvAction(Tr.text(UiText.DETAILS_324),"hero_details",Modifier.width((100*scale).dp).height((36*scale).dp)) { open(featured) }
+            Column(Modifier.fillMaxWidth().height((234*scale).dp),verticalArrangement=Arrangement.SpaceBetween) {
+                Column(verticalArrangement=Arrangement.spacedBy((6*scale).dp)) {
+                Text(featured.studio.ifBlank { Tr.text(UiText.CINEMA_LIBRARY) },color=Muted,fontSize=(11*scale).sp,lineHeight=(16*scale).sp,letterSpacing=1.2.sp,maxLines=1)
+                Row(verticalAlignment=androidx.compose.ui.Alignment.Bottom,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                    Text(featured.name,Modifier.testTag("hero_title").widthIn(max=(540*scale).dp),color=Paper,fontWeight=FontWeight.ExtraBold,fontSize=(38*scale).sp,lineHeight=(46*scale).sp,maxLines=1,overflow=TextOverflow.Ellipsis)
+                    if(featured.originalTitle.isNotBlank() && featured.originalTitle!=featured.name) Text(featured.originalTitle,Modifier.weight(1f).padding(bottom=(6*scale).dp),color=Muted,fontSize=(18*scale).sp,maxLines=1,overflow=TextOverflow.Ellipsis)
                 }
+                MediaBadges(featured,Modifier.testTag("hero_badges"))
+                Text(MediaUi.metadata(featured),color=Muted,fontSize=(12*scale).sp,lineHeight=(16*scale).sp)
+                }
+                Text(featured.overview,Modifier.widthIn(max=(540*scale).dp).padding(bottom=(18*scale).dp),color=Muted,fontSize=(14*scale).sp,lineHeight=(22*scale).sp,maxLines=3,overflow=TextOverflow.Ellipsis)
             }
         }
-        LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("home_rows"),state=scroll,verticalArrangement=Arrangement.spacedBy((7*scale).dp)) {
+        LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("home_rows"),state=scroll,contentPadding=PaddingValues(bottom=(28*scale).dp),verticalArrangement=Arrangement.spacedBy((24*scale).dp)) {
             items(current.rows,key={ it.key }) { row ->
                 if(row.library==null) Section(row.title) else {
                     val header="header:${row.library.id}";val request=remember(header) { FocusRequester() }
@@ -251,16 +251,15 @@ class MainActivity: TvActivity() {
                         Section(row.title);TvIcon(TvGlyph.ChevronRight,if(focused) Cyan else Muted,Modifier.size((18*scale).dp))
                     }
                 }
-                BoxWithConstraints(Modifier.fillMaxWidth()) {
-                    val width=(maxWidth-(8*scale*4).dp-6.dp)/5
+                Box(Modifier.fillMaxWidth()) {
                     val position=current.rowPositions[row.key] ?: (0 to 0)
                     val rowScroll=rememberLazyListState(position.first.coerceAtMost((row.items.size-1).coerceAtLeast(0)),position.second)
                     LaunchedEffect(row.key) { snapshotFlow { rowScroll.firstVisibleItemIndex to rowScroll.firstVisibleItemScrollOffset }.collect { current.rowPositions[row.key]=it } }
-                    LazyRow(state=rowScroll,horizontalArrangement=Arrangement.spacedBy((8*scale).dp),contentPadding=PaddingValues(3.dp)) {
+                    LazyRow(state=rowScroll,horizontalArrangement=Arrangement.spacedBy((16*scale).dp),contentPadding=PaddingValues(horizontal=(8*scale).dp,vertical=(12*scale).dp)) {
                         itemsIndexed(row.items,key={ _,item->item.id }) { i,item ->
                             val key="${row.key}:${item.id}";val request=remember(key) { FocusRequester() }
                             DisposableEffect(key) { focusMap[key]=request;onDispose { if(focusMap[key]===request) focusMap.remove(key) } }
-                            MediaCard(app,s,item,Modifier.width(width),request,{ current.focus=key;railFocused="";if(!item.isFolder) MediaUi.backdropItem=item },if(i==0) rail else null) { if(row.key=="libraries") openLibrary(item) else open(item) }
+                            MediaCard(app,s,item,requester=request,onFocused={ current.focus=key;railFocused="";if(item.type !in listOf("CollectionFolder","Folder","Season","BoxSet")) { hero=item;MediaUi.backdropItem=item } },onLeft=if(i==0) rail else null,morph=true) { if(row.key=="libraries") openLibrary(item) else open(item) }
                         }
                     }
                 }
@@ -275,10 +274,7 @@ class MainActivity: TvActivity() {
         val scale=LocalTvScale.current;val query=current.query ?: return;val rail=LocalRailFocus.current
         val grid=rememberLazyGridState(current.first,current.offset)
         val focusMap=remember(current.id) { mutableMapOf<String,FocusRequester>() }
-        Row(Modifier.fillMaxWidth(),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
-            Text(current.name,color=Paper,fontWeight=FontWeight.Bold,fontSize=(29*scale).sp)
-            TvAction(Tr.text(UiText.FILTER_SORT),"browse_filters",selected=current.filtersOpen) { current.filtersOpen=!current.filtersOpen;if(current.filtersOpen) loadFacets(current) }
-        }
+        Text(current.name,color=Paper,fontWeight=FontWeight.Bold,fontSize=(29*scale).sp)
         if(current.destination=="search") {
             var term by rememberSaveable(current.id) { mutableStateOf(query.search) }
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -370,9 +366,13 @@ class MainActivity: TvActivity() {
         filter(current.query!!.copy(search=term))
     }
     private fun showMenu() {
-        TvUi.dialog(this).setTitle(Tr.text(UiText.BROWSE_MENU)).setItems(arrayOf(Tr.text(UiText.REFRESH_212),Tr.text(UiText.SORT_292))) { _,which ->
-            if(which==0) { frame.facetsLoaded=false;load(frame) } else if(frame.query!=null) TvUi.dialog(this).setTitle(Tr.text(UiText.SORT_CONTENT_326)).setItems(BrowseSort.entries.map { it.label }.toTypedArray()) { _,i -> filter(frame.query!!.copy(sort=BrowseSort.entries[i],descending=i!=0,explicitSort=true)) }.show()
-            else message(Tr.text(UiText.OPEN_A_LIBRARY_OR_SEARCH_RESULTS_325))
+        TvUi.dialog(this).setTitle(Tr.text(UiText.BROWSE_MENU)).setItems(arrayOf(Tr.text(UiText.REFRESH_212),Tr.text(UiText.FILTER_SORT),Tr.text(UiText.SEARCH_295),Tr.text(UiText.FAVORITES_318))) { _,which ->
+            when(which) {
+                0 -> { frame.facetsLoaded=false;load(frame) }
+                1 -> if(frame.query!=null) { frame.filtersOpen=!frame.filtersOpen;if(frame.filtersOpen) loadFacets(frame) } else message(Tr.text(UiText.OPEN_A_LIBRARY_OR_SEARCH_RESULTS_325))
+                2 -> navigate(Tr.text(UiText.SEARCH_295))
+                3 -> navigate(Tr.text(UiText.FAVORITES_318))
+            }
         }.show()
     }
     override fun onKeyUp(keyCode: Int,event: KeyEvent): Boolean { if(keyCode==KeyEvent.KEYCODE_MENU) { showMenu();return true };return super.onKeyUp(keyCode,event) }

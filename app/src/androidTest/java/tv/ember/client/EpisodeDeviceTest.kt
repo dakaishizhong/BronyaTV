@@ -48,20 +48,20 @@ class EpisodeDeviceTest {
     private fun launch(id:String="ep1")=ActivityScenario.launch<PlaybackActivity>(Intent(context,PlaybackActivity::class.java).putExtra("item_id",id).putExtra("source_id",source))
     @Before fun setup() {
         tv.ember.client.i18n.AppLanguage.save(context,"zh")
-        app.sessions.save(Session(fixtureServer,"fixture-token","u1","Demo TV"))
+        app.sessions.save(Session(fixtureServer,"fixture-token","u1","CinemaMaster"))
         app.settings.streamConnections=4;app.settings.diskCacheMb=512;app.settings.introSeconds=0;app.settings.outroSeconds=0;app.settings.autoNextEpisode=true
         HttpClient.api.newCall(Request.Builder().url("$fixtureServer/fixture/control?fail=0").build()).execute().close()
     }
     @Test fun manualNextAndPreviousReuseActivityAndCrossSeasonBoundary() {
         launch("ep2").use { s ->
             await(s) { player(it).playbackState==Player.STATE_READY };controls(s)
-            s.onActivity { player(it).pause() };click("next_episode")
+            s.onActivity { player(it).pause() };click("next_section")
             await(s) { it.intent.getStringExtra("item_id")=="ep3" && player(it).playbackState==Player.STATE_READY }
             s.onActivity { a ->
                 assertEquals("ep3",player(a).currentMediaItem?.mediaId)
                 assertTrue(player(a).currentPosition<5000)
             }
-            controls(s);compose.onAllNodesWithTag("next_episode").assertCountEquals(0);click("previous_episode")
+            controls(s);compose.onNodeWithTag("next_section").assertIsNotEnabled();click("previous_section")
             await(s) { it.intent.getStringExtra("item_id")=="ep2" && player(it).playbackState==Player.STATE_READY }
         }
     }
@@ -95,7 +95,7 @@ class EpisodeDeviceTest {
             s.onActivity { a ->
                 assertEquals("ep1",a.intent.getStringExtra("item_id"))
             }
-            compose.onAllNodesWithText("秒后播放下一集",substring=true).assertCountEquals(0);controls(s);click("next_episode")
+            compose.onAllNodesWithText("秒后播放下一集",substring=true).assertCountEquals(0);controls(s);click("next_section")
             await(s) { it.intent.getStringExtra("item_id")=="ep2" && player(it).playbackState==Player.STATE_READY }
         }
     }
