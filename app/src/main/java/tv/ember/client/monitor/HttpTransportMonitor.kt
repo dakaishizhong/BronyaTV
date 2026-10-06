@@ -24,6 +24,7 @@ class HttpTransportMonitor(private val sockets: ReceiveBufferSocketFactory? = nu
     val activeRequests=AtomicInteger()
     val peakConnections=AtomicInteger()
     private val liveConnections=java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<Connection,Boolean>())
+    val activeConnections get() = liveConnections.size
     private fun recordPeak(value:Int) {
         while(true) { val old=peakConnections.get();if(old>=value || peakConnections.compareAndSet(old,value)) return }
     }

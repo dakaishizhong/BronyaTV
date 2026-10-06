@@ -4,7 +4,7 @@
 
 面向 Android TV 的 Emby 播放客户端。深色影片背景、翠绿遥控器焦点、获焦展开卡片和可折叠侧栏，让电影与剧集更适合大屏观看。支持 Android 6.0 及以上系统。
 
-[最新 APK：1.7.1](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.7.1/BronyaTV-1.7.1-release.apk) · [版本发布说明](https://github.com/dakaishizhong/BronyaTV/releases) · [构建与开发](docs/DEVELOPMENT.md)
+[最新 APK：1.7.2](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.7.2/BronyaTV-1.7.2-release.apk) · [版本发布说明](https://github.com/dakaishizhong/BronyaTV/releases) · [构建与开发](docs/DEVELOPMENT.md)
 
 ## 功能
 
@@ -28,10 +28,10 @@
 
 ## 安装与登录
 
-1.7.1 使用新的签名密钥。从 1.7.0 或更早版本迁移时，需要先卸载旧版，再安装 1.7.1 并重新登录；卸载会删除旧版应用数据。后续沿用此新密钥的版本可覆盖升级。卸载旧版后也可使用 ADB 安装：
+1.7.2 与 1.7.1 沿用同一签名，可直接覆盖升级。1.7.1 起使用新的签名密钥。从 1.7.0 或更早版本迁移时，需要先卸载旧版，再安装 1.7.2 并重新登录；卸载会删除旧版应用数据。后续沿用此新密钥的版本可覆盖升级。卸载旧版后也可使用 ADB 安装：
 
 ```bash
-adb install BronyaTV-1.7.1-release.apk
+adb install -r BronyaTV-1.7.2-release.apk
 ```
 
 输入服务器地址、账号和密码。地址支持 HTTPS、自定义端口和反向代理路径，例如 `https://emby.example.com/emby`。省略协议时使用 HTTPS。登录成功后会自动保存加密会话，密码不保存。
@@ -44,7 +44,7 @@ adb install BronyaTV-1.7.1-release.apk
 
 在“Settings → Interface & diagnostics → Interface language”选择“简体中文”；中文界面的入口是“设置 → 界面与诊断 → 界面语言”。重启后保留选择，服务器影片名称和简介保持原文。登录页展示公开用户卡片、服务器/用户/密码输入框及登录按钮。
 
-方向键移动焦点，确定键打开内容或选择操作。播放器使用上一章节/集、播放/暂停、下一章节/集三个圆形按钮，右侧为字幕、音轨、画幅按钮；播放/暂停位于屏幕横向中心。向上进入进度条，再向上进入 HUD/退出播放按钮，向下返回播放/暂停。遥控器菜单键打开其余播放选项。页面使用遥控器返回键。
+方向键移动焦点，确定键打开内容或选择操作。播放器使用上一章节/集、播放/暂停、下一章节/集三个圆形按钮，右侧为字幕、音轨、画幅按钮；播放/暂停位于屏幕横向中心。向上进入进度条，再向上进入 HUD 开关，向下返回播放/暂停。画幅点击直接循环切换；菜单键在同一面板中直接选择音轨、字幕、倍速、画幅、字幕大小和多路接收。播放界面不放退出按钮，使用遥控器返回键。性能 HUD 显示 21 项实际解码、CPU/内存、网络、多路 TCP/Range 和磁盘缓存指标。页面使用遥控器返回键。
 
 控制栏隐藏时，左右短按预览跳转位置；长按按设定步长持续移动，松开后跳转，返回键取消。控制栏显示时，左右键用于选择按钮。快进、快退键也可直接使用。短按默认 10 秒，长按每次默认 30 秒，在“设置 → 遥控器”分别调整。
 
@@ -64,7 +64,7 @@ adb install BronyaTV-1.7.1-release.apk
 
 ## 界面
 
-以下为基于 1.7.0 完成 Cinema UI、尚未递增 1.7.1 版本号时的实际模拟器截图。示例图片与用户使用设计文档中的资源，见 [示例资源说明](tests/media/CINEMA-REFERENCE.md)；测试视频由参考图片生成。生产页面使用所连接 Emby 服务器的数据。
+播放器与设置截图为 1.7.2 实测；首页、详情、侧栏和登录保留 Cinema UI 基线截图。示例图片与用户使用设计文档中的资源，见 [示例资源说明](tests/media/CINEMA-REFERENCE.md)；测试视频由参考图片生成。生产页面使用所连接 Emby 服务器的数据。
 
 | 首页 | 详情 |
 | --- | --- |
@@ -72,11 +72,15 @@ adb install BronyaTV-1.7.1-release.apk
 
 | 设置 | 播放 |
 | --- | --- |
-| ![BronyaTV 设置](docs/screenshots/cinema-ui/settings.png) | ![BronyaTV 播放](docs/screenshots/cinema-ui/player.png) |
+| ![BronyaTV 设置](docs/screenshots/player-1.7.2/settings.png) | ![BronyaTV 播放](docs/screenshots/player-1.7.2/player.png) |
 
 | 展开侧栏 | 登录 |
 | --- | --- |
 | ![展开侧栏](docs/screenshots/cinema-ui/sidebar.png) | ![登录](docs/screenshots/cinema-ui/login.png) |
+
+| 播放性能 HUD | 同一面板直接设置 |
+| --- | --- |
+| ![播放性能 HUD](docs/screenshots/player-1.7.2/hud.png) | ![播放参数直选](docs/screenshots/player-1.7.2/options.png) |
 
 ## 开发
 

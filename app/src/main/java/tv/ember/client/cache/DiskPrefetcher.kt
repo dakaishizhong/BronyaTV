@@ -27,6 +27,7 @@ class DiskPrefetcher(
     private var positioned = false
     private var stopped = false
     val hitBytes = AtomicLong()
+    val rangeStatus get() = range
     @Volatile var state = Tr.text(UiText.WAITING_FOR_PLAYBACK_POSITION_001); private set
     val capacityBytes get() = handle.plan.capacityBytes
     val aheadBytes: Long get() = synchronized(lock) {

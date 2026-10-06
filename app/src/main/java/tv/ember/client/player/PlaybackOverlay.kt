@@ -3,6 +3,9 @@ package tv.ember.client.player
 import android.view.View
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
@@ -35,7 +38,31 @@ import tv.ember.client.ui.*
     var visibility by mutableIntStateOf(View.GONE)
     fun append(value: CharSequence) { text=text.toString()+value }
 }
-internal data class PlaybackAction(val key: String,val label: String,val enabled: Boolean=true,val action: ()->Unit)
+internal data class PlaybackAction(val key: String,val label: String,val enabled: Boolean=true,val selected:Boolean=false,val action: ()->Unit)
+internal data class PlaybackOptionGroup(val key:String,val title:String,val values:List<String>,val selected:Int,val onSelect:(Int)->Unit)
+
+@Composable internal fun PlaybackOptionsPanel(groups:List<PlaybackOptionGroup>,actions:List<PlaybackAction>) {
+    val scale=LocalTvScale.current;val first=remember { FocusRequester() }
+    LazyColumn(Modifier.fillMaxWidth().heightIn(max=(400*scale).dp).testTag("player_options"),verticalArrangement=Arrangement.spacedBy((14*scale).dp)) {
+        groups.forEachIndexed { groupIndex,group ->
+            item(group.key) {
+                Column(verticalArrangement=Arrangement.spacedBy((6*scale).dp)) {
+                    Text(group.title,color=Muted,fontSize=(12*scale).sp)
+                    LazyRow(horizontalArrangement=Arrangement.spacedBy((6*scale).dp)) {
+                        itemsIndexed(group.values) { index,label ->
+                            TvAction(label,"player_option_${group.key}_$index",Modifier.widthIn(max=(260*scale).dp)
+                                .then(if(groupIndex==0 && index==0) Modifier.focusRequester(first) else Modifier),selected=group.selected==index) { group.onSelect(index) }
+                        }
+                    }
+                }
+            }
+        }
+        actions.forEach { action -> item(action.key) {
+            TvAction(action.label,action.key,Modifier.fillMaxWidth(),enabled=action.enabled,selected=action.selected,onClick=action.action)
+        } }
+    }
+    LaunchedEffect(Unit) { withFrameNanos {};first.requestFocus() }
+}
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable internal fun FullscreenPlayback(view: PlayerView,player: ExoPlayer?,title: PlaybackText,info: PlaybackText,
@@ -43,12 +70,15 @@ internal data class PlaybackAction(val key: String,val label: String,val enabled
     focus: String,onFocus: (String)->Unit,actions: List<PlaybackAction>,badges:List<String>,hudRows:List<Pair<String,String>>,
     chapters:List<MediaChapter>,onSeek: (Int,Int)->Unit) {
     val scale=LocalTvScale.current;val root=remember { FocusRequester() }
-    val keys=listOf("previous_section","play_pause","next_section","player_subtitles","player_audio","player_aspect","player_hud","player_exit","playback_timeline")
+    val keys=listOf("previous_section","play_pause","next_section","player_subtitles","player_audio","player_aspect","player_hud","playback_timeline")
     val requests=remember { keys.associateWith { FocusRequester() } }
     var position by remember(player) { mutableLongStateOf(0) };var duration by remember(player) { mutableLongStateOf(0) }
     var buffered by remember(player) { mutableLongStateOf(0) };var playing by remember(player) { mutableStateOf(player?.playWhenReady==true) }
     DisposableEffect(player) {
-        val listener=object:Player.Listener { override fun onPlayWhenReadyChanged(playWhenReady:Boolean,reason:Int) { playing=playWhenReady } }
+        val listener=object:Player.Listener {
+            override fun onPlayWhenReadyChanged(playWhenReady:Boolean,reason:Int) { playing=playWhenReady && player?.playbackState!=Player.STATE_ENDED }
+            override fun onPlaybackStateChanged(state:Int) { playing=player?.playWhenReady==true && state!=Player.STATE_ENDED }
+        }
         player?.addListener(listener);onDispose { player?.removeListener(listener) }
     }
     LaunchedEffect(player) { while(true) { position=player?.currentPosition ?: 0;duration=(player?.duration ?: 0).coerceAtLeast(0);buffered=player?.bufferedPosition ?: position;kotlinx.coroutines.delay(500) } }
@@ -70,21 +100,25 @@ internal data class PlaybackAction(val key: String,val label: String,val enabled
                     Text(listOf(chapter.takeIf(String::isNotBlank) ?: info.text.toString(),"${SeekPolicy.time(position)} / ${SeekPolicy.time(duration)}").filter(String::isNotBlank).joinToString("  ·  "),color=Muted,fontSize=(12*scale).sp)
                 }
                 Spacer(Modifier.width((16*scale).dp))
-                Row(horizontalArrangement=Arrangement.spacedBy((12*scale).dp)) { TextControl("player_hud");TextControl("player_exit") }
+                TextControl("player_hud")
             }
             PlaybackControlPanel(position,duration,buffered,playing,chapter,actions,requests,onFocus,onSeek,Modifier.align(Alignment.BottomCenter))
         }
         if(osd.visibility==View.VISIBLE) {
-            Column(Modifier.align(Alignment.TopEnd).padding(top=(96*scale).dp,end=(36*scale).dp).width((320*scale).dp)
-                .testTag("player_hud_panel").background(Color.Black.copy(alpha=.88f),RoundedCornerShape(16.dp)).border(1.dp,CardBorder,RoundedCornerShape(16.dp)).padding((16*scale).dp),verticalArrangement=Arrangement.spacedBy((8*scale).dp)) {
+            Column(Modifier.align(Alignment.TopEnd).padding(top=(96*scale).dp,end=(36*scale).dp).width((640*scale).dp)
+                .testTag("player_hud_panel").background(Color.Black.copy(alpha=.88f),RoundedCornerShape(16.dp)).border(1.dp,CardBorder,RoundedCornerShape(16.dp)).padding((14*scale).dp),verticalArrangement=Arrangement.spacedBy((8*scale).dp)) {
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
                     Text(Tr.text(UiText.PLAYER_HUD_TITLE),color=Cyan,fontWeight=FontWeight.Bold,fontSize=(12*scale).sp)
                     Text("Media3",color=Subtle,fontSize=(10*scale).sp)
                 }
-                hudRows.forEach { (label,value) ->
-                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy((8*scale).dp)) {
-                        Text(label,Modifier.width((88*scale).dp),color=Muted,fontSize=(11*scale).sp)
-                        Text(value,Modifier.weight(1f),color=Paper,fontSize=(11*scale).sp,fontFamily=FontFamily.Monospace)
+                Row(horizontalArrangement=Arrangement.spacedBy((16*scale).dp)) {
+                    hudRows.chunked(((hudRows.size+1)/2).coerceAtLeast(1)).forEach { column ->
+                        Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy((4*scale).dp)) {
+                            column.forEach { (label,value) -> Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy((6*scale).dp)) {
+                                Text(label,Modifier.width((96*scale).dp),color=Muted,fontSize=(10*scale).sp,lineHeight=(12*scale).sp,maxLines=2)
+                                Text(value,Modifier.weight(1f),color=Paper,fontSize=(10*scale).sp,lineHeight=(12*scale).sp,fontFamily=FontFamily.Monospace,maxLines=2,overflow=TextOverflow.Ellipsis)
+                            } }
+                        }
                     }
                 }
             }
@@ -149,7 +183,7 @@ internal data class PlaybackAction(val key: String,val label: String,val enabled
 @Composable private fun PlayerCircleButton(action:PlaybackAction,playing:Boolean,modifier:Modifier,onFocus:()->Unit) {
     val scale=LocalTvScale.current;val primary=action.key=="play_pause";var focused by remember { mutableStateOf(false) };val size=if(primary) 56 else 44
     Surface(onClick=action.action,enabled=action.enabled,modifier=modifier.size((size*scale).dp).testTag(action.key)
-        .semantics { contentDescription=action.label;role=Role.Button }.onFocusChanged { focused=it.isFocused;if(it.isFocused) onFocus() }
+        .semantics { contentDescription=action.label;stateDescription=action.label;role=Role.Button }.onFocusChanged { focused=it.isFocused;if(it.isFocused) onFocus() }
         .shadow(if(focused) (24*scale).dp else 0.dp,CircleShape,clip=false,ambientColor=Cyan.copy(alpha=.35f),spotColor=Cyan.copy(alpha=.35f))
         .border(((if(focused) 2 else 1)*scale).dp,if(focused) Cyan else CardBorder,CircleShape),
         shape=ClickableSurfaceDefaults.shape(CircleShape),border=ClickableSurfaceDefaults.border(focusedBorder=Border.None),scale=ClickableSurfaceDefaults.scale(focusedScale=1.045f),
@@ -164,12 +198,12 @@ internal data class PlaybackAction(val key: String,val label: String,val enabled
 @Composable private fun PlayerControlButton(action:PlaybackAction,modifier:Modifier=Modifier,onFocus:()->Unit) {
     val scale=LocalTvScale.current;var focused by remember { mutableStateOf(false) };val shape=RoundedCornerShape((10*scale).dp)
     // Surface keeps remote focus/click behavior without Button's unrelated minimum size.
-    Surface(onClick=action.action,enabled=action.enabled,modifier=modifier.testTag(action.key).semantics { contentDescription=action.label;role=Role.Button }
+    Surface(onClick=action.action,enabled=action.enabled,modifier=modifier.testTag(action.key).semantics { contentDescription=action.label;stateDescription=action.label;selected=action.selected;role=Role.Button }
         .onFocusChanged { focused=it.isFocused;if(it.isFocused) onFocus() }
         .shadow(if(focused) (24*scale).dp else 0.dp,shape,clip=false,ambientColor=Cyan.copy(alpha=.35f),spotColor=Cyan.copy(alpha=.35f))
         .border(((if(focused) 2 else 1)*scale).dp,if(focused) Cyan else CardBorder,shape),
         shape=ClickableSurfaceDefaults.shape(shape),border=ClickableSurfaceDefaults.border(focusedBorder=Border.None),scale=ClickableSurfaceDefaults.scale(focusedScale=1.045f),
-        colors=ClickableSurfaceDefaults.colors(containerColor=Paper.copy(alpha=.1f),contentColor=Paper,focusedContainerColor=Paper.copy(alpha=.25f),focusedContentColor=Cyan)) {
+        colors=ClickableSurfaceDefaults.colors(containerColor=if(action.selected) Cyan.copy(alpha=.2f) else Paper.copy(alpha=.1f),contentColor=if(action.selected) Cyan else Paper,focusedContainerColor=Paper.copy(alpha=.25f),focusedContentColor=Cyan)) {
         Text(action.label,Modifier.padding(horizontal=(14*scale).dp,vertical=(8*scale).dp),fontSize=(12*scale).sp,lineHeight=(16*scale).sp,
             style=LocalTextStyle.current.copy(lineHeightStyle=LineHeightStyle(LineHeightStyle.Alignment.Center,LineHeightStyle.Trim.None)),maxLines=1,overflow=TextOverflow.Ellipsis)
     }

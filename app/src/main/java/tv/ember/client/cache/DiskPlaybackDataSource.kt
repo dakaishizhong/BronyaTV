@@ -32,7 +32,7 @@ class DiskPlaybackDataSource(
         if (main && count > 0) { position += count; prefetch.advance(position) }
         return count
     }
-    override fun getUri(): Uri? = delegate?.uri
+    override fun getUri(): Uri? = if(main) Uri.parse(videoUrl) else delegate?.uri
     override fun getResponseHeaders(): Map<String, List<String>> = delegate?.responseHeaders ?: emptyMap()
     override fun close() { delegate?.close(); delegate = null }
 }

@@ -4,7 +4,7 @@
 
 An Emby playback client for Android TV. Dark movie backdrops, green remote focus indicators, expanding cards and a collapsible sidebar bring your movies and series to the big screen. Supports Android 6.0 and later, with English and Simplified Chinese interfaces.
 
-[Latest APK: 1.7.1](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.7.1/BronyaTV-1.7.1-release.apk) · [Release notes](https://github.com/dakaishizhong/BronyaTV/releases) · [Build and development guide (Chinese)](docs/DEVELOPMENT.md)
+[Latest APK: 1.7.2](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.7.2/BronyaTV-1.7.2-release.apk) · [Release notes](https://github.com/dakaishizhong/BronyaTV/releases) · [Build and development guide (Chinese)](docs/DEVELOPMENT.md)
 
 ## Features
 
@@ -28,10 +28,10 @@ An Emby playback client for Android TV. Dark movie backdrops, green remote focus
 
 ## Installation and login
 
-Version 1.7.1 uses a new signing key. Uninstall any version up to 1.7.0 before installing 1.7.1, then sign in again. Uninstalling removes the old application data. Future releases using this new key can update 1.7.1. You can also install with ADB after uninstalling the old version:
+1.7.2 uses the same signing key as 1.7.1 and can update it directly. Version 1.7.1 introduced this new signing key. Uninstall any version up to 1.7.0 before installing 1.7.2, then sign in again. Uninstalling removes the old application data. Future releases using this new key can update 1.7.1. You can also install with ADB after uninstalling the old version:
 
 ```bash
-adb install BronyaTV-1.7.1-release.apk
+adb install -r BronyaTV-1.7.2-release.apk
 ```
 
 Enter your server URL, username, and password. HTTPS, custom ports, and reverse proxy paths are supported, for example `https://emby.example.com/emby`. URLs without a scheme use HTTPS. After a successful login, the encrypted session is saved; the password is not stored.
@@ -42,7 +42,7 @@ Choose a version in **Details → Video versions**, then select Play or Resume. 
 
 Use **Settings → Interface & diagnostics → Interface language** to switch between English and Simplified Chinese. The choice persists across restarts; server-provided titles and descriptions keep their original language. Sign-in shows public user profiles, server / username / password fields, and the sign-in action.
 
-Use direction buttons to move focus and OK to open content or choose an action. Press Menu for refresh, filtering, search and favorites. Home and category pages have no top-right action buttons. The player has previous chapter / episode, Play/Pause and next chapter / episode circles, with subtitle, audio and aspect buttons on the right. Play/Pause stays at the horizontal screen center. Up reaches the timeline and then the HUD / exit actions; Down returns to Play/Pause. Playback Menu opens the remaining playback options. Pages use the remote Back key.
+Use direction buttons to move focus and OK to open content or choose an action. Press Menu for refresh, filtering, search and favorites. Home and category pages have no top-right action buttons. The player has previous chapter / episode, Play/Pause and next chapter / episode circles, with subtitle, audio and aspect buttons on the right. Play/Pause stays at the horizontal screen center. Up reaches the timeline and then the HUD toggle; Down returns to Play/Pause. Aspect cycles directly on click. Playback Menu puts track, speed, aspect, subtitle size and parallel receive choices in one panel. There is no exit button; use remote Back. The HUD shows 21 live decoder, CPU/RAM, network, TCP/range and disk-cache measurements. Pages use the remote Back key.
 
 When the control bar is hidden, briefly press Left / Right to preview a seek position. Hold a direction button to advance by the configured long-press step, then release to seek. Press Back to cancel. When the bar is visible, Left / Right selects controls. Fast-forward and rewind buttons are also supported. The defaults are 10 seconds for a short press and 30 seconds per long-press step; adjust them under **Settings → Remote control**.
 
@@ -62,7 +62,7 @@ Title, overview, cast and descriptive version metadata use a separate 24 MiB per
 
 ## Screenshots
 
-These actual emulator screenshots show the Cinema UI built on 1.7.0 before the 1.7.1 version increment. Demo images and users come from the supplied design document; see [example resources](tests/media/CINEMA-REFERENCE.md). Test video is generated from the reference images. Production pages use the connected Emby server's data.
+Player and settings screenshots show 1.7.2; Home, details, sidebar and login retain the Cinema UI baseline captures. Demo images and users come from the supplied design document; see [example resources](tests/media/CINEMA-REFERENCE.md). Test video is generated from the reference images. Production pages use the connected Emby server's data.
 
 | Home | Details |
 | --- | --- |
@@ -70,11 +70,15 @@ These actual emulator screenshots show the Cinema UI built on 1.7.0 before the 1
 
 | Settings | Playback |
 | --- | --- |
-| ![BronyaTV settings](docs/screenshots/cinema-ui/settings.png) | ![BronyaTV playback](docs/screenshots/cinema-ui/player.png) |
+| ![BronyaTV settings](docs/screenshots/player-1.7.2/settings.png) | ![BronyaTV playback](docs/screenshots/player-1.7.2/player.png) |
 
 | Expanded sidebar | Sign in |
 | --- | --- |
 | ![Expanded sidebar](docs/screenshots/cinema-ui/sidebar.png) | ![Sign in](docs/screenshots/cinema-ui/login.png) |
+
+| Playback HUD | Direct playback options |
+| --- | --- |
+| ![Playback HUD](docs/screenshots/player-1.7.2/hud.png) | ![Direct playback options](docs/screenshots/player-1.7.2/options.png) |
 
 ## Development
 

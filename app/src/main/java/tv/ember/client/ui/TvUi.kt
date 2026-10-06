@@ -62,5 +62,10 @@ open class TvActivity: FragmentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
     }
-    fun message(message: String) { Toast.makeText(this,message,Toast.LENGTH_LONG).show() }
+    private var feedbackToast:Toast?=null
+    fun message(message: String) {
+        feedbackToast?.cancel()
+        feedbackToast=Toast.makeText(this,message,Toast.LENGTH_SHORT).also { it.show() }
+    }
+    override fun onStop() { feedbackToast?.cancel();feedbackToast=null;super.onStop() }
 }

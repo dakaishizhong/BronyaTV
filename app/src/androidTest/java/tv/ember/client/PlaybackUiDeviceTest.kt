@@ -51,9 +51,11 @@ class PlaybackUiDeviceTest {
         parameters.zipWithNext().forEach { (left,right) -> assertEquals(10*unit,right.left-left.right,1f) }
         assertEquals(48*unit,surface.right-parameters.last().right,1f)
         assertTrue("Track labels must never overlap transport controls",parameters.first().left-next.right>=20*unit-1f)
-        val hud=bounds("player_hud");val exit=bounds("player_exit")
-        listOf(hud,exit).forEach { assertEquals(36*unit,it.top-surface.top,1f);assertEquals(32*unit,it.height,2f) }
-        assertEquals(36*unit,surface.right-exit.right,1f);assertEquals(12*unit,exit.left-hud.right,1f)
+        val hud=bounds("player_hud")
+        assertEquals(36*unit,hud.top-surface.top,1f)
+        assertEquals(32*unit,hud.height,2f)
+        assertEquals(36*unit,surface.right-hud.right,1f)
+        compose.onNodeWithTag("player_exit").assertDoesNotExist()
         println("Player geometry: screen=${surface.width}x${surface.height}, playCenter=${play.center}, circles=${previous.width}/${play.width}/${next.width}, textHeight=${parameters.first().height}, parameterGap=${parameters[1].left-parameters[0].right}")
         focus("play_pause")
         val focused=bounds("play_pause")
@@ -90,7 +92,7 @@ class PlaybackUiDeviceTest {
             key(KeyEvent.KEYCODE_DPAD_RIGHT);compose.onNodeWithTag("player_audio").assertIsFocused()
             key(KeyEvent.KEYCODE_DPAD_CENTER);ready("dialog_option_0")
             click("dialog_option_1");player { assertTrue(androidx.media3.common.C.TRACK_TYPE_AUDIO in it.trackSelectionParameters.disabledTrackTypes) }
-            focus("player_aspect");key(KeyEvent.KEYCODE_DPAD_CENTER);ready("dialog_option_0");click("dialog_option_1")
+            focus("player_aspect");key(KeyEvent.KEYCODE_DPAD_CENTER);compose.onNodeWithTag("dialog_option_0").assertDoesNotExist()
             assertEquals(4,(context.applicationContext as BronyaApp).settings.resizeMode)
             focus("playback_timeline");var before=0L;player { before=it.currentPosition };key(KeyEvent.KEYCODE_DPAD_RIGHT)
             compose.waitUntil(30000) { var sought=false;player { sought=it.currentPosition>before+3000 };sought }

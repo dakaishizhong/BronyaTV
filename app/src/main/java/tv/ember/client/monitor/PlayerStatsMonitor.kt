@@ -153,13 +153,21 @@ class PlayerStatsMonitor : AnalyticsListener, VideoFrameMetadataListener {
         val renderedFrames=p.videoDecoderCounters?.renderedOutputBufferCount ?: 0
         val total=renderedFrames+dropped
         val audio=audioOutput
+        val now=SystemClock.elapsedRealtime()
+        val bufferingMs=bufferingTotal+if(bufferingAt>0) now-bufferingAt else 0
         return listOf(
             Tr.text(UiText.HUD_VIDEO_FORMAT) to listOf(v?.codecs?.takeIf(String::isNotBlank) ?: source?.codec.orEmpty(),source?.profile.orEmpty(),source?.videoRange.orEmpty()).filter(String::isNotBlank).joinToString(" · "),
             Tr.text(UiText.HUD_RESOLUTION) to if(width>0 && height>0) "${width} × ${height}"+(v?.frameRate?.takeIf { it>0 }?.let { " @ %.3f fps".format(it) } ?: "") else Tr.text(UiText.WAITING_FOR_DIMENSIONS_058),
-            Tr.text(UiText.HUD_BITRATE) to (v?.bitrate?.takeIf { it>0 }?.toLong()?.let(::mbps) ?: mbps(sourceBitrate))+" · NET "+mbps(bytesPerSecond.coerceAtLeast(0)*8),
-            Tr.text(UiText.HUD_AUDIO) to OutputLabels.audio(audio?.encoding ?: 0)+(audio?.let { " · ${it.sampleRate} Hz" } ?: ""),
+            Tr.text(UiText.HUD_BITRATE) to mbps(sourceBitrate)+" / "+"%.2f Mbps".format(bytesPerSecond.coerceAtLeast(0)*8/1_000_000.0),
+            Tr.text(UiText.HUD_AUDIO) to OutputLabels.audio(audio?.encoding ?: 0)+(audio?.let { " · ${it.sampleRate} Hz · ${Integer.bitCount(it.channelConfig)} ch" } ?: ""),
             Tr.text(UiText.HUD_DROPPED) to "$dropped / $total ("+"%.2f%%".format(if(total>0) dropped*100.0/total else 0.0)+")",
-            Tr.text(UiText.HUD_BUFFER) to "${allocatedBytes/1048576} MB ("+"%.1f".format((p.bufferedPosition-p.currentPosition).coerceAtLeast(0)/1000.0)+" s)"
+            Tr.text(UiText.HUD_BUFFER) to "${allocatedBytes/1048576} MiB ("+"%.1f".format((p.bufferedPosition-p.currentPosition).coerceAtLeast(0)/1000.0)+" s)",
+            Tr.text(UiText.HUD_VIDEO_DECODER) to "${decoderMode(videoDecoder)} · $videoDecoder",
+            Tr.text(UiText.HUD_AUDIO_DECODER) to "${decoderMode(audioDecoder)} · $audioDecoder",
+            Tr.text(UiText.HUD_RENDER) to "%.1f fps · %d skipped".format(renderFps,p.videoDecoderCounters?.skippedOutputBufferCount ?: 0),
+            Tr.text(UiText.HUD_COLOR) to OutputLabels.video(frameOutput.transfer,v?.sampleMimeType=="video/dolby-vision",codecMimes[videoDecoder].orEmpty(),rendered),
+            Tr.text(UiText.HUD_STALLS) to "$bufferingCount / "+"%.1f s · %d".format(bufferingMs/1000.0,underruns),
+            Tr.text(UiText.HUD_PLAYER_STATE) to state(p.playbackState)+" · "+"%.2f×".format(p.playbackParameters.speed)
         )
     }
     fun details(p:ExoPlayer,version:MediaVersion):String {

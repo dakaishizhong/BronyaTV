@@ -43,6 +43,7 @@ class TvDialog(context: Context): androidx.activity.ComponentDialog(context) {
     var optionAction: ((TvDialog,Int)->Unit)?=null
     var singleChoice=false
     var sidePanel=false
+    var body: (@Composable () -> Unit)?=null
     var inputLabel: String?=null
     var input by mutableStateOf("")
     var inputError by mutableStateOf("")
@@ -61,6 +62,7 @@ class TvDialog(context: Context): androidx.activity.ComponentDialog(context) {
                     Column(Modifier.fillMaxWidth().padding((24*scale).dp)) {
                         Text(heading,color=Paper,fontSize=(24*scale).sp,lineHeight=(30*scale).sp,fontWeight=androidx.compose.ui.text.font.FontWeight.Medium)
                         Spacer(Modifier.height(12.dp))
+                        body?.invoke()
                         if(options.isNotEmpty()) {
                             LazyColumn(Modifier.fillMaxWidth().weight(1f,false).heightIn(max=(260*scale).dp),state=rememberLazyListState(selected.coerceIn(0,options.lastIndex)),verticalArrangement=Arrangement.spacedBy(7.dp)) {
                                 itemsIndexed(options,key={ i,_-> i }) { i,label ->
@@ -93,7 +95,7 @@ class TvDialog(context: Context): androidx.activity.ComponentDialog(context) {
                         }
                     }
                 }
-                LaunchedEffect(Unit) { if(options.isNotEmpty() || inputLabel!=null || buttons.isNotEmpty()) focus.requestFocus() else if(message.isNotBlank()) messageFocus.requestFocus() }
+                LaunchedEffect(Unit) { if(body==null) { if(options.isNotEmpty() || inputLabel!=null || buttons.isNotEmpty()) focus.requestFocus() else if(message.isNotBlank()) messageFocus.requestFocus() } }
                 LaunchedEffect(messageScroll.maxValue>0) { if(messageScroll.maxValue>0 && options.isEmpty() && inputLabel==null) messageFocus.requestFocus() }
             }
         } })
@@ -105,6 +107,7 @@ class TvDialogBuilder(private val context: Context) {
     private val dialog=TvDialog(context)
     fun setTitle(title: String)=apply { dialog.heading=title }
     fun setSidePanel()=apply { dialog.sidePanel=true }
+    fun setContent(content: @Composable () -> Unit)=apply { dialog.body=content }
     fun setMessage(message: String)=apply { dialog.message=message }
     fun setItems(items: Array<String>,action: (TvDialog,Int)->Unit)=apply { dialog.options=items.toList();dialog.optionAction=action }
     fun setSingleChoiceItems(items: Array<String>,selected: Int,action: (TvDialog,Int)->Unit)=apply { dialog.options=items.toList();dialog.selected=selected;dialog.optionAction=action;dialog.singleChoice=true }

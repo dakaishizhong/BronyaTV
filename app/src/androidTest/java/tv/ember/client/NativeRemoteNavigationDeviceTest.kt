@@ -92,8 +92,7 @@ class NativeRemoteNavigationDeviceTest {
             step(KeyEvent.KEYCODE_DPAD_LEFT,"play_pause")
             step(KeyEvent.KEYCODE_DPAD_UP,"playback_timeline")
             step(KeyEvent.KEYCODE_DPAD_UP,"player_hud")
-            step(KeyEvent.KEYCODE_DPAD_RIGHT,"player_exit")
-            step(KeyEvent.KEYCODE_DPAD_LEFT,"player_hud");capture("player-hud-focus")
+            compose.onNodeWithTag("player_exit").assertDoesNotExist();capture("player-hud-focus")
             step(KeyEvent.KEYCODE_DPAD_CENTER,"player_hud");ready("player_hud_panel")
             step(KeyEvent.KEYCODE_DPAD_CENTER,"player_hud");compose.onNodeWithTag("player_hud_panel").assertDoesNotExist()
             step(KeyEvent.KEYCODE_DPAD_DOWN,"playback_timeline")
@@ -112,11 +111,11 @@ class NativeRemoteNavigationDeviceTest {
             step(KeyEvent.KEYCODE_DPAD_UP,"dialog_option_0")
             step(KeyEvent.KEYCODE_BACK,"player_audio")
             step(KeyEvent.KEYCODE_DPAD_RIGHT,"player_aspect")
-            step(KeyEvent.KEYCODE_DPAD_CENTER,"dialog_option_0")
-            step(KeyEvent.KEYCODE_DPAD_DOWN,"dialog_option_1")
-            step(KeyEvent.KEYCODE_DPAD_DOWN,"dialog_option_2")
-            step(KeyEvent.KEYCODE_DPAD_UP,"dialog_option_1")
-            step(KeyEvent.KEYCODE_BACK,"player_aspect")
+            step(KeyEvent.KEYCODE_DPAD_CENTER,"player_aspect")
+            assertEquals(4,app.settings.resizeMode)
+            compose.onNodeWithTag("dialog_option_0").assertDoesNotExist()
+            step(KeyEvent.KEYCODE_DPAD_CENTER,"player_aspect");assertEquals(3,app.settings.resizeMode)
+            step(KeyEvent.KEYCODE_DPAD_CENTER,"player_aspect");assertEquals(0,app.settings.resizeMode)
             step(KeyEvent.KEYCODE_DPAD_UP,"playback_timeline")
             var before=0L;player { before=it.currentPosition }
             step(KeyEvent.KEYCODE_DPAD_RIGHT,"playback_timeline")
@@ -185,6 +184,12 @@ class NativeRemoteNavigationDeviceTest {
     @Test fun settingsQuickControlsTilesEditorAndSidebarUseDirections() {
         ActivityScenario.launch(SettingsActivity::class.java).use {
             ready("quick_player_INTERNAL");expect("quick_player_INTERNAL")
+            step(KeyEvent.KEYCODE_DPAD_DOWN,"quick_connections_0")
+            step(KeyEvent.KEYCODE_DPAD_RIGHT,"quick_connections_1")
+            step(KeyEvent.KEYCODE_DPAD_RIGHT,"quick_connections_2")
+            step(KeyEvent.KEYCODE_DPAD_CENTER,"quick_connections_2")
+            assertEquals(2,app.settings.streamConnections)
+            compose.onNodeWithTag("quick_connections_2").assertIsSelected()
             step(KeyEvent.KEYCODE_DPAD_DOWN,"quick_autonext")
             step(KeyEvent.KEYCODE_DPAD_RIGHT,"quick_osd")
             step(KeyEvent.KEYCODE_DPAD_LEFT,"quick_autonext")
@@ -200,7 +205,7 @@ class NativeRemoteNavigationDeviceTest {
             step(KeyEvent.KEYCODE_DPAD_UP,"tab0")
             step(KeyEvent.KEYCODE_BACK,"settings_tile_0")
             step(KeyEvent.KEYCODE_DPAD_LEFT,nav(UiText.SETTINGS_268))
-            step(KeyEvent.KEYCODE_DPAD_RIGHT,"settings_tile_0","settings_tile_3")
+            step(KeyEvent.KEYCODE_DPAD_RIGHT,"settings_tile_0")
         }
     }
 }

@@ -3,6 +3,9 @@ package tv.ember.client.network
 data class StreamPlan(val connections: Int, val budgetBytes: Int)
 
 object StreamPolicy {
+    fun isPlaylist(url:String,contentType:String=""):Boolean =
+        url.substringBefore('?').let { it.endsWith(".m3u8",true) || it.endsWith(".mpd",true) } ||
+            contentType.lowercase().let { "mpegurl" in it || "dash+xml" in it }
     fun create(requested: Int, bitrate: Long, heapMax: Long, usedHeap: Long, lowMemory: Boolean, diskBuffering: Boolean = false): StreamPlan {
         require(requested in listOf(0,1,2,4,8))
         // Disk prefetch and foreground fallback can overlap. Each gets half the old RAM budget.

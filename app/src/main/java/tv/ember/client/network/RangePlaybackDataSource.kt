@@ -32,7 +32,7 @@ class RangePlaybackDataSource(private val singleFactory:DataSource.Factory,priva
         val main=dataSpec.uri.toString()==videoUrl
         if(main && !status.rangeUnsupported && status.requestedConnections>1 && dataSpec.httpMethod==DataSpec.HTTP_METHOD_GET && dataSpec.length!=0L &&
             status.budgetBytes >= 65536*(status.requestedConnections+1) &&
-            !videoUrl.substringBefore('?').endsWith(".m3u8",true)) {
+            !StreamPolicy.isPlaylist(videoUrl)) {
             val chunk=(status.budgetBytes/(status.requestedConnections+1)/65536*65536).coerceIn(65536,512*1024)
             val r=ParallelRangeReader(client,videoUrl,headers+dataSpec.httpRequestHeaders,dataSpec.position,dataSpec.length,
                 status.requestedConnections,chunk,::transferred)
@@ -69,7 +69,14 @@ class RangePlaybackDataSource(private val singleFactory:DataSource.Factory,priva
         return try { reader?.read(buffer,offset,length) ?: single?.read(buffer,offset,length) ?: C.RESULT_END_OF_INPUT }
         catch(e:RangeHttpException) { throw httpFailure(e,requireNotNull(spec)) }
     }
-    override fun getUri():Uri?=reader?.resolvedUrl?.let(Uri::parse) ?: single?.uri
+    // Progressive extractors reuse this URI for seeks. Keep the main stream identity
+    // stable after redirects, otherwise later opens bypass the parallel/video path.
+    // Auxiliary manifests still expose their resolved URI for relative segments.
+    override fun getUri():Uri? {
+        val contentType=responseHeaders.entries.firstOrNull { it.key.equals("Content-Type",true) }?.value?.firstOrNull().orEmpty()
+        return if(spec?.uri?.toString()==videoUrl && !StreamPolicy.isPlaylist(videoUrl,contentType)) spec?.uri
+        else reader?.resolvedUrl?.let(Uri::parse) ?: single?.uri
+    }
     override fun getResponseHeaders():Map<String,List<String>> = reader?.responseHeaders ?: single?.responseHeaders ?: emptyMap()
     override fun close() {
         synchronized(transferLock) { if(open) { open=false;transferEnded() } }

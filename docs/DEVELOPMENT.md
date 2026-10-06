@@ -167,3 +167,20 @@ adb shell am instrument -w -r \
 ```
 
 正式签名包与 Debug 包签名不同，使用独立测试模拟器安装。1.7.1 正式包已完成安装、登录与实际播放检查，完整范围见 [发布验证](../releases/v1.7.1/VALIDATION.md)。历史版本脚本保留历史验证用途。
+
+
+## 1.7.2 播放按钮和多路验证
+
+示例服务器继续使用设计文档资源。启动 `tests/mock_emby.py`，安装 `assembleDebug` 与 `assembleDebugAndroidTest` 输出，执行 `adb -s emulator-5556 reverse tcp:8765 tcp:8765` 后：
+
+```sh
+adb -s emulator-5556 shell am instrument -w -r \
+  -e class 'tv.ember.client.PlaybackFunctionalDeviceTest,tv.ember.client.NativeRemoteNavigationDeviceTest#playerAllDirectionsReachEveryControlAndReturnFromPanels,tv.ember.client.NativeRemoteNavigationDeviceTest#settingsQuickControlsTilesEditorAndSidebarUseDirections,tv.ember.client.PlaybackUiDeviceTest#documentControlsOperateTheRealPlayerAndTrackPanels' \
+  -e fixtureServer http://127.0.0.1:8765 -e testLanguage zh \
+  -e captureFolder player-172-remote \
+  tv.ember.client.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+新增功能用例检查实际 Media3 状态、章节和时间轴位置、音轨/字幕禁用与恢复、画幅循环、HUD 开关、同一面板内参数保存、原位置重连接收路数、磁盘预读与重定向后的字节一致性。原生遥控器用例检查主控制和设置的上下左右、Back 与侧栏焦点恢复。`ExperiencePolicyTest` 另覆盖重定向清单的基址分类；`ParallelRangeReaderTest` 覆盖真实限速连接和精确字节。
+
+正式 1.7.2 APK 沿用 1.7.1 私有签名，覆盖升级无需卸载。签名文件不得提交或公开发布。

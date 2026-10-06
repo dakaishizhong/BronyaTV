@@ -122,13 +122,14 @@ class CinemaScreenshotDeviceTest {
                 click("play_pause")
             }
             listOf("player_sources","player_rewind","player_forward","player_diagnostics","player_more").forEach { compose.onNodeWithTag(it).assertDoesNotExist() }
-            listOf("previous_section","next_section","player_subtitles","player_audio","player_aspect","player_hud","player_exit").forEach { compose.onNodeWithTag(it).assertExists() }
+            listOf("previous_section","next_section","player_subtitles","player_audio","player_aspect","player_hud").forEach { compose.onNodeWithTag(it).assertExists() }
+            compose.onNodeWithTag("player_exit").assertDoesNotExist()
             click("player_hud");ready("player_hud_panel")
-            compose.onNodeWithText("视频流格式").assertExists();compose.onNodeWithText("预载缓冲区").assertExists()
+            compose.onNodeWithText("视频流格式").assertExists();compose.onNodeWithText("内存播放缓冲").assertExists()
             capture("player-hud",1000)
             click("player_hud")
             click("player_audio");ready("dialog_option_0");instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
-            click("player_aspect");ready("dialog_option_0");instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            click("player_aspect");compose.onNodeWithTag("dialog_option_0").assertDoesNotExist()
             click("player_subtitles");ready("dialog_option_0");capture("player-subtitles",1000)
         }
         app.settings.osd=false

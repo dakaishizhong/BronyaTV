@@ -9,6 +9,14 @@ import tv.ember.client.settings.BufferPreferences
 
 class ExperiencePolicyTest {
     private val heap=256L*1024*1024
+    @Test fun redirectedManifestsKeepTheirResolvedBaseForRelativeSegments() {
+        assertTrue(StreamPolicy.isPlaylist("https://origin/master.M3U8?token=fixture"))
+        assertTrue(StreamPolicy.isPlaylist("https://origin/stream.mpd?token=fixture"))
+        assertTrue(StreamPolicy.isPlaylist("https://origin/stream", "application/vnd.apple.mpegurl; charset=utf-8"))
+        assertTrue(StreamPolicy.isPlaylist("https://origin/stream", "application/dash+xml"))
+        assertFalse(StreamPolicy.isPlaylist("https://origin/stream.webm?name=master.m3u8","video/webm"))
+        assertFalse(StreamPolicy.isPlaylist("https://origin/stream.mkv","video/x-matroska"))
+    }
     @Test fun autoConnectionsFollowBitrateAndPreserveManualChoice() {
         assertEquals(1,StreamPolicy.create(0,2_000_000,heap,0,false).connections)
         assertEquals(2,StreamPolicy.create(0,8_000_000,heap,0,false).connections)

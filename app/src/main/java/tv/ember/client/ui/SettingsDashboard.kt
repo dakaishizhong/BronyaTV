@@ -31,7 +31,7 @@ internal data class SettingsTile(val title: String,val index: Int,val color: Int
 /** TV settings overview; editing keeps each tile's established setting category. */
 @Composable
 internal fun SettingsDashboard(tiles: List<SettingsTile>,initialFocus: Int,scale: Float,
-                               onFocused: (Int)->Unit,onOpen: (Int)->Unit,onFocusSidebar: ()->Unit,
+                               onFocused: (Int)->Unit,onOpen: (Int)->Unit,onFocusSidebar: ()->Unit,onReturnFocus:(FocusRequester)->Unit={},
                                quickSettings: @Composable ColumnScope.()->Unit={}) {
     val accent=Color(TvUi.accent)
     val text=Color(TvUi.text)
@@ -65,7 +65,7 @@ internal fun SettingsDashboard(tiles: List<SettingsTile>,initialFocus: Int,scale
                                     if(rowIndex>0) up=requests[position-3]
                                     if(position+3<tiles.size) down=requests[position+3]
                                 }
-                                .onFocusChanged { focused=it.isFocused;if(it.isFocused) onFocused(position) }
+                                .onFocusChanged { focused=it.isFocused;if(it.isFocused) { onFocused(position);onReturnFocus(requests[position]) } }
                                 .onPreviewKeyEvent { event ->
                                     if(column==0 && event.type==KeyEventType.KeyDown && event.key==Key.DirectionLeft) {
                                         onFocusSidebar();true

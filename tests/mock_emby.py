@@ -39,6 +39,8 @@ def video(i='demo'):
                 Type='Movie', Overview=film['summary'],
                 ProductionYear=film['year'], Genres=film['genres'], BackdropImageTags=['cinema-reference-v1'], OriginalTitle=film['subtitle'], Studios=[dict(Name=film['studio'])], CommunityRating=float(film['rating'].split()[-1]), People=[dict(Name=film['credit'],Type='Director')], RunTimeTicks=900000000, ImageTags={'Primary':'cinema-reference-v1'},
                 UserData={'PlaybackPositionTicks':120000000 if i=='demo' else 0}, MediaSources=sources(i))
+    if state.get('chapters'):
+        item['Chapters']=[dict(Name=name,StartPositionTicks=seconds*10000000) for seconds,name in [(0,'开场'),(20,'沙丘'),(40,'终章')]]
     if film.get('cast'):
         item['People']=[dict(Id='cast'+str(n+1),Name=p['name'],Type='Director' if n==0 else 'Actor',Role=p['role'],PrimaryImageTag='cinema-reference-v1') for n,p in enumerate(film['cast'])]
     if i.startswith('ep'):
@@ -113,6 +115,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 state['missing_source']=q.get('missing_source',[''])[0]
                 state['view_type']=q.get('view_type',['CollectionFolder'])[0]
                 state['small_catalog']=q.get('small_catalog',['0'])[0]=='1'
+                state['chapters']=q.get('chapters',['0'])[0]=='1'
+                state['redirect_video']=q.get('redirect_video',['0'])[0]=='1'
+                state['range_delay']=min(.2,max(0,float(q.get('range_delay',['0'])[0])))
                 state['slow_search']=q.get('slow_search',[''])[0]
                 if q.get('reset_search',['0'])[0]=='1': state['searches']=[]
             self.respond({'ok':True}); return
@@ -182,8 +187,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             with lock: fail_subtitle=state['subtitle_fail']
             if fail_subtitle:self.respond({},fail_subtitle);return
             self.respond((ASSETS/'subtitle.srt').read_bytes(),kind='text/plain'); return
-        if '/Videos/' in path and ('/stream.' in path or '/original.' in path):
+        if '/Videos/' in path and ('/stream.' in path or '/original.' in path) or path=='/media/redirected.webm':
             source=q.get('MediaSourceId',['mp4'])[0]
+            if state.get('redirect_video') and path.startswith('/Videos/') and source=='vp8':
+                self.send_response(302);self.send_header('Location','/media/redirected.webm?MediaSourceId=vp8&sig=cinema-reference');self.send_header('Content-Length','0');self.end_headers();return
             if source in ('queryauth','refreshurl') and q.get('api_key',[''])[0]!='fixture-token':self.respond({},403);return
             if source=='refreshurl' and q.get('generation',['0'])[0]=='1':self.respond({},410);return
             if source=='originalfallback':
@@ -209,6 +216,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             if self.command=='HEAD': return
             try:
+                time.sleep(state.get('range_delay',0))
                 with file.open('rb') as f:
                     f.seek(start); remaining=end-start+1
                     while remaining:

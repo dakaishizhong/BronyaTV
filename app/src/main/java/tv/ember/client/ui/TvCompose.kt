@@ -167,7 +167,7 @@ fun TvActivity.tvContent(content: @Composable ()->Unit) {
     }
 }
 @Composable fun TvShell(selected: String,onNavigate: (String)->Unit,backdrop: VideoItem?=null,
-                        homeRequester: FocusRequester?=null,onRailFocused: (String)->Unit={},content: @Composable ()->Unit) {
+                        homeRequester: FocusRequester?=null,onRailFocused: (String)->Unit={},onContentFocus:(()->Boolean)?=null,content: @Composable ()->Unit) {
     val context=LocalContext.current;val app=context.applicationContext as BronyaApp;val session=app.sessions.load()
     val scale=LocalTvScale.current
     val names=listOf(UiText.HOME_267,UiText.MOVIES_316,UiText.SERIES_317,UiText.SETTINGS_268)
@@ -186,7 +186,9 @@ fun TvActivity.tvContent(content: @Composable ()->Unit) {
             Column(verticalArrangement=Arrangement.spacedBy((8*scale).dp)) {
                 labels.forEachIndexed { i,label ->
                     RailAction(label,listOf(TvGlyph.Home,TvGlyph.Movies,TvGlyph.Series,TvGlyph.Settings)[i],selected==label,expanded,
-                        Modifier.focusRequester(if(i==0 && homeRequester!=null) homeRequester else requests[i]),
+                        Modifier.focusRequester(if(i==0 && homeRequester!=null) homeRequester else requests[i]).onPreviewKeyEvent { event ->
+                            event.key==Key.DirectionRight && event.type==KeyEventType.KeyDown && onContentFocus?.invoke()==true
+                        },
                         { onRailFocused(label) }) { onNavigate(label) }
                 }
             }

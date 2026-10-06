@@ -23,6 +23,7 @@ class SettingsActivity: TvActivity() {
     private var category by mutableIntStateOf(-1)
     private var revision by mutableIntStateOf(0)
     private var dashboardFocus=-1
+    private var contentReturn:FocusRequester?=null
     private var lastFocus=""
     private var editorFirst=0
     private var editorOffset=0
@@ -34,7 +35,7 @@ class SettingsActivity: TvActivity() {
         category=savedInstanceState?.getInt("category",-1) ?: -1;dashboardFocus=savedInstanceState?.getInt("dashboard",-1) ?: -1
         lastFocus=savedInstanceState?.getString("focus").orEmpty();editorFirst=savedInstanceState?.getInt("first",0) ?: 0;editorOffset=savedInstanceState?.getInt("offset",0) ?: 0
         tvContent {
-            TvShell(Tr.text(UiText.SETTINGS_268),::navigate,MediaUi.backdropItem) {
+            TvShell(Tr.text(UiText.SETTINGS_268),::navigate,MediaUi.backdropItem,onContentFocus={ contentReturn?.let { it.requestFocus();true } ?: false }) {
                 if(category<0) Dashboard() else key(category) { Editor() }
             }
         }
@@ -57,7 +58,7 @@ class SettingsActivity: TvActivity() {
             LazyRow(horizontalArrangement=Arrangement.spacedBy(7.dp),contentPadding=PaddingValues(vertical=12.dp)) {
                 itemsIndexed(listOf(UiText.PLAYBACK_333,UiText.REMOTE_CONTROL_334,UiText.NETWORK_CACHE_335,UiText.AUDIO_SUBTITLES_336,UiText.ACCOUNT_INFO_337),key={ i,_-> i }) { i,label ->
                     val request=remember { FocusRequester() };requests["tab$i"]=request
-                    TvAction(Tr.text(label),"tab$i",Modifier.focusRequester(request),selected=category==i,onFocus={ lastFocus="tab$i" }) { category=i;lastFocus="tab$i";editorFirst=0;editorOffset=0;refreshUsage() }
+                    TvAction(Tr.text(label),"tab$i",Modifier.focusRequester(request),selected=category==i,onFocus={ lastFocus="tab$i";contentReturn=request }) { category=i;lastFocus="tab$i";editorFirst=0;editorOffset=0;refreshUsage() }
                 }
             }
             LazyColumn(Modifier.weight(1f).fillMaxWidth(),state=state,contentPadding=PaddingValues(3.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -68,7 +69,7 @@ class SettingsActivity: TvActivity() {
                         DisposableEffect(entry.key) { requests[entry.key]=request;onDispose { if(requests[entry.key]===request) requests.remove(entry.key) } }
                         TvAction(entry.label+"    "+entry.value,entry.key,Modifier.fillMaxWidth().focusRequester(request)
                             .focusProperties { if(entry.key==entries.firstOrNull { it.action!=null }?.key) up=requests["tab$category"] ?: FocusRequester.Default },
-                            onFocus={ lastFocus=entry.key },onClick=entry.action)
+                            onFocus={ lastFocus=entry.key;contentReturn=request },onClick=entry.action)
                     }
                 }
             }
@@ -204,12 +205,13 @@ class SettingsActivity: TvActivity() {
         )
         val rail=LocalRailFocus.current
         val scale=LocalTvScale.current;val first=remember { FocusRequester() }
-        SettingsDashboard(tiles,dashboardFocus,scale,onFocused={ dashboardFocus=it },onOpen={ index -> category=index;lastFocus="tab$index";editorFirst=0;editorOffset=0;refreshUsage() },onFocusSidebar=rail) {
+        SettingsDashboard(tiles,dashboardFocus,scale,onFocused={ dashboardFocus=it },onOpen={ index -> category=index;lastFocus="tab$index";editorFirst=0;editorOffset=0;refreshUsage() },onFocusSidebar=rail,onReturnFocus={ contentReturn=it }) {
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy((20*scale).dp)) {
                 QuickSettingBlock(Tr.text(UiText.DEFAULT_PLAYER_338),Modifier.weight(1f)) {
                     Row(horizontalArrangement=Arrangement.spacedBy((6*scale).dp)) {
                         PlayerChoice.entries.take(3).forEachIndexed { i,value ->
-                            TvAction(value.label,"quick_player_${value.name}",Modifier.weight(1f).then(if(i==0) Modifier.focusRequester(first) else Modifier),selected=p.player==value) {
+                            val request=if(i==0) first else remember(value) { FocusRequester() }
+                            TvAction(value.label,"quick_player_${value.name}",Modifier.weight(1f).focusRequester(request),selected=p.player==value,onFocus={ contentReturn=request }) {
                                 if(ExternalPlayers.available(this@SettingsActivity,value)) { p.player=value;revision++ }
                                 else message(Tr.text(UiText.INSTALL_FIRST_339,value.label))
                             }
@@ -219,15 +221,28 @@ class SettingsActivity: TvActivity() {
                 QuickSettingBlock(Tr.text(UiText.MEMORY_CACHE_LIMIT_354),Modifier.weight(1f)) {
                     LazyRow(horizontalArrangement=Arrangement.spacedBy((6*scale).dp)) {
                         items((listOf(0,64,128,256,512)+p.bufferMb).distinct()) { size ->
-                            TvAction(if(size==0) Tr.text(UiText.AUTO_220) else "$size MB","quick_buffer_$size",selected=p.bufferMb==size) { p.bufferMb=size;revision++ }
+                            val request=remember(size) { FocusRequester() }
+                            TvAction(if(size==0) Tr.text(UiText.AUTO_220) else "$size MB","quick_buffer_$size",Modifier.focusRequester(request),selected=p.bufferMb==size,onFocus={ contentReturn=request }) { p.bufferMb=size;revision++ }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height((16*scale).dp))
+            QuickSettingBlock(Tr.text(UiText.PARALLEL_RECEIVE_345),Modifier.fillMaxWidth()) {
+                Row(horizontalArrangement=Arrangement.spacedBy((6*scale).dp)) {
+                    listOf(0,1,2,4,8).forEach { count ->
+                        val request=remember(count) { FocusRequester() }
+                        TvAction(if(count==0) Tr.text(UiText.AUTO_220) else Tr.text(UiText.CONNECTIONS_221,count),"quick_connections_$count",Modifier.focusRequester(request),selected=p.streamConnections==count,onFocus={ contentReturn=request }) {
+                            p.streamConnections=count;revision++;message(Tr.text(UiText.SETTINGS_NEXT_PLAY))
                         }
                     }
                 }
             }
             Spacer(Modifier.height((16*scale).dp))
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy((20*scale).dp)) {
-                QuickSettingToggle(Tr.text(UiText.AUTO_PLAY_NEXT_EPISODE_340),p.autoNextEpisode,"quick_autonext",Modifier.weight(1f)) { p.autoNextEpisode=!p.autoNextEpisode;revision++ }
-                QuickSettingToggle(Tr.text(UiText.PERFORMANCE_OVERLAY_399),p.osd,"quick_osd",Modifier.weight(1f)) { p.osd=!p.osd;revision++ }
+                val autoFocus=remember { FocusRequester() };val osdFocus=remember { FocusRequester() }
+                QuickSettingToggle(Tr.text(UiText.AUTO_PLAY_NEXT_EPISODE_340),p.autoNextEpisode,"quick_autonext",Modifier.weight(1f).focusRequester(autoFocus).onFocusChanged { if(it.isFocused) contentReturn=autoFocus }) { p.autoNextEpisode=!p.autoNextEpisode;revision++ }
+                QuickSettingToggle(Tr.text(UiText.PERFORMANCE_OVERLAY_399),p.osd,"quick_osd",Modifier.weight(1f).focusRequester(osdFocus).onFocusChanged { if(it.isFocused) contentReturn=osdFocus }) { p.osd=!p.osd;revision++ }
             }
         }
         LaunchedEffect(Unit) { if(dashboardFocus<0) first.requestFocus() }
