@@ -584,5 +584,6 @@
     "Physical TV decoding, HDR/Dolby Vision/audio/subtitle output, public CDN/TLS routing and device RSS were not measured.",
     "These are repeatable local HTTP/TCP throughput and integrity simulations, not evidence of a specific television or provider achieving the same Mbps.",
     "The baseline 50 Mbps fixture already had zero underruns; the fixture does not reproduce every reported public-network condition. It exposes higher-rate stalls and separately proves the completed-queue scheduling defect."
-  ]
+  ],
+  "sourceCommit": "f3a54ef4e5e7f928058103d91614623986d74ba3"
 }

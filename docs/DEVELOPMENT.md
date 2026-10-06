@@ -11,6 +11,8 @@ bash scripts/build_release.sh
 
 签名文件由构建脚本在本地准备，不提交到仓库。发布包启用 R8 和资源压缩。`signing.properties` 指定本地签名密钥；已有发布升级应沿用原密钥。应用内部包名保持 `tv.ember.client`，对外名称为 BronyaTV。
 
+1.7.4 使用新的正式签名；更早版本需要先卸载。后续版本沿用 1.7.4 密钥。请离线保存私有签名备份，密钥及密码不得提交源码或上传 GitHub Releases。
+
 TrueHD / MLP / DTS 的音频扩展包含已构建的四种 ABI 原生库，普通 APK 构建不需要 NDK。原生库采用 Media3 1.11.1 官方音频解码器和 FFmpeg 6.1.4，仅编译 TrueHD、MLP 与 DTS 的 `dca` 解码器；视频继续使用设备解码器。重新编译原生库时运行 `bash scripts/build_audio_decoders.sh`。脚本、NDK 版本、对应源码和许可见 [解码模块](../decoder-ffmpeg/README.md)。此兼容路径输出 PCM，不保留 TrueHD Atmos 或 DTS:X 对象元数据。
 
 ## 测试
@@ -50,11 +52,11 @@ adb shell am instrument -w -r \
 
 PlaybackInfo 提供片源版本和地址。接收服务端 URL、签名参数及必要请求头；静态原文件接口使用影片 ID 和 MediaSourceId。跨域重定向移除服务器认证头。分段接收使用独立 HTTP/1.1 连接，校验 Range、总长度及服务端文件版本信息，按序交给 Media3；不支持 Range 时回退单连接。协议参考 [Emby PlaybackInfo](https://dev.emby.media/reference/RestAPI/MediaInfoService/postItemsByIdPlaybackinfo.html)。
 
-原文件磁盘缓存使用全局单实例 SimpleCache、SQLite 索引和可调整容量的 LRU 淘汰器。独立预取线程按播放读取位置提前写入，单次请求最多 8 MiB，以 2 MiB 文件片段提交；前台 CacheDataSource 只读取缓存，缺失部分继续走原网络取流，避免前台对未下载文件的长期写锁阻塞预取。预取和前台使用独立 OkHttp Dispatcher，取消跳转前的预取不会取消当前播放。播放器关闭、切集或换源时先停止预取，再释放播放器。
+原文件磁盘缓存使用全局单实例 SimpleCache、SQLite 索引和可调整容量的 LRU 淘汰器。前台与提前缓存共用 Range 调度器和下载数据；`DiskPrefetcher` 负责异步存储，不再另建下载器。前台不等待磁盘写锁，缺失或锁定部分立即读取网络；已有验证通过的缓存优先复用。后台只有前台未使用的连接和磁盘提前窗口空间时才领取任务，前台需求增加时停止领取新任务，当前任务可完成后暂停。seek、切集和换源立即取消旧位置请求，并使旧代次写入失效。
 
 提前量按服务器码率和设置的秒数计算，最多占磁盘容量的四分之三；未知码率使用 64 MiB。自动容量最多 512 MiB，按可回收缓存与剩余空间缩减，配置时保留 256 MiB，写入时空间低于 64 MiB 停止预取。预取失败会退避，播放仍可读取缓存或原网络；不支持 Range 的服务不持续预取。HLS / DASH 列表不使用此原文件缓存。
 
-磁盘模式下普通码率的自动内存目标为最多 64 MiB，48 Mbps 及以上为最多 128 MiB，均受堆余量限制。分别限制前台与预取的分段接收队列，避免各自占用一整份内存预算。自动连接数在高码率原文件上可选 8 路；手动设置仍优先。自动预缓冲与重缓冲在高码率、非低内存状态下提高至至少 5 秒。每次创建播放器使用独立缓存标识，标识不包含账号或签名链接；不跨播放器重建复用文件，旧缓存由 LRU 或手动清理移除。
+磁盘模式下普通码率的自动内存目标为最多 64 MiB，48 Mbps 及以上为最多 128 MiB，均受堆余量限制。Range 数据和保留的磁盘写入副本共用最多 32 MiB 预算；分片和前向窗口根据码率、连接数及可用堆空间缩减，低内存设备降为单路。自动连接数在高码率原文件上可选 8 路；手动设置仍优先。自动预缓冲与重缓冲在高码率、非低内存状态下提高至至少 5 秒。每次创建播放器使用独立缓存标识，标识不包含账号或签名链接；不跨播放器重建复用文件，旧缓存由 LRU 或手动清理移除。
 
 剧集相邻项从服务器的 Shows/{id}/Episodes 接口获取，保留服务端顺序并支持跨季，不使用影片名称猜测下一集。[Emby 剧集接口](https://dev.emby.media/reference/RestAPI/TvShowsService/getShowsByIdEpisodes.html)
 

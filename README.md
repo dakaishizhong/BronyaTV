@@ -4,9 +4,9 @@
 
 An Emby playback client for Android TV. Dark movie backdrops, green remote focus indicators, expanding cards and a collapsible sidebar bring your movies and series to the big screen. Supports Android 6.0 and later, with English and Simplified Chinese interfaces.
 
-[Latest APK: 1.7.3](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.7.3/BronyaTV-1.7.3-release.apk) · [Release notes](https://github.com/dakaishizhong/BronyaTV/releases) · [Build and development guide (Chinese)](docs/DEVELOPMENT.md)
+[Latest APK: 1.7.4](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.7.4/BronyaTV-1.7.4-release.apk) · [Release notes](https://github.com/dakaishizhong/BronyaTV/releases) · [Build and development guide (Chinese)](docs/DEVELOPMENT.md)
 
-The source branch includes the range-pipeline improvements described below. The published 1.7.3 APK predates these changes.
+Version 1.7.4 includes the range-pipeline improvements described below and uses a new signing key. See the upgrade instructions before installing.
 
 ## Features
 
@@ -30,10 +30,10 @@ The source branch includes the range-pipeline improvements described below. The 
 
 ## Installation and login
 
-1.7.3 uses the same signing key as 1.7.1 and 1.7.2 and can update them directly. Version 1.7.1 introduced this new signing key. Uninstall any version up to 1.7.0 before installing 1.7.3, then sign in again. Uninstalling removes the old application data. Future releases using this new key can update 1.7.1. You can also install with ADB after uninstalling the old version:
+1.7.4 uses a new signing key. Uninstall any earlier version before installing 1.7.4, then sign in again. Uninstalling removes the old application's local login, settings and cache. Future releases using the 1.7.4 key can update this version directly. After uninstalling the earlier version, you can also install with ADB:
 
 ```bash
-adb install -r BronyaTV-1.7.3-release.apk
+adb install -r BronyaTV-1.7.4-release.apk
 ```
 
 Enter your server URL, username, and password. HTTPS, custom ports, and reverse proxy paths are supported, for example `https://emby.example.com/emby`. URLs without a scheme use HTTPS. After a successful login, the encrypted session is saved; the password is not stored.

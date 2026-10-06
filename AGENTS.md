@@ -1,3 +1,9 @@
+# Git 提交署名
+
+- 后续 Git 提交的作者与提交者均使用 `dakaishizhong`。
+- 邮箱使用 GitHub 隐私地址 `86052564+dakaishizhong@users.noreply.github.com`。
+- 正式 APK 沿用 1.7.4 的签名密钥；私有签名文件及备份不进入公开源码或发行附件。
+
 # 示例资源约定
 
 用户要求：后续新建的示例、演示数据、UI 预览和截图，统一使用其提供的《Emby_Android_TV_Compose_完整复刻工程实现.md》中的资源。

@@ -4,9 +4,9 @@
 
 面向 Android TV 的 Emby 播放客户端。深色影片背景、翠绿遥控器焦点、获焦展开卡片和可折叠侧栏，让电影与剧集更适合大屏观看。支持 Android 6.0 及以上系统。
 
-[最新 APK：1.7.3](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.7.3/BronyaTV-1.7.3-release.apk) · [版本发布说明](https://github.com/dakaishizhong/BronyaTV/releases) · [构建与开发](docs/DEVELOPMENT.md)
+[最新 APK：1.7.4](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.7.4/BronyaTV-1.7.4-release.apk) · [版本发布说明](https://github.com/dakaishizhong/BronyaTV/releases) · [构建与开发](docs/DEVELOPMENT.md)
 
-源码分支已包含下述 Range 下载管线改进；现有 1.7.3 发布 APK 尚未包含这些改动。
+1.7.4 已包含下述 Range 下载管线改进，并使用新签名。安装前请先阅读升级说明。
 
 ## 功能
 
@@ -30,10 +30,10 @@
 
 ## 安装与登录
 
-1.7.3 与 1.7.1、1.7.2 沿用同一签名，可直接覆盖升级。1.7.1 起使用新的签名密钥。从 1.7.0 或更早版本迁移时，需要先卸载旧版，再安装 1.7.3 并重新登录；卸载会删除旧版应用数据。后续沿用此新密钥的版本可覆盖升级。卸载旧版后也可使用 ADB 安装：
+1.7.4 使用新的签名密钥。从任何旧版本升级时，需要先卸载旧版，再安装 1.7.4 并重新登录；卸载会删除旧版本地登录、设置和缓存。后续沿用 1.7.4 密钥的版本可直接覆盖升级。卸载旧版后也可使用 ADB 安装：
 
 ```bash
-adb install -r BronyaTV-1.7.3-release.apk
+adb install -r BronyaTV-1.7.4-release.apk
 ```
 
 输入服务器地址、账号和密码。地址支持 HTTPS、自定义端口和反向代理路径，例如 `https://emby.example.com/emby`。省略协议时使用 HTTPS。登录成功后会自动保存加密会话，密码不保存。
