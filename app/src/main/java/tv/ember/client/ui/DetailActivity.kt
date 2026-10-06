@@ -13,6 +13,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -87,6 +90,7 @@ class DetailActivity: TvActivity() {
                 val info=app.api.playbackInfo(s,video.id,sourceId)
                 val source=info.versions.firstOrNull { it.id==sourceId } ?: error(Tr.text(UiText.VERSION_UNAVAILABLE))
                 val spec=app.api.playbackSpec(s,video.id,source,info.playSessionId)
+                if(isFinishing || !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) return@launch
                 if(choice==PlayerChoice.INTERNAL) {
                     app.launches.put(s,video,spec)
                     startActivity(Intent(this@DetailActivity,PlaybackActivity::class.java).putExtra("item_id",video.id).putExtra("source_id",source.id).putExtra("position_ms",positionMs))
@@ -104,8 +108,12 @@ class DetailActivity: TvActivity() {
     @Composable private fun Screen() {
         val s=app.sessions.load();val video=item;val scale=LocalTvScale.current
         val scroll=rememberLazyListState(detailFirst,detailOffset)
+        val navigator=rememberTvFocusNavigator()
         val versionScroll=rememberLazyListState();val relatedScroll=rememberLazyListState()
-        TvShell(Tr.text(UiText.HOME_267),::navigateTo,video) {
+        TvShell(Tr.text(UiText.HOME_267),::navigateTo,video,onContentFocus={
+            focusTargets[focusedControl]?.let { it.requestFocus();true } ?: false
+        }) {
+            val rail=LocalRailFocus.current
             LazyColumn(Modifier.fillMaxSize().padding(horizontal=(40*scale).dp),state=scroll,contentPadding=PaddingValues(vertical=(18*scale).dp),verticalArrangement=Arrangement.spacedBy((8*scale).dp)) {
                 item(key="top") { Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End) { TvClock() } }
                 if(video==null) item(key="loading") {
@@ -121,13 +129,24 @@ class DetailActivity: TvActivity() {
                     }
                     item(key="overview") { Text(video.overview.ifBlank { Tr.text(UiText.NO_OVERVIEW_PROVIDED_BY_THE_SERVER_250) },Modifier.widthIn(max=(530*scale).dp),color=Muted,fontSize=(14*scale).sp,lineHeight=(22*scale).sp,maxLines=3,overflow=TextOverflow.Ellipsis) }
                     item(key="actions") {
-                        TvAction(Tr.text(UiText.PLAY_NOW),"detail_play",control("detail_play"),primary=true,enabled=!busy && selected.isNotBlank(),large=true) { play(video.resumeTicks/10000) }
+                        TvAction(Tr.text(UiText.PLAY_NOW),"detail_play",control("detail_play").focusProperties { down=focusTargets["version_${versions.firstOrNull()?.id}"] ?: FocusRequester.Default },primary=true,enabled=!busy && selected.isNotBlank(),large=true) { play(video.resumeTicks/10000) }
                     }
                     item(key="versions") {
                         Spacer(Modifier.height((16*scale).dp));Section(Tr.text(UiText.MEDIA_VERSIONS))
-                        LazyRow(state=versionScroll,horizontalArrangement=Arrangement.spacedBy((16*scale).dp),contentPadding=PaddingValues(vertical=(12*scale).dp,horizontal=(4*scale).dp)) {
+                        LazyRow(Modifier.focusGroup(),state=versionScroll,horizontalArrangement=Arrangement.spacedBy((16*scale).dp),contentPadding=PaddingValues(vertical=(12*scale).dp,horizontal=(4*scale).dp)) {
                             items(versions,key={ it.id }) { version ->
-                                VersionCard(version,selected==version.id,Modifier.width((260*scale).dp).then(control("version_${version.id}"))) { selected=version.id;error="" }
+                                VersionCard(version,selected==version.id,Modifier.width((260*scale).dp).then(control("version_${version.id}")).tvDirections { direction ->
+                                    val index=versions.indexOfFirst { it.id==version.id }
+                                    when(direction) {
+                                        Key.DirectionUp -> { navigator.request("detail_play",focusTargets) { scroll.scrollToItem(3) };true }
+                                        Key.DirectionLeft,Key.DirectionRight -> {
+                                            val target=index+if(direction==Key.DirectionLeft) -1 else 1
+                                            if(target<0) return@tvDirections false
+                                            versions.getOrNull(target)?.let { navigator.request("version_${it.id}",focusTargets) { versionScroll.scrollToItem(target) } };true
+                                        }
+                                        else -> false
+                                    }
+                                }) { selected=version.id;error="" }
                             }
                         }
                     }
@@ -149,8 +168,24 @@ class DetailActivity: TvActivity() {
                     }
                     if(related.isNotEmpty() && s!=null) item(key="related") {
                         Section(Tr.text(UiText.RELATED_TITLES_266))
-                        LazyRow(state=relatedScroll,horizontalArrangement=Arrangement.spacedBy((8*scale).dp),contentPadding=PaddingValues(3.dp)) {
-                            items(related,key={ it.id }) { other -> MediaCard(app,s,other,control("related_${other.id}"),morph=true) { startActivity(Intent(this@DetailActivity,DetailActivity::class.java).putExtra("item_id",other.id)) } }
+                        LazyRow(Modifier.focusGroup(),state=relatedScroll,horizontalArrangement=Arrangement.spacedBy((8*scale).dp),contentPadding=PaddingValues(3.dp)) {
+                            items(related,key={ it.id }) { other -> MediaCard(app,s,other,control("related_${other.id}").tvDirections { direction ->
+                                val index=related.indexOfFirst { it.id==other.id }
+                                when(direction) {
+                                    Key.DirectionLeft,Key.DirectionRight -> {
+                                        val target=index+if(direction==Key.DirectionLeft) -1 else 1
+                                        if(target<0) rail() else related.getOrNull(target)?.let { navigator.request("related_${it.id}",focusTargets) { relatedScroll.scrollToItem(target) } }
+                                        true
+                                    }
+                                    Key.DirectionUp -> {
+                                        val target=versions.firstOrNull { it.id==selected } ?: versions.firstOrNull()
+                                        if(target!=null) navigator.request("version_${target.id}",focusTargets) { scroll.scrollToItem(4);versionScroll.scrollToItem(versions.indexOf(target)) }
+                                        true
+                                    }
+                                    Key.DirectionDown -> true
+                                    else -> false
+                                }
+                            },morph=true) { startActivity(Intent(this@DetailActivity,DetailActivity::class.java).putExtra("item_id",other.id)) } }
                         }
                     }
                 }

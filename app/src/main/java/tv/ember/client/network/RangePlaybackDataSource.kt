@@ -53,7 +53,7 @@ class RangePlaybackDataSource(private val singleFactory:DataSource.Factory,priva
         spec=dataSpec;transferInitializing(dataSpec)
         synchronized(transferLock) { open=true;transferStarted(dataSpec) }
         val main=dataSpec.uri.toString()==videoUrl
-        if(main && !status.rangeUnsupported && status.requestedConnections>1 && dataSpec.httpMethod==DataSpec.HTTP_METHOD_GET && dataSpec.length!=0L &&
+        if(main && !status.rangeUnsupported && (status.requestedConnections>1 || status.store!=null) && dataSpec.httpMethod==DataSpec.HTTP_METHOD_GET && dataSpec.length!=0L &&
             status.aheadWindowBytes >= status.chunkBytes &&
             !StreamPolicy.isPlaylist(videoUrl)) {
             val r=ParallelRangeReader(client,videoUrl,headers+dataSpec.httpRequestHeaders,dataSpec.position,dataSpec.length,

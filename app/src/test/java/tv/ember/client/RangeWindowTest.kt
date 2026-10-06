@@ -95,4 +95,85 @@ class RangeWindowTest {
             }
         }
     }
+    @Test(timeout=30000) fun interruptedBodiesResumeOnlyTheirMissingSuffixThroughTheSameScheduler() {
+        for(diskEnabled in listOf(false,true)) MockWebServer().use { server ->
+            val interrupted=java.util.concurrent.atomic.AtomicBoolean()
+            val starts=java.util.concurrent.CopyOnWriteArrayList<Long>()
+            server.dispatcher=object:Dispatcher() {
+                override fun dispatch(request:RecordedRequest):MockResponse {
+                    val offset=request.getHeader("Range")!!.removePrefix("bytes=").substringBefore('-').toLong()
+                    starts.add(offset)
+                    return reply(request).apply {
+                        if(offset==256*1024L && interrupted.compareAndSet(false,true)) setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY)
+                    }
+                }
+            }
+            val http=client();val store=if(diskEnabled) FileRangeStore(chunk,8L*1048576) else null
+            try {
+                ParallelRangeReader(http,server.url("/file").toString(),emptyMap(),0,-1,4,chunk,4*1048576,store) {}.use { reader ->
+                    reader.open();assertArrayEquals(MessageDigest.getInstance("SHA-256").digest(source),digest(reader))
+                    assertEquals(0,reader.duplicatedRangeRequests.get())
+                    assertEquals(0,reader.cancelledForeground.get());assertEquals(0,reader.cancelledBackground.get())
+                }
+                assertTrue(interrupted.get())
+                assertEquals("the completed prefix must not be requested again",1,starts.count { it==256*1024L })
+                assertTrue("partial body retry owns only the missing suffix",starts.any { it in (256*1024L+1) until 512*1024L })
+            } finally { store?.close();http.connectionPool.evictAll();http.dispatcher.executorService.shutdown() }
+        }
+    }
+    @Test(timeout=30000) fun slowerNetworkTemporary503AndRecoveryKeepOtherLanesAliveAndBytesExact() {
+        MockWebServer().use { server ->
+            val failures=java.util.concurrent.atomic.AtomicInteger()
+            val peak=java.util.concurrent.atomic.AtomicInteger()
+            val live=java.util.concurrent.atomic.AtomicInteger()
+            server.dispatcher=object:Dispatcher() {
+                override fun dispatch(request:RecordedRequest):MockResponse {
+                    val offset=request.getHeader("Range")!!.removePrefix("bytes=").substringBefore('-').toLong()
+                    if(offset==256*1024L && failures.incrementAndGet()<=2) return MockResponse().setResponseCode(503)
+                    return reply(request).apply { if(offset in (2*1048576L)..(6*1048576L)) throttleBody(32768,20,TimeUnit.MILLISECONDS) }
+                }
+            }
+            val http=client().newBuilder().eventListener(object:EventListener() {
+                override fun connectionAcquired(call:Call,connection:Connection) { val count=live.incrementAndGet();peak.updateAndGet { maxOf(it,count) } }
+                override fun connectionReleased(call:Call,connection:Connection) { live.decrementAndGet() }
+            }).build()
+            FileRangeStore(chunk,8L*1048576).use { store ->
+                ParallelRangeReader(http,server.url("/file").toString(),emptyMap(),0,-1,4,chunk,4*1048576,store) {}.use { reader ->
+                    reader.open();assertArrayEquals(MessageDigest.getInstance("SHA-256").digest(source),digest(reader))
+                    assertEquals(0,reader.cancelledForeground.get());assertEquals(0,reader.cancelledBackground.get())
+                    assertEquals(0,reader.duplicatedRangeRequests.get());assertTrue(reader.bufferedBytes.get()<=4*1048576)
+                }
+            }
+            assertEquals(3,failures.get());assertTrue(peak.get() in 2..4)
+            http.connectionPool.evictAll();http.dispatcher.executorService.shutdown()
+        }
+    }
+    @Test(timeout=30000) fun loadingDemandNeverTurnsOffDiskPrefetchAndCachedSeekDoesNotUseNetwork() {
+        MockWebServer().use { server ->
+            server.dispatcher=object:Dispatcher() { override fun dispatch(request:RecordedRequest)=reply(request).setHeadersDelay(10,TimeUnit.MILLISECONDS) }
+            val http=client()
+            FileRangeStore(chunk,12L*1048576).use { store ->
+                val first=ParallelRangeReader(http,server.url("/file").toString(),emptyMap(),0,-1,8,chunk,4*1048576,store) {}
+                first.open();first.setLoadingDemand(true)
+                await { store.contains(0,12*1048576) }
+                assertTrue(first.backgroundBytes.get()>0)
+                assertTrue(first.snapshot().diskHighWatermark>=12L*1048576)
+                first.close();await { first.activeRequests.get()==0 }
+                val count=server.requestCount;val start=3L*1048576+17
+                ParallelRangeReader(http,server.url("/file").toString(),emptyMap(),start,2L*1048576,8,chunk,4*1048576,store) {}.use { reader ->
+                    reader.open();assertArrayEquals(MessageDigest.getInstance("SHA-256").digest(source.copyOfRange(start.toInt(),(start+2*1048576).toInt())),digest(reader))
+                }
+                assertEquals("cached seek is disk -> Media3 with no network probe",count,server.requestCount)
+                val newStart=15L*1048576+19
+                ParallelRangeReader(http,server.url("/file").toString(),emptyMap(),newStart,-1,8,chunk,4*1048576,store) {}.use { reader ->
+                    reader.open();reader.setPlaybackPosition(newStart);reader.setLoadingDemand(false)
+                    await { store.contains(newStart,(source.size-newStart).toInt()) }
+                    assertTrue(reader.snapshot().diskHighWatermark>=source.size)
+                    assertEquals(0,reader.snapshot().foregroundConnections)
+                }
+            }
+            http.connectionPool.evictAll();http.dispatcher.executorService.shutdown()
+        }
+    }
+
 }

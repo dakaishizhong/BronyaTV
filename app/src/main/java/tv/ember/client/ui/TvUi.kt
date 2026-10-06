@@ -43,14 +43,15 @@ open class TvActivity: FragmentActivity() {
         super.onResume()
         if(tv.ember.client.i18n.AppLanguage.read(this)!=attachedLanguage) recreate()
     }
-    companion object { private val backKeys = BackKeyGate() }
+    companion object { private val backKeys = BackKeyGate.shared }
     val app get()=application as BronyaApp
     // TV remote keys need repeat filtering. Accepted keys use the same dispatcher callbacks
     // as gesture navigation; gesture callbacks themselves are not intercepted here.
     @android.annotation.SuppressLint("RestrictedApi", "GestureBackNavigation")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
-            if (event.action == KeyEvent.ACTION_UP && backKeys.accept(event.downTime, event.isCanceled)) {
+            if(event.action==KeyEvent.ACTION_DOWN) backKeys.begin(event.downTime,this)
+            if (event.action == KeyEvent.ACTION_UP && backKeys.accept(event.downTime, event.isCanceled,this)) {
                 onBackPressedDispatcher.onBackPressed()
             }
             return true

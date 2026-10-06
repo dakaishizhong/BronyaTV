@@ -15,7 +15,7 @@ internal class FileRangeStore(private val chunk:Int, override val aheadBytes:Lon
     private val entries=ConcurrentSkipListMap<Long,Entry>()
     private val writer=Executors.newSingleThreadExecutor()
     private val copies=java.util.concurrent.Semaphore(2)
-    private var identity:RangeIdentity?=null
+    override var identity:RangeIdentity?=null;private set
     @Volatile private var generation=0L
     val hitBytes=AtomicLong()
     val pendingBytes=AtomicLong()
@@ -31,6 +31,8 @@ internal class FileRangeStore(private val chunk:Int, override val aheadBytes:Lon
             this.identity=identity
             val epoch=generation
             return object:RangeChunkStore {
+                override val identity get()=if(enabled) this@FileRangeStore.identity else null
+                override fun cachedLength(position:Long,length:Long)=if(enabled) this@FileRangeStore.cachedLength(position,length) else -length
                 override val aheadBytes get()=this@FileRangeStore.aheadBytes
                 override val enabled get()=this@FileRangeStore.enabled && epoch==generation
                 override fun validate(identity:RangeIdentity)=this@FileRangeStore.validate(identity)
@@ -40,6 +42,15 @@ internal class FileRangeStore(private val chunk:Int, override val aheadBytes:Lon
                 override fun persist(position:Long,bytes:ByteArray)=persistForEpoch(position,bytes,epoch)
             }
         }
+    }
+    override fun cachedLength(position:Long,length:Long):Long {
+        var cursor=position
+        while(cursor<position+length) {
+            val end=entries.headMap(cursor,true).values.maxOfOrNull { it.position+it.length } ?: cursor
+            if(end<=cursor) break
+            cursor=minOf(end,position+length)
+        }
+        return if(cursor>position) cursor-position else -minOf(length,(entries.higherKey(position) ?: (position+length))-position)
     }
     override fun contains(position:Long,length:Int):Boolean {
         var cursor=position

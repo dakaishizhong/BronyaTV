@@ -39,7 +39,7 @@ internal const val MediaCardAspectRatio=16f/9f
     val bringIntoView=remember { BringIntoViewRequester() }
     val shape=RoundedCornerShape(14.dp)
     LaunchedEffect(focused) {
-        if(focused && morph) { kotlinx.coroutines.delay(280);bringIntoView.bringIntoView() }
+        if(focused && morph) { bringIntoView.bringIntoView();kotlinx.coroutines.delay(280);bringIntoView.bringIntoView() }
     }
     Column(modifier.then(if(morph) Modifier.width(cardWidth) else Modifier)
         .graphicsLayer { scaleX=zoom;scaleY=zoom }

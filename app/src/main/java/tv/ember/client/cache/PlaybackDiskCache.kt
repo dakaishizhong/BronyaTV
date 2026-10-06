@@ -16,7 +16,7 @@ class PlaybackDiskCache(context: Context) {
     private var cache: SimpleCache? = null
     @Volatile var mode = Tr.text(UiText.NOT_STARTED_007); private set
     @Volatile var capacityBytes = 0L; private set
-    data class Handle(val cache: SimpleCache, val plan: DiskCachePlan, val directory: File)
+    data class Handle(val cache: SimpleCache, val plan: DiskCachePlan, val directory: File, val evictor:PlaybackCacheEvictor?=null)
     data class Snapshot(val usedBytes: Long, val capacityBytes: Long, val availableBytes: Long)
 
     /** May read the disk/cache index. Call on an IO thread. */
@@ -38,7 +38,7 @@ class PlaybackDiskCache(context: Context) {
             }
             evictor?.resize(current, plan.capacityBytes)
             mode = Tr.text(UiText.DISK_READ_AHEAD_CACHE_010)
-            return Handle(current, plan, directory)
+            return Handle(current, plan, directory,evictor)
         } catch (e: Exception) {
             mode = Tr.text(UiText.DISK_UNAVAILABLE_USING_MEMORY_BUFFER_011); capacityBytes = 0
             android.util.Log.w("BronyaTVCache", "Disk cache unavailable", e)

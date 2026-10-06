@@ -15,6 +15,11 @@ class PlaybackCacheEvictor(private var maxBytes: Long) : CacheEvictor {
         if (time == 0) a.compareTo(b) else time
     }
     private var size = 0L
+    private var playbackKey:String?=null
+    private var playbackPosition=0L
+    fun setPlaybackWindow(cache:Cache,key:String,position:Long)=synchronized(cache) {
+        playbackKey=key;playbackPosition=position.coerceAtLeast(0)
+    }
     fun resize(cache: Cache, bytes: Long) = synchronized(cache) {
         require(bytes >= 0); maxBytes = bytes; evict(cache, 0)
     }
@@ -34,6 +39,13 @@ class PlaybackCacheEvictor(private var maxBytes: Long) : CacheEvictor {
         onSpanRemoved(cache, oldSpan); onSpanAdded(cache, newSpan)
     }
     private fun evict(cache: Cache, incoming: Long) {
-        while (size + incoming > maxBytes && spans.isNotEmpty()) cache.removeSpan(spans.first())
+        while (size + incoming > maxBytes && spans.isNotEmpty()) {
+            // Played data and other sources yield before the current forward window, even if
+            // a recently read, played span has a newer LRU timestamp than prefetched data.
+            val victim=if(playbackKey==null) spans.first() else spans.firstOrNull {
+                it.key!=playbackKey || it.position+it.length<=playbackPosition
+            } ?: spans.first()
+            cache.removeSpan(victim)
+        }
     }
 }

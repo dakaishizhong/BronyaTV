@@ -18,4 +18,16 @@ class TransferDiagnosticsTest {
         val masked=PlayerStatsMonitor.redact("https://alice:password@host/original.mkv?api_key=secret&sig=private&X-Amz-Credential=credentials&foo=opaque#token")
         assertEquals("https://***@host/original.mkv?api_key=***&sig=***&X-Amz-Credential=***&foo=***",masked)
     }
+    @Test fun fiveAndThirtySecondRatesSeparateASlowdownAndRecovery() {
+        var now=0L;val window=TransferWindow { now }
+        repeat(25) { window.add(16_000_000);now+=1000;window.sample() }
+        var sample=window.sample()
+        repeat(5) { now+=1000;sample=window.sample() }
+        assertEquals(0,sample.average)
+        assertTrue(sample.average30>10_000_000)
+        repeat(5) { window.add(16_000_000);now+=1000;sample=window.sample() }
+        assertEquals(16_000_000,sample.average)
+        assertTrue(sample.average30<sample.average)
+    }
+
 }

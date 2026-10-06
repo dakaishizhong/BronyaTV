@@ -8,7 +8,7 @@ data class BufferPolicy(val minMs: Int, val maxMs: Int, val startMs: Int, val re
     companion object {
         fun create(p: BufferPreferences, heapMax: Long, usedHeap: Long = 0, lowMemory: Boolean = false, bitrate: Long = 0, diskBuffering: Boolean = false): BufferPolicy {
             val mib = 1024L * 1024
-            val requested = if(p.requestedMb==0) (if(bitrate >= 48_000_000) 128L else if(diskBuffering) 64L else 96L)*mib else p.requestedMb.toLong() * mib
+            val requested = if(p.requestedMb==0) (if(diskBuffering) 96L else if(bitrate >= 48_000_000) 128L else 96L)*mib else minOf(p.requestedMb.toLong(),128L) * mib
             val remaining = (heapMax - usedHeap).coerceAtLeast(0)
             // Reserve space for UI/decoder growth, the shared range pipeline (at most 32 MiB),
             // and allocator overshoot. The live heap already includes existing UI allocations.

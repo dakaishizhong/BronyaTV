@@ -17,16 +17,15 @@ object StreamPolicy {
             bitrate>=6_000_000 || bitrate<=0 -> 2
             else -> 1
         }
-        val storageBodies=if(diskBuffering) 4 else 0
-        val count=if(lowMemory || cap<65536*(2*desired+storageBodies)) 1 else desired
-        // Keep two full worker waves inside the window, after reserving storage bodies.
-        // Large heaps use two MiB ranges; constrained devices scale down without collapsing to one wave.
-        val chunk=minOf(if(bitrate>=48_000_000) 2*mib else mib,
-            cap/(2*count+storageBodies)/65536*65536).coerceAtLeast(65536)
+        val count=if(lowMemory || cap<65536*(2*desired)) 1 else desired
+        // Disk bodies share their bounded reservation with the writer; larger ranges
+        // amortize RTT without growing the heap. Memory-only loading keeps two worker waves.
+        val chunk=minOf(if(diskBuffering) 4*mib else if(bitrate>=48_000_000) 2*mib else mib,
+            cap/(if(diskBuffering) count+4 else 2*count)/65536*65536).coerceAtLeast(65536)
         val target=maxOf(2L*count*chunk,bitrate.coerceAtLeast(0)/8*3).coerceAtMost(32L*mib)
-        val budget=minOf(cap.toLong(),target+(if(diskBuffering) 4L*chunk else 0)).toInt()
-        // One disk-only body, one eviction retry and two asynchronous write copies are included in this same cap.
-        val window=(budget-(if(diskBuffering) 4*chunk else 0)).coerceAtLeast(0)
+        val budget=minOf(cap.toLong(),target).toInt()
+        // Every in-flight and queued disk body retains its shared reservation in this cap.
+        val window=budget
         return StreamPlan(count,budget,chunk,window)
     }
 }

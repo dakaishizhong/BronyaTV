@@ -16,7 +16,7 @@ import androidx.media3.datasource.DataSpec
 import java.io.File
 
 data class NetworkSample(val bytesPerSecond: Long, val state: String, val connected: Boolean,
-                         val average:Long, val peak:Long, val total:Long, val idleMs:Long?)
+                         val average:Long, val peak:Long, val total:Long, val idleMs:Long?,val average30:Long=0)
 class NetworkMonitor(context: Context) : TransferListener {
     private val context=context.applicationContext
     private val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -36,7 +36,7 @@ class NetworkMonitor(context: Context) : TransferListener {
             else -> Tr.text(UiText.CONNECTED_034)
         }
         val state = if(caps != null && !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) Tr.text(UiText.INTERNET_NOT_VERIFIED_035 ,(kind)) else kind
-        return NetworkSample(s.rate,state,connected,s.average,s.peak,s.total,s.idleMs)
+        return NetworkSample(s.rate,state,connected,s.average,s.peak,s.total,s.idleMs,s.average30)
     }
     @SuppressLint("MissingPermission")
     @Suppress("DEPRECATION")

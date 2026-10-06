@@ -42,4 +42,13 @@ class PlaybackCacheEvictorTest {
         f.policy.resize(f.cache,0)
         assertEquals(3,f.removed.size)
     }
+    @Test fun playedSpansYieldBeforeTheCurrentForwardWindowEvenAfterRecentReads() {
+        val f=Fixture(300)
+        val ahead=f.add(100,1);f.add(200,2);val played=f.add(0,10)
+        f.policy.setPlaybackWindow(f.cache,"video",100)
+        f.add(300,3)
+        assertEquals(listOf(played),f.removed)
+        assertFalse(f.removed.contains(ahead))
+    }
+
 }

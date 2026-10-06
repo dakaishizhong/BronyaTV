@@ -34,6 +34,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import tv.ember.client.BronyaApp
 import tv.ember.client.data.*
 import tv.ember.client.i18n.*
@@ -55,6 +58,27 @@ fun TvActivity.tvContent(content: @Composable ()->Unit) {
     CompositionLocalProvider(LocalTvScale provides TvUi.scale(context)) {
         MaterialTheme(colorScheme=darkColorScheme(primary=Cyan,onPrimary=Ink,background=Ink,onBackground=Paper,surface=Color(TvUi.panel),onSurface=Paper)) { content() }
     }
+}
+/** Logical item order remains stable while cards and the sidebar animate. */
+internal class TvFocusNavigator(private val scope:CoroutineScope) {
+    private var job:Job?=null
+    private var pendingKey:String?=null
+    fun request(key:String,targets:Map<String,FocusRequester>,reveal:suspend ()->Unit={}) {
+        targets[key]?.let { job?.cancel();pendingKey=null;it.requestFocus();return }
+        if(job?.isActive==true && pendingKey==key) return
+        job?.cancel();pendingKey=key
+        job=scope.launch {
+            reveal()
+            repeat(4) { withFrameNanos { };targets[key]?.let { it.requestFocus();pendingKey=null;return@launch } }
+            pendingKey=null
+        }
+    }
+}
+@Composable internal fun rememberTvFocusNavigator():TvFocusNavigator {
+    val scope=rememberCoroutineScope();return remember(scope) { TvFocusNavigator(scope) }
+}
+internal fun Modifier.tvDirections(move:(Key)->Boolean)=onPreviewKeyEvent { event ->
+    event.type==KeyEventType.KeyDown && event.key in listOf(Key.DirectionLeft,Key.DirectionRight,Key.DirectionUp,Key.DirectionDown) && move(event.key)
 }
 @Composable fun TvAction(label: String,tag: String=label,modifier: Modifier=Modifier,primary: Boolean=false,selected: Boolean=false,
                          enabled: Boolean=true,large: Boolean=false,onFocus: ()->Unit={},onClick: ()->Unit) {
@@ -186,10 +210,20 @@ fun TvActivity.tvContent(content: @Composable ()->Unit) {
 }
 @Composable fun TvShell(selected: String,onNavigate: (String)->Unit,backdrop: VideoItem?=null,
                         homeRequester: FocusRequester?=null,onRailFocused: (String)->Unit={},onContentFocus:(()->Boolean)?=null,content: @Composable ()->Unit) {
-    val context=LocalContext.current;val app=context.applicationContext as BronyaApp;val session=app.sessions.load()
+    val context=LocalContext.current;val app=context.applicationContext as BronyaApp
+    var session by remember { mutableStateOf(app.sessions.load()) }
+    val owner=LocalLifecycleOwner.current
+    DisposableEffect(owner) {
+        val observer=androidx.lifecycle.LifecycleEventObserver { _,event -> if(event==Lifecycle.Event.ON_RESUME) session=app.sessions.load() }
+        owner.lifecycle.addObserver(observer);onDispose { owner.lifecycle.removeObserver(observer) }
+    }
     val scale=LocalTvScale.current
     val names=listOf(UiText.HOME_267,UiText.MOVIES_316,UiText.SERIES_317,UiText.SETTINGS_268)
     val labels=names.map(Tr::text);val requests=remember { List(4) { FocusRequester() } }
+    val accountRequest=remember { FocusRequester() }
+    val railRequests=listOf(accountRequest)+(requests.mapIndexed { i,request -> if(i==0 && homeRequester!=null) homeRequester else request })
+    val focusManager=LocalFocusManager.current
+    fun contentFocus()=onContentFocus?.invoke()==true || focusManager.moveFocus(FocusDirection.Right)
     var expanded by remember { mutableStateOf(false) }
     val railWidth by animateDpAsState((if(expanded) 152 else 56).times(scale).dp,tween(280),label="sidebar_width")
     Row(Modifier.fillMaxSize().background(Ink)) {
@@ -197,17 +231,22 @@ fun TvActivity.tvContent(content: @Composable ()->Unit) {
             .onFocusChanged { expanded=it.hasFocus }.focusGroup()
             .background(Color(0xFF06070A).copy(alpha=.98f)).border(1.dp,CardBorder)
             .padding(horizontal=(8*scale).dp,vertical=(24*scale).dp),verticalArrangement=Arrangement.SpaceBetween) {
-            RailAction(Tr.text(UiText.LOGIN_SCREEN),TvGlyph.Account,selected==Tr.text(UiText.LOGIN_SCREEN),expanded,
-                onFocus={ onRailFocused(Tr.text(UiText.LOGIN_SCREEN)) }) {
+            RailAction(session?.userName?.takeIf { it.isNotBlank() } ?: Tr.text(if(session!=null) UiText.LOGGED_IN_STATE else UiText.LOGIN_SCREEN),
+                TvGlyph.Account,selected==Tr.text(UiText.LOGIN_SCREEN),expanded,
+                Modifier.focusRequester(accountRequest).focusProperties { up=FocusRequester.Cancel;down=railRequests[1];left=FocusRequester.Cancel }
+                    .onPreviewKeyEvent { it.key==Key.DirectionRight && it.type==KeyEventType.KeyDown && contentFocus() },
+                tag="nav_${Tr.text(UiText.LOGIN_SCREEN)}",onFocus={ onRailFocused(Tr.text(UiText.LOGIN_SCREEN)) }) {
                 context.startActivity(Intent(context,LoginActivity::class.java))
             }
             Column(verticalArrangement=Arrangement.spacedBy((8*scale).dp)) {
                 labels.forEachIndexed { i,label ->
                     RailAction(label,listOf(TvGlyph.Home,TvGlyph.Movies,TvGlyph.Series,TvGlyph.Settings)[i],selected==label,expanded,
-                        Modifier.focusRequester(if(i==0 && homeRequester!=null) homeRequester else requests[i]).onPreviewKeyEvent { event ->
-                            event.key==Key.DirectionRight && event.type==KeyEventType.KeyDown && onContentFocus?.invoke()==true
+                        Modifier.focusRequester(railRequests[i+1]).focusProperties {
+                            up=railRequests[i];down=railRequests.getOrNull(i+2) ?: FocusRequester.Cancel;left=FocusRequester.Cancel
+                        }.onPreviewKeyEvent { event ->
+                            event.key==Key.DirectionRight && event.type==KeyEventType.KeyDown && contentFocus()
                         },
-                        { onRailFocused(label) }) { onNavigate(label) }
+                        onFocus={ onRailFocused(label) }) { onNavigate(label) }
                 }
             }
             Box(Modifier.height((14*scale).dp).padding(start=(6*scale).dp)) {
@@ -219,9 +258,10 @@ fun TvActivity.tvContent(content: @Composable ()->Unit) {
             (if(i==0 && homeRequester!=null) homeRequester else requests[i]).requestFocus()
         }) {
             Box(Modifier.weight(1f).fillMaxHeight().testTag("navigation_content")) {
-                if(backdrop!=null && session!=null) {
+                val currentSession=session
+                if(backdrop!=null && currentSession!=null) {
                     val width=context.resources.displayMetrics.widthPixels.coerceAtMost(1920)
-                    CinemaBackdrop(app,session,backdrop,width,Modifier.fillMaxWidth().fillMaxHeight(.67f))
+                    CinemaBackdrop(app,currentSession,backdrop,width,Modifier.fillMaxWidth().fillMaxHeight(.67f))
                 }
                 content()
             }
@@ -229,10 +269,10 @@ fun TvActivity.tvContent(content: @Composable ()->Unit) {
     }
 }
 @Composable private fun RailAction(label: String,icon: TvGlyph,selected: Boolean,expanded: Boolean,
-                                  modifier: Modifier=Modifier,onFocus: ()->Unit={},onClick: ()->Unit) {
+                                  modifier: Modifier=Modifier,tag:String="nav_$label",onFocus: ()->Unit={},onClick: ()->Unit) {
     var focused by remember { mutableStateOf(false) }
     val scale=LocalTvScale.current;val shape=RoundedCornerShape(12.dp)
-    Button(onClick,modifier=modifier.fillMaxWidth().height((44*scale).dp).testTag("nav_$label")
+    Button(onClick,modifier=modifier.fillMaxWidth().height((44*scale).dp).testTag(tag)
         .semantics { this.selected=selected;contentDescription=label }
         .onFocusChanged { focused=it.isFocused;if(it.isFocused) onFocus() }
         .border(if(focused) 1.dp else 0.dp,if(focused) Cyan.copy(alpha=.65f) else Color.Transparent,shape),
@@ -250,5 +290,5 @@ fun TvActivity.tvContent(content: @Composable ()->Unit) {
 fun TvActivity.navigateTo(name: String) {
     if(name==Tr.text(UiText.LOGIN_SCREEN)) startActivity(Intent(this,LoginActivity::class.java))
     else if(name==Tr.text(UiText.SETTINGS_268)) startActivity(Intent(this,SettingsActivity::class.java))
-    else startActivity(Intent(this,MainActivity::class.java).putExtra("navigate",name).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP))
+    else startActivity(Intent(this,MainActivity::class.java).putExtra("navigate",name).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
 }

@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalFocusManager
@@ -55,6 +56,9 @@ class LoginActivity: TvActivity() {
             }
             val serverEmptyAtStart=remember { server.isBlank() }
             val first=remember { FocusRequester() };val submitFocus=remember { FocusRequester() }
+            val serverFocus=if(serverEmptyAtStart) first else remember { FocusRequester() }
+            val usernameFocus=if(!serverEmptyAtStart) first else remember { FocusRequester() }
+            val profileRequests=remember { mutableMapOf<String,FocusRequester>() }
             val passwordFocus=remember { FocusRequester() };val imeVisible=WindowInsets.isImeVisible
             fun submit() {
                 if(busy) return
@@ -79,6 +83,7 @@ class LoginActivity: TvActivity() {
                 }
             }
             TvShell(Tr.text(UiText.LOGIN_SCREEN),::navigateTo) {
+            val rail=LocalRailFocus.current
             Column(Modifier.fillMaxSize().padding((48*scale).dp)) {
                 Row(Modifier.fillMaxWidth().padding(bottom=(12*scale).dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
                     Column {
@@ -97,8 +102,14 @@ class LoginActivity: TvActivity() {
                         Spacer(Modifier.height((14*scale).dp))
                         val sameServer=runCatching { EmbyApi.normalizeServer(server)==EmbyApi.normalizeServer(app.sessions.lastServer) }.getOrDefault(false)
                         val profiles=users.ifEmpty { app.sessions.lastUserName.takeIf { sameServer && it.isNotBlank() }?.let { listOf(PublicUser("recent",it,true)) }.orEmpty() }
-                        profiles.forEach { user ->
-                            UserProfileCard(user,name==user.name,enabled=!busy) { name=user.name;password="";status="" }
+                        profiles.forEachIndexed { index,user ->
+                            val request=remember(user.id) { FocusRequester() }
+                            DisposableEffect(user.id) { profileRequests[user.id]=request;onDispose { profileRequests.remove(user.id) } }
+                            UserProfileCard(user,name==user.name,enabled=!busy,modifier=Modifier.focusRequester(request).focusProperties {
+                                right=serverFocus
+                                up=profiles.getOrNull(index-1)?.let { profileRequests[it.id] } ?: FocusRequester.Cancel
+                                down=profiles.getOrNull(index+1)?.let { profileRequests[it.id] } ?: FocusRequester.Cancel
+                            }.tvDirections { if(it==Key.DirectionLeft) { rail();true } else false }) { name=user.name;password="";status="" }
                             Spacer(Modifier.height((14*scale).dp))
                         }
                     }
@@ -108,19 +119,19 @@ class LoginActivity: TvActivity() {
                             Text(Tr.text(UiText.ACCOUNT_CREDENTIALS),color=Paper,fontSize=(16*scale).sp,fontWeight=FontWeight.Bold)
                             Column(verticalArrangement=Arrangement.spacedBy((4*scale).dp)) {
                                 Text(Tr.text(UiText.CINEMA_SERVER),color=Muted,fontSize=(12*scale).sp)
-                                TvField(server,{ server=it },"https://emby.cinema-home.tv:443","login_server",Modifier.fillMaxWidth().then(if(serverEmptyAtStart) Modifier.focusRequester(first) else Modifier),uri=true,icon=TvGlyph.Server)
+                                TvField(server,{ server=it },"https://emby.cinema-home.tv:443","login_server",Modifier.fillMaxWidth().focusRequester(serverFocus).focusProperties { down=usernameFocus;up=FocusRequester.Cancel;left=profileRequests.values.firstOrNull() ?: FocusRequester.Default;right=FocusRequester.Cancel },uri=true,icon=TvGlyph.Server)
                             }
                             Column(verticalArrangement=Arrangement.spacedBy((4*scale).dp)) {
                                 Text(Tr.text(UiText.CINEMA_USER),color=Muted,fontSize=(12*scale).sp)
-                                TvField(name,{ name=it },Tr.text(UiText.USERNAME_280),"login_username",Modifier.fillMaxWidth().then(if(!serverEmptyAtStart) Modifier.focusRequester(first) else Modifier),icon=TvGlyph.Account)
+                                TvField(name,{ name=it },Tr.text(UiText.USERNAME_280),"login_username",Modifier.fillMaxWidth().focusRequester(usernameFocus).focusProperties { up=serverFocus;down=passwordFocus;left=profileRequests.values.firstOrNull() ?: FocusRequester.Default;right=FocusRequester.Cancel },icon=TvGlyph.Account)
                             }
                             Column(verticalArrangement=Arrangement.spacedBy((4*scale).dp)) {
                                 Text(Tr.text(UiText.PASSWORD_281),color=Muted,fontSize=(12*scale).sp)
-                                TvField(password,{ password=it },"••••••••","login_password",Modifier.fillMaxWidth().focusRequester(passwordFocus),secret=true,icon=TvGlyph.Lock,onSubmit=::submit)
+                                TvField(password,{ password=it },"••••••••","login_password",Modifier.fillMaxWidth().focusRequester(passwordFocus).focusProperties { up=usernameFocus;down=submitFocus;left=profileRequests.values.firstOrNull() ?: FocusRequester.Default;right=FocusRequester.Cancel },secret=true,icon=TvGlyph.Lock,onSubmit=::submit)
                             }
                             if(status.isNotBlank()) Text(status,color=if(busy) Cyan else Color(TvUi.error),fontSize=(12*scale).sp)
                         }
-                        TvAction(Tr.text(UiText.CINEMA_LOGIN_BUTTON),"login_connect",Modifier.fillMaxWidth().height((56*scale).dp).focusRequester(submitFocus)
+                        TvAction(Tr.text(UiText.CINEMA_LOGIN_BUTTON),"login_connect",Modifier.fillMaxWidth().height((56*scale).dp).focusRequester(submitFocus).focusProperties { up=passwordFocus;down=FocusRequester.Cancel;right=FocusRequester.Cancel }
                             .onPreInterceptKeyBeforeSoftKeyboard { event ->
                                 // Keep the closed-keyboard return path on this page.
                                 if(!imeVisible && event.key==Key.DirectionUp) {
@@ -138,10 +149,10 @@ class LoginActivity: TvActivity() {
 }
 
 @OptIn(ExperimentalLayoutApi::class,ExperimentalComposeUiApi::class)
-@Composable private fun UserProfileCard(user: PublicUser,selected: Boolean,enabled: Boolean,onClick: ()->Unit) {
+@Composable private fun UserProfileCard(user: PublicUser,selected: Boolean,enabled: Boolean,modifier:Modifier=Modifier,onClick: ()->Unit) {
     val scale=LocalTvScale.current;var focused by remember { mutableStateOf(false) };val shape=RoundedCornerShape(16.dp)
     val focusManager=LocalFocusManager.current;val imeVisible=WindowInsets.isImeVisible
-    Row(Modifier.fillMaxWidth().testTag("login_user_${user.id}").onFocusChanged { focused=it.isFocused }
+    Row(modifier.fillMaxWidth().testTag("login_user_${user.id}").onFocusChanged { focused=it.isFocused }
         .onPreInterceptKeyBeforeSoftKeyboard { event ->
             if(!imeVisible && event.key in listOf(Key.DirectionUp,Key.DirectionDown,Key.DirectionLeft,Key.DirectionRight)) {
                 if(event.type==KeyEventType.KeyDown) focusManager.moveFocus(when(event.key) {

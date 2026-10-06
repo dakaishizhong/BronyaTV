@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.addCallback
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.lazy.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -49,32 +50,41 @@ class SettingsActivity: TvActivity() {
     } }
     private fun render(focus: String?=null) { lastFocus=focus ?: lastFocus;revision++ }
     @Composable private fun Editor() {
-        val scale=LocalTvScale.current;val stamp=revision
+        val scale=LocalTvScale.current;val stamp=revision;val rail=LocalRailFocus.current
         val entries=entries(stamp)
         val state=rememberLazyListState(editorFirst,editorOffset)
         val requests=remember { mutableMapOf<String,FocusRequester>() }
         Column(Modifier.fillMaxSize().padding((18*scale).dp)) {
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) { Text(Tr.text(UiText.SETTINGS_268),color=Paper,fontSize=(28*scale).sp,lineHeight=(34*scale).sp);TvClock() }
-            LazyRow(horizontalArrangement=Arrangement.spacedBy(7.dp),contentPadding=PaddingValues(vertical=12.dp)) {
+            LazyRow(Modifier.focusGroup(),horizontalArrangement=Arrangement.spacedBy(7.dp),contentPadding=PaddingValues(vertical=12.dp)) {
                 itemsIndexed(listOf(UiText.PLAYBACK_333,UiText.REMOTE_CONTROL_334,UiText.NETWORK_CACHE_335,UiText.AUDIO_SUBTITLES_336,UiText.ACCOUNT_INFO_337),key={ i,_-> i }) { i,label ->
-                    val request=remember { FocusRequester() };requests["tab$i"]=request
-                    TvAction(Tr.text(label),"tab$i",Modifier.focusRequester(request),selected=category==i,onFocus={ lastFocus="tab$i";contentReturn=request }) { category=i;lastFocus="tab$i";editorFirst=0;editorOffset=0;refreshUsage() }
+                    val request=remember { FocusRequester() }
+                    DisposableEffect(i) { requests["tab$i"]=request;onDispose { if(requests["tab$i"]===request) requests.remove("tab$i") } }
+                    TvAction(Tr.text(label),"tab$i",Modifier.focusRequester(request).focusProperties {
+                        left=if(i>0) requests["tab${i-1}"] ?: FocusRequester.Default else FocusRequester.Default
+                        right=if(i<4) requests["tab${i+1}"] ?: FocusRequester.Default else FocusRequester.Cancel
+                        down=requests[entries.firstOrNull { it.action!=null }?.key] ?: FocusRequester.Default
+                    }.tvDirections { if(i==0 && it==androidx.compose.ui.input.key.Key.DirectionLeft) { rail();true } else false },selected=category==i,onFocus={ lastFocus="tab$i";contentReturn=request }) { category=i;lastFocus="tab$i";editorFirst=0;editorOffset=0;refreshUsage() }
                 }
             }
-            LazyColumn(Modifier.weight(1f).fillMaxWidth(),state=state,contentPadding=PaddingValues(3.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            LazyColumn(Modifier.focusGroup().weight(1f).fillMaxWidth(),state=state,contentPadding=PaddingValues(3.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                 items(entries,key={ it.key }) { entry ->
                     if(entry.action==null) Text(entry.label,color=Muted,fontSize=(12*scale).sp)
                     else {
                         val request=remember(entry.key) { FocusRequester() }
                         DisposableEffect(entry.key) { requests[entry.key]=request;onDispose { if(requests[entry.key]===request) requests.remove(entry.key) } }
                         TvAction(entry.label+"    "+entry.value,entry.key,Modifier.fillMaxWidth().focusRequester(request)
-                            .focusProperties { if(entry.key==entries.firstOrNull { it.action!=null }?.key) up=requests["tab$category"] ?: FocusRequester.Default },
+                            .focusProperties { if(entry.key==entries.firstOrNull { it.action!=null }?.key) up=requests["tab$category"] ?: FocusRequester.Default }.tvDirections { if(it==androidx.compose.ui.input.key.Key.DirectionLeft) { rail();true } else false },
                             onFocus={ lastFocus=entry.key;contentReturn=request },onClick=entry.action)
                     }
                 }
             }
         }
-        LaunchedEffect(category,revision) { withFrameNanos {};requests[lastFocus.ifBlank { "tab$category" }]?.requestFocus() }
+        LaunchedEffect(category,revision) {
+            val target=lastFocus.ifBlank { "tab$category" }
+            if(requests[target]==null) entries.indexOfFirst { it.key==target }.takeIf { it>=0 }?.let { state.scrollToItem(it) }
+            withFrameNanos {};withFrameNanos {};requests[target]?.requestFocus()
+        }
         LaunchedEffect(category) { snapshotFlow { state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset }.collect { editorFirst=it.first;editorOffset=it.second } }
     }
     private fun entries(@Suppress("UNUSED_PARAMETER") stamp: Int): List<SettingEntry> {
@@ -123,13 +133,12 @@ class SettingsActivity: TvActivity() {
                 val sizes=listOf(0,16,32,64,128,256,512,1024,2048)
                 fun size(n: Int)=when(n) { 0 -> Tr.text(UiText.AUTO_220);1024 -> "1GB";2048 -> "2GB";else -> "${n}MB" }
                 setting("memory",Tr.text(UiText.MEMORY_CACHE_LIMIT_354),size(p.bufferMb)) { select(Tr.text(UiText.MEMORY_CACHE_LIMIT_354),sizes.map(::size),sizes.indexOf(p.bufferMb)) { p.bufferMb=sizes[it];render("memory") } }
-                fun diskSize(n:Int)=when(n) { 0 -> Tr.text(UiText.OFF_187);-1 -> Tr.text(UiText.AUTO_UP_TO_MB_355);in 1024..8192 -> "${n/1024}GB";else -> "${n}MB" }
+                fun diskSize(n:Int)=when(n) { 0 -> Tr.text(UiText.OFF_187);in 1024..8192 -> "${n/1024} GiB";else -> "${n} MiB" }
                 setting("disk_capacity",Tr.text(UiText.DISK_CACHE_CAPACITY_356),diskSize(p.diskCacheMb)) {
-                    select(Tr.text(UiText.DISK_CACHE_CAPACITY_356),DiskCachePlan.sizesMb.map(::diskSize),DiskCachePlan.sizesMb.indexOf(p.diskCacheMb)) {
+                    select(Tr.text(UiText.DISK_CACHE_CAPACITY_356),DiskCachePlan.sizesMb.map { diskSize(it)+if(it==1024) " (${Tr.text(UiText.DEFAULT_CACHE_TARGET)})" else "" },DiskCachePlan.sizesMb.indexOf(p.diskCacheMb)) {
                         p.diskCacheMb=DiskCachePlan.sizesMb[it];render("disk_capacity")
                     }
                 }
-                seconds("disk_ahead",Tr.text(UiText.DISK_READ_AHEAD_CACHE_010),p.diskAheadSeconds,DiskCachePlan.aheadSeconds) { p.diskAheadSeconds=it }
                 setting("disk_clear",Tr.text(UiText.CLEAR_DISK_CACHE_357),Tr.text(UiText.DELETE_CACHED_VIDEO_DATA_358)) {
                     TvUi.dialog(this).setTitle(Tr.text(UiText.CLEAR_DISK_CACHE_359)).setMessage(Tr.text(UiText.ACCOUNT_AND_PLAYBACK_SETTINGS_WILL_BE_360))
                         .setPositiveButton(Tr.text(UiText.CLEAR_361)) { _,_-> lifecycleScope.launch {
@@ -198,7 +207,7 @@ class SettingsActivity: TvActivity() {
         val tiles=listOf(
             SettingsTile(Tr.text(UiText.PLAYBACK_333),0,TvUi.accent,listOf(Tr.text(UiText.DEFAULT_PLAYER_338) to p.player.label,Tr.text(UiText.ASPECT_RATIO_182) to when(p.resizeMode) { 4 -> Tr.text(UiText.CROP_TO_FILL_200);3 -> Tr.text(UiText.STRETCH_201);else -> Tr.text(UiText.FIT_199) },Tr.text(UiText.AUTO_PLAY_NEXT_EPISODE_340) to enabled(p.autoNextEpisode),Tr.text(UiText.INTRO_OUTRO_SKIP_385) to Tr.text(UiText.SEC_386 ,(p.introSeconds),(p.outroSeconds)))),
             SettingsTile(Tr.text(UiText.AUDIO_SUBTITLES_336),3,0xFFFF4B86.toInt(),listOf(Tr.text(UiText.PREFERRED_AUDIO_373) to language(p.audioLanguage),Tr.text(UiText.SUBTITLE_PREFERENCE_375) to language(p.subtitleLanguage),Tr.text(UiText.SUBTITLE_SIZE_183) to "${p.subtitleScale}%",Tr.text(UiText.AUDIO_AND_SUBTITLES_387) to Tr.text(UiText.CHANGE_DURING_PLAYBACK_388))),
-            SettingsTile(Tr.text(UiText.NETWORK_CACHE_335),2,0xFF35A2FF.toInt(),listOf(Tr.text(UiText.PARALLEL_RECEIVE_345) to if(p.streamConnections==0) Tr.text(UiText.AUTO_220) else Tr.text(UiText.CONNECTIONS_221 ,(p.streamConnections)),Tr.text(UiText.MEMORY_CACHE_389) to if(p.bufferMb==0) Tr.text(UiText.AUTO_220) else "${p.bufferMb} MB",Tr.text(UiText.DISK_CACHE_390) to when(p.diskCacheMb) { -1 -> Tr.text(UiText.AUTO_220);0 -> Tr.text(UiText.OFF_187);else -> "${p.diskCacheMb} MB" },Tr.text(UiText.READ_AHEAD_391) to Tr.text(UiText.SEC_013 ,(p.diskAheadSeconds)))),
+            SettingsTile(Tr.text(UiText.NETWORK_CACHE_335),2,0xFF35A2FF.toInt(),listOf(Tr.text(UiText.PARALLEL_RECEIVE_345) to if(p.streamConnections==0) Tr.text(UiText.AUTO_220) else Tr.text(UiText.CONNECTIONS_221 ,(p.streamConnections)),Tr.text(UiText.MEMORY_CACHE_389) to if(p.bufferMb==0) Tr.text(UiText.AUTO_220) else "${p.bufferMb} MB",Tr.text(UiText.DISK_CACHE_390) to when(p.diskCacheMb) { 0 -> Tr.text(UiText.OFF_187);512 -> "512 MiB";else -> "${p.diskCacheMb/1024} GiB" },Tr.text(UiText.READ_AHEAD_391) to if(p.diskCacheMb==0) Tr.text(UiText.OFF_187) else if(p.diskCacheMb==512) "512 MiB" else "${p.diskCacheMb/1024} GiB")),
             SettingsTile(Tr.text(UiText.REMOTE_CONTROL_334),1,0xFF80D13A.toInt(),listOf(Tr.text(UiText.SHORT_PRESS_SEEK_392) to Tr.text(UiText.SEC_013 ,(p.seekSeconds)),Tr.text(UiText.LONG_PRESS_STEP_393) to Tr.text(UiText.SEC_013 ,(p.longSeekSeconds)),Tr.text(UiText.LEFT_RIGHT_394) to Tr.text(UiText.PREVIEW_SEEK_395),Tr.text(UiText.BACK_BUTTON_396) to Tr.text(UiText.CANCEL_PREVIEW_397))),
             SettingsTile(Tr.text(UiText.INTERFACE_DIAGNOSTICS_398),4,0xFFFF983D.toInt(),listOf(Tr.text(UiText.INTERFACE_LANGUAGE) to if(tv.ember.client.i18n.AppLanguage.read(this)=="zh") "简体中文" else "English",Tr.text(UiText.PERFORMANCE_OVERLAY_399) to enabled(p.osd),Tr.text(UiText.MOVIE_BACKDROP_401) to Tr.text(UiText.SERVER_IMAGES_402),Tr.text(UiText.VERSION_403) to tv.ember.client.BuildConfig.VERSION_NAME)),
             SettingsTile(Tr.text(UiText.ACCOUNT_INFO_337),4,0xFFAE59FF.toInt(),listOf(Tr.text(UiText.ACCOUNT_279) to session?.userName.orEmpty(),Tr.text(UiText.SERVICE_404) to "Emby",Tr.text(UiText.APPLICATION_405) to "BronyaTV",Tr.text(UiText.VERSION_403) to tv.ember.client.BuildConfig.VERSION_NAME))
@@ -219,7 +228,7 @@ class SettingsActivity: TvActivity() {
                     }
                 }
                 QuickSettingBlock(Tr.text(UiText.MEMORY_CACHE_LIMIT_354),Modifier.weight(1f)) {
-                    LazyRow(horizontalArrangement=Arrangement.spacedBy((6*scale).dp)) {
+                    LazyRow(Modifier.focusGroup(),horizontalArrangement=Arrangement.spacedBy((6*scale).dp)) {
                         items((listOf(0,64,128,256,512)+p.bufferMb).distinct()) { size ->
                             val request=remember(size) { FocusRequester() }
                             TvAction(if(size==0) Tr.text(UiText.AUTO_220) else "$size MB","quick_buffer_$size",Modifier.focusRequester(request),selected=p.bufferMb==size,onFocus={ contentReturn=request }) { p.bufferMb=size;revision++ }

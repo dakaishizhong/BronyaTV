@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.*
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -65,6 +66,7 @@ class MainActivity: TvActivity() {
     private val searchInput by lazy { SearchInput(lifecycleScope) { term -> if(frame.destination=="search") search(frame,term,remember=false) } }
     private val homeFocus=FocusRequester()
     private var railFocused=""
+    private var contentFocus:(()->Boolean)?=null
     private var restored=false
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -83,6 +85,9 @@ class MainActivity: TvActivity() {
             else if(frame.query!=null) { frame=BrowserFrame(Tr.text(UiText.HOME_267));restoreEpoch++;load(frame) }
             else if(railFocused!=Tr.text(UiText.HOME_267)) homeFocus.requestFocus() else finish()
         }
+    }
+    override fun onNewIntent(intent:Intent) {
+        super.onNewIntent(intent);setIntent(intent)
     }
     override fun onResume() {
         super.onResume()
@@ -202,7 +207,7 @@ class MainActivity: TvActivity() {
             return when(libraries.firstOrNull { it.id==q.parent }?.collectionType) { "tvshows" -> UiText.SERIES_317;"movies" -> UiText.MOVIES_316;else -> null }
         }
         val selected=Tr.text(section(current) ?: history.toList().asReversed().firstNotNullOfOrNull { section(it)?.takeUnless { value -> value==UiText.HOME_267 } } ?: UiText.MOVIES_316)
-        TvShell(selected,::navigate,if(current.query==null) hero else MediaUi.backdropItem,homeFocus,{ railFocused=it }) {
+        TvShell(selected,::navigate,if(current.query==null) hero else MediaUi.backdropItem,homeFocus,{ railFocused=it },onContentFocus={ contentFocus?.invoke()==true }) {
             Column(Modifier.fillMaxSize().onFocusChanged { if(it.hasFocus) railFocused="" }.focusGroup().padding(start=(48*scale).dp,end=(48*scale).dp,top=(36*scale).dp)) {
                 if(s!=null) {
                     key(current.id) { if(current.query==null) Home(current,s) else Browse(current,s) }
@@ -222,7 +227,20 @@ class MainActivity: TvActivity() {
     @Composable private fun ColumnScope.Home(current: BrowserFrame,s: Session) {
         val scale=LocalTvScale.current;val rail=LocalRailFocus.current
         val focusMap=remember(current.id) { mutableMapOf<String,FocusRequester>() }
+        val navigator=rememberTvFocusNavigator()
         val scroll=rememberLazyListState(current.first,current.offset)
+        DisposableEffect(current.id) {
+            val callback:()->Boolean={
+                val target=current.focus.ifBlank { current.rows.firstOrNull()?.let { row -> row.items.firstOrNull()?.let { "${row.key}:${it.id}" } }.orEmpty() }
+                if(target.isBlank()) false else {
+                    navigator.request(target,focusMap) {
+                        current.rows.indexOfFirst { row -> target=="header:${row.library?.id}" || row.items.any { target=="${row.key}:${it.id}" } }
+                            .takeIf { it>=0 }?.let { scroll.scrollToItem(it) }
+                    };true
+                }
+            }
+            contentFocus=callback;onDispose { if(contentFocus===callback) contentFocus=null }
+        }
         hero?.let { featured ->
             Column(Modifier.fillMaxWidth().height((234*scale).dp),verticalArrangement=Arrangement.SpaceBetween) {
                 Column(verticalArrangement=Arrangement.spacedBy((6*scale).dp)) {
@@ -238,14 +256,23 @@ class MainActivity: TvActivity() {
             }
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("home_rows"),state=scroll,contentPadding=PaddingValues(bottom=(28*scale).dp),verticalArrangement=Arrangement.spacedBy((24*scale).dp)) {
-            items(current.rows,key={ it.key }) { row ->
+            itemsIndexed(current.rows,key={ _,row-> row.key }) { rowIndex,row ->
                 if(row.library==null) Section(row.title) else {
                     val header="header:${row.library.id}";val request=remember(header) { FocusRequester() }
                     var focused by remember { mutableStateOf(false) }
                     DisposableEffect(header) { focusMap[header]=request;onDispose { if(focusMap[header]===request) focusMap.remove(header) } }
                     Row(Modifier.fillMaxWidth().testTag("home_library_${row.library.id}").focusRequester(request)
                         .onFocusChanged { focused=it.isFocused;if(it.isFocused) current.focus=header }
-                        .focusProperties { down=focusMap["${row.key}:${row.items.firstOrNull()?.id}"] ?: FocusRequester.Default }
+                         .tvDirections { direction ->
+                            when(direction) {
+                                Key.DirectionDown -> row.items.getOrNull(current.rowPositions[row.key]?.first ?: 0)?.let { navigator.request("${row.key}:${it.id}",focusMap);true } ?: false
+                                Key.DirectionUp -> current.rows.getOrNull(rowIndex-1)?.let { previous ->
+                                    previous.items.firstOrNull()?.let { navigator.request("${previous.key}:${it.id}",focusMap) { scroll.scrollToItem(rowIndex-1) } };true
+                                } ?: false
+                                Key.DirectionLeft -> { rail();true }
+                                else -> false
+                            }
+                        }
                         .background(if(focused) Cyan.copy(alpha=.1f) else androidx.compose.ui.graphics.Color.Transparent)
                         .clickable { openLibrary(row.library) },horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
                         Section(row.title);TvIcon(TvGlyph.ChevronRight,if(focused) Cyan else Muted,Modifier.size((18*scale).dp))
@@ -255,11 +282,32 @@ class MainActivity: TvActivity() {
                     val position=current.rowPositions[row.key] ?: (0 to 0)
                     val rowScroll=rememberLazyListState(position.first.coerceAtMost((row.items.size-1).coerceAtLeast(0)),position.second)
                     LaunchedEffect(row.key) { snapshotFlow { rowScroll.firstVisibleItemIndex to rowScroll.firstVisibleItemScrollOffset }.collect { current.rowPositions[row.key]=it } }
-                    LazyRow(state=rowScroll,horizontalArrangement=Arrangement.spacedBy((16*scale).dp),contentPadding=PaddingValues(horizontal=(8*scale).dp,vertical=(12*scale).dp)) {
+                    LazyRow(Modifier.focusGroup(),state=rowScroll,horizontalArrangement=Arrangement.spacedBy((16*scale).dp),contentPadding=PaddingValues(horizontal=(8*scale).dp,vertical=(12*scale).dp)) {
                         itemsIndexed(row.items,key={ _,item->item.id }) { i,item ->
                             val key="${row.key}:${item.id}";val request=remember(key) { FocusRequester() }
                             DisposableEffect(key) { focusMap[key]=request;onDispose { if(focusMap[key]===request) focusMap.remove(key) } }
-                            MediaCard(app,s,item,requester=request,onFocused={ current.focus=key;railFocused="";if(item.type !in listOf("CollectionFolder","Folder","Season","BoxSet")) { hero=item;MediaUi.backdropItem=item } },onLeft=if(i==0) rail else null,morph=true) { if(row.key=="libraries") openLibrary(item) else open(item) }
+                            MediaCard(app,s,item,modifier=Modifier.tvDirections { direction ->
+                                when(direction) {
+                                    Key.DirectionLeft,Key.DirectionRight -> {
+                                        val target=i+if(direction==Key.DirectionLeft) -1 else 1
+                                        if(target<0) rail()
+                                        else row.items.getOrNull(target)?.let { next -> navigator.request("${row.key}:${next.id}",focusMap) { rowScroll.scrollToItem(target) } }
+                                        true
+                                    }
+                                    Key.DirectionUp,Key.DirectionDown -> {
+                                        if(direction==Key.DirectionUp && row.library!=null) navigator.request("header:${row.library.id}",focusMap)
+                                        else {
+                                            val target=rowIndex+if(direction==Key.DirectionUp) -1 else 1
+                                            val nextRow=current.rows.getOrNull(target) ?: return@tvDirections false
+                                            val targetKey=if(direction==Key.DirectionDown && nextRow.library!=null) "header:${nextRow.library.id}"
+                                                else nextRow.items.getOrNull(i.coerceAtMost(nextRow.items.lastIndex))?.let { "${nextRow.key}:${it.id}" } ?: return@tvDirections false
+                                            navigator.request(targetKey,focusMap) { scroll.scrollToItem(target) }
+                                        }
+                                        true
+                                    }
+                                    else -> false
+                                }
+                            },requester=request,onFocused={ current.focus=key;railFocused="";if(item.type !in listOf("CollectionFolder","Folder","Season","BoxSet")) { hero=item;MediaUi.backdropItem=item } },onLeft=if(i==0) rail else null,morph=true) { if(row.key=="libraries") openLibrary(item) else open(item) }
                         }
                     }
                 }
@@ -267,13 +315,27 @@ class MainActivity: TvActivity() {
         }
         LaunchedEffect(current.id) { snapshotFlow { scroll.firstVisibleItemIndex to scroll.firstVisibleItemScrollOffset }.collect { current.first=it.first;current.offset=it.second } }
         LaunchedEffect(current.id,restoreEpoch,current.resultRevision,current.rows.isNotEmpty()) {
-            if(current.restoreFocus.isNotBlank() && current.rows.isNotEmpty()) { scroll.scrollToItem(current.restoreFirst.coerceAtMost(current.rows.lastIndex),current.restoreOffset);withFrameNanos {};withFrameNanos {};focusMap[current.restoreFocus]?.requestFocus() }
+            if(current.restoreFocus.isNotBlank() && current.focus==current.restoreFocus && current.rows.isNotEmpty()) {
+                scroll.scrollToItem(current.restoreFirst.coerceAtMost(current.rows.lastIndex),current.restoreOffset);withFrameNanos {};withFrameNanos {}
+                val exists=current.rows.any { row -> current.restoreFocus=="header:${row.library?.id}" || row.items.any { current.restoreFocus=="${row.key}:${it.id}" } }
+                val row=current.rows[current.restoreFirst.coerceAtMost(current.rows.lastIndex)]
+                val target=if(exists) current.restoreFocus else row.items.firstOrNull()?.let { "${row.key}:${it.id}" } ?: "header:${row.library?.id}"
+                current.focus=target;navigator.request(target,focusMap)
+            }
         }
     }
     @Composable private fun ColumnScope.Browse(current: BrowserFrame,s: Session) {
         val scale=LocalTvScale.current;val query=current.query ?: return;val rail=LocalRailFocus.current
         val grid=rememberLazyGridState(current.first,current.offset)
         val focusMap=remember(current.id) { mutableMapOf<String,FocusRequester>() }
+        val navigator=rememberTvFocusNavigator()
+        DisposableEffect(current.id) {
+            val callback:()->Boolean={
+                val target=current.items.firstOrNull { it.id==current.focus } ?: current.items.firstOrNull()
+                if(target==null) false else { navigator.request(target.id,focusMap) { grid.scrollToItem(current.items.indexOf(target).coerceAtLeast(0)) };true }
+            }
+            contentFocus=callback;onDispose { if(contentFocus===callback) contentFocus=null }
+        }
         Text(current.name,color=Paper,fontWeight=FontWeight.Bold,fontSize=(29*scale).sp)
         if(current.destination=="search") {
             var term by rememberSaveable(current.id) { mutableStateOf(query.search) }
@@ -305,12 +367,22 @@ class MainActivity: TvActivity() {
         } else if(query.genre.isNotBlank() || query.year.isNotBlank() || query.played!=null) {
             Text(listOf(query.genre,query.year,query.played?.let { Tr.text(if(it) UiText.WATCHED else UiText.UNWATCHED) }.orEmpty()).filter(String::isNotBlank).joinToString(" · "),color=Cyan,fontSize=(12*scale).sp)
         }
-        LazyVerticalGrid(GridCells.Fixed(5),Modifier.weight(1f).fillMaxWidth().testTag("browse_grid"),state=grid,contentPadding=PaddingValues(3.dp),
+        LazyVerticalGrid(GridCells.Fixed(5),Modifier.focusGroup().weight(1f).fillMaxWidth().testTag("browse_grid"),state=grid,contentPadding=PaddingValues(3.dp),
             horizontalArrangement=Arrangement.spacedBy((8*scale).dp),verticalArrangement=Arrangement.spacedBy((10*scale).dp)) {
             itemsIndexed(current.items,key={ _,item->item.id }) { index,item ->
                 val request=remember(item.id) { FocusRequester() }
                 DisposableEffect(item.id) { focusMap[item.id]=request;onDispose { if(focusMap[item.id]===request) focusMap.remove(item.id) } }
-                MediaCard(app,s,item,requester=request,onFocused={ current.focus=item.id;railFocused="" },onLeft=if(index%5==0) rail else null) { open(item) }
+                MediaCard(app,s,item,modifier=Modifier.tvDirections { direction ->
+                    val target=when(direction) {
+                        Key.DirectionLeft -> if(index%5==0) { rail();return@tvDirections true } else index-1
+                        Key.DirectionRight -> if(index%5==4 || index==current.items.lastIndex) return@tvDirections true else index+1
+                        Key.DirectionUp -> if(index<5) return@tvDirections false else index-5
+                        Key.DirectionDown -> if(index+5>=current.items.size) return@tvDirections false else index+5
+                        else -> return@tvDirections false
+                    }
+                    val nextItem=current.items[target]
+                    navigator.request(nextItem.id,focusMap) { grid.scrollToItem(target) };true
+                },requester=request,onFocused={ current.focus=item.id;railFocused="" },onLeft=if(index%5==0) rail else null) { open(item) }
             }
         }
         if(current.items.isEmpty() && !current.loading && current.error.isBlank()) Text(Tr.text(UiText.NO_RESULTS_309),color=Muted)
@@ -323,7 +395,10 @@ class MainActivity: TvActivity() {
         LaunchedEffect(current.id,restoreEpoch,current.resultRevision,current.items.isNotEmpty()) {
             if(current.items.isNotEmpty()) {
                 grid.scrollToItem(current.restoreFirst.coerceAtMost(current.items.lastIndex),current.restoreOffset);withFrameNanos {};withFrameNanos {}
-                if(current.restoreFocus.isNotBlank()) focusMap[current.restoreFocus]?.requestFocus()
+                if(current.restoreFocus.isNotBlank() && current.focus==current.restoreFocus) {
+                    val target=current.items.firstOrNull { it.id==current.restoreFocus } ?: current.items[current.restoreFirst.coerceAtMost(current.items.lastIndex)]
+                    current.focus=target.id;navigator.request(target.id,focusMap) { grid.scrollToItem(current.items.indexOf(target)) }
+                }
             }
         }
     }

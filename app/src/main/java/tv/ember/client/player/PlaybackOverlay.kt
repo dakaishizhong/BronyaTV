@@ -48,7 +48,7 @@ internal data class PlaybackOptionGroup(val key:String,val title:String,val valu
             item(group.key) {
                 Column(verticalArrangement=Arrangement.spacedBy((6*scale).dp)) {
                     Text(group.title,color=Muted,fontSize=(12*scale).sp)
-                    LazyRow(horizontalArrangement=Arrangement.spacedBy((6*scale).dp)) {
+                    LazyRow(Modifier.focusGroup(),horizontalArrangement=Arrangement.spacedBy((6*scale).dp)) {
                         itemsIndexed(group.values) { index,label ->
                             TvAction(label,"player_option_${group.key}_$index",Modifier.widthIn(max=(260*scale).dp)
                                 .then(if(groupIndex==0 && index==0) Modifier.focusRequester(first) else Modifier),selected=group.selected==index) { group.onSelect(index) }
@@ -139,6 +139,13 @@ internal data class PlaybackOptionGroup(val key:String,val title:String,val valu
     actions:List<PlaybackAction>,requests:Map<String,FocusRequester>,onFocus:(String)->Unit,onSeek:(Int,Int)->Unit,modifier:Modifier) {
     val scale=LocalTvScale.current;val timeline=requests.getValue("playback_timeline")
     var timelineFocused by remember { mutableStateOf(false) }
+    val controls=listOf("previous_section","play_pause","next_section","player_subtitles","player_audio","player_aspect")
+    fun horizontal(key:String)=Modifier.focusProperties {
+        val index=controls.indexOf(key)
+        left=controls.getOrNull(index-1)?.let { requests.getValue(it) } ?: FocusRequester.Cancel
+        right=controls.getOrNull(index+1)?.let { requests.getValue(it) } ?: FocusRequester.Cancel
+        up=timeline;down=FocusRequester.Cancel
+    }
     val fraction=if(duration>0) (position.toFloat()/duration).coerceIn(0f,1f) else 0f
     val bufferFraction=if(duration>0) (buffered.toFloat()/duration).coerceIn(fraction,1f) else fraction
     Column(modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent,Color.Black.copy(alpha=.95f))))
@@ -168,12 +175,12 @@ internal data class PlaybackOptionGroup(val key:String,val title:String,val valu
                 listOf("previous_section","play_pause","next_section").forEach { key ->
                     val action=actions.first { it.key==key }
                     val label=if(key=="play_pause") Tr.text(if(playing) UiText.PAUSE_CONTROL else UiText.PLAY_CONTROL) else action.label
-                    PlayerCircleButton(action.copy(label=label),playing,Modifier.focusRequester(requests.getValue(key)).focusProperties { up=timeline },onFocus={ onFocus(key) })
+                    PlayerCircleButton(action.copy(label=label),playing,Modifier.focusRequester(requests.getValue(key)).then(horizontal(key)),onFocus={ onFocus(key) })
                 }
             }
             Row(Modifier.align(Alignment.CenterEnd).widthIn(max=parametersWidth).testTag("playback_parameters"),horizontalArrangement=Arrangement.spacedBy((10*scale).dp)) {
                 listOf("player_subtitles","player_audio","player_aspect").forEach { key ->
-                    PlayerControlButton(actions.first { it.key==key },Modifier.widthIn(max=parameterMaxWidth).focusRequester(requests.getValue(key)).focusProperties { up=timeline },onFocus={ onFocus(key) })
+                    PlayerControlButton(actions.first { it.key==key },Modifier.widthIn(max=parameterMaxWidth).focusRequester(requests.getValue(key)).then(horizontal(key)),onFocus={ onFocus(key) })
                 }
             }
         }

@@ -95,7 +95,7 @@ class PlaybackFunctionalDeviceTest {
     }
 
     @Test fun settingsApplyInOnePanelAndDiskModeKeepsRealParallelConnections() {
-        app.settings.diskCacheMb=256
+        app.settings.diskCacheMb=512
         launch().use { scenario ->
             waitPlayer(scenario);key(KeyEvent.KEYCODE_MEDIA_PAUSE);key(KeyEvent.KEYCODE_DPAD_UP)
             scenario.onActivity { activity ->

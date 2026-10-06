@@ -586,6 +586,8 @@ class PlaybackActivity : TvActivity(), Player.Listener {
                     val net = network.sample();lastNetwork=net
                     val now = SystemClock.elapsedRealtime();stats.observe(p,now)
                     controlPosition=p.currentPosition
+                    // Subtract the actual encoded sample queue, including variable bitrate media.
+                    diskPrefetch?.updatePlaybackBuffer((control?.allocatedBytes ?: 0).toLong())
                     if(p.bufferedPosition != previousBuffer || p.currentPosition != previousPosition) stalledAt = now
                     previousBuffer = p.bufferedPosition; previousPosition = p.currentPosition
                     val shouldAdvance=p.playWhenReady && p.playbackSuppressionReason==Player.PLAYBACK_SUPPRESSION_REASON_NONE &&
@@ -648,15 +650,17 @@ class PlaybackActivity : TvActivity(), Player.Listener {
         return stats.cinemaHud(p,version,net?.bytesPerSecond ?: 0,control?.allocatedBytes?.toLong() ?: 0)+listOf(
             Tr.text(UiText.HUD_CPU) to (c?.percent?.let { "%.1f%%".format(it)+(if(c.processOnly) " APP" else "") } ?: Tr.text(UiText.WAITING_029))+" · "+(c?.frequencyMhz?.let { "${it}MHz" } ?: "—")+(c?.let { " · APP %.1f%%/core".format(it.coreEquivalent) } ?: ""),
             Tr.text(UiText.HUD_MEMORY) to (m?.let { "${it.totalMb-it.availableMb}/${it.totalMb} MiB · APP ${it.appMb} MiB" } ?: Tr.text(UiText.WAITING_029))+" · Java "+mib(runtime.totalMemory()-runtime.freeMemory())+" / "+mib(runtime.maxMemory()),
-            Tr.text(UiText.HUD_NETWORK) to "${rate(net?.bytesPerSecond)} / ${rate(net?.average)} / ${rate(net?.peak)} MiB/s",
+            Tr.text(UiText.HUD_NETWORK) to "${rate(net?.bytesPerSecond)} MiB/s · 5s ${rate(net?.average)} · 30s ${rate(net?.average30)}",
             Tr.text(UiText.HUD_TRANSFERRED) to mib(net?.total)+" · "+(net?.idleMs?.let { "%.1f s".format(it/1000.0) } ?: "—"),
             Tr.text(UiText.HUD_CONNECTIONS) to "${http?.activeConnections ?: 0} TCP · peak ${http?.peakConnections?.get() ?: 0} · limit ${rangeStatus?.requestedConnections ?: 1} · "+(if(app.settings.streamConnections==0) Tr.text(UiText.AUTO_220) else "set ${app.settings.streamConnections}"),
-            Tr.text(UiText.HUD_FOREGROUND) to range(rangeStatus),
+            Tr.text(UiText.HUD_FOREGROUND) to "${pipeline?.foregroundConnections ?: rangeStatus?.nativeRangeRequests?.get() ?: 0} connections · "+range(rangeStatus),
             Tr.text(UiText.HUD_RANGE_QUEUE) to "${pipeline?.downloadingChunks ?: 0} downloading · ${pipeline?.completedWaitingChunks ?: 0} completed · ordered ${mib(pipeline?.orderedReadyBytes)} · ahead ready ${mib(pipeline?.aheadReadyBytes)}",
             Tr.text(UiText.HUD_RANGE_LOADING) to "${http?.activeRangeRequests?.get() ?: 0} HTTP Range · demand ${control?.loadingDemand ?: false} · isLoading ${p.isLoading} · buffer ${p.totalBufferedDuration} ms",
             Tr.text(UiText.HUD_TRANSFER_RATES) to "${rate(rates?.foreground)} / ${rate(rates?.background)} / ${rate(net?.bytesPerSecond)} MiB/s",
             Tr.text(UiText.HUD_RANGE_CANCEL) to "${rangeStatus?.duplicatedRangeRequests?.get()?.plus(rangeStatus?.reader?.duplicatedRangeRequests?.get() ?: 0) ?: 0} duplicate · FG ${rangeStatus?.cancelledForeground?.get()?.plus(rangeStatus?.reader?.cancelledForeground?.get() ?: 0) ?: 0} · disk ${rangeStatus?.cancelledBackground?.get()?.plus(rangeStatus?.reader?.cancelledBackground?.get() ?: 0) ?: 0}",
-            Tr.text(UiText.HUD_PREFETCH) to (disk?.let { it.state+" · write queue "+mib(it.pendingWriteBytes) } ?: "—"),
+            Tr.text(UiText.HUD_PREFETCH) to "${pipeline?.prefetchConnections ?: 0} connections · "+(disk?.let { it.state+" · write queue "+mib(it.pendingWriteBytes) } ?: "—"),
+            "Disk Ahead" to (disk?.let { "${mib(it.cachedAheadBytes)} / ${mib(it.aheadBytes)}" } ?: "—"),
+            "Disk Total" to (disk?.let { "${mib(it.usedBytes)} / ${mib(it.capacityBytes)}" } ?: "—"),
             Tr.text(UiText.HUD_DISK) to (disk?.let { "${mib(it.cachedAheadBytes)} ahead · ${mib(it.hitBytes.get())} hit · ${mib(it.usedBytes)}/${mib(it.capacityBytes)}" } ?: diskMode),
             Tr.text(UiText.HUD_HTTP) to "${sample?.protocol ?: "—"} ${sample?.status ?: 0} · fail ${http?.failures?.get() ?: 0} · "+(sample?.ttfbMs?.let { "${it}ms" } ?: "—")
         )

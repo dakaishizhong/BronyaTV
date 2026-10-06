@@ -2,7 +2,7 @@ package tv.ember.client.monitor
 
 /** Reads actual received bytes. Rates include idle time; they are not a speed test. */
 class TransferWindow(private val clock: () -> Long) {
-    data class Sample(val rate: Long, val average: Long, val peak: Long, val total: Long, val idleMs: Long?)
+    data class Sample(val rate: Long, val average: Long, val peak: Long, val total: Long, val idleMs: Long?, val average30:Long)
     private data class Interval(val end: Long, val duration: Long, val bytes: Long)
     private val intervals = ArrayDeque<Interval>()
     private var last = clock()
@@ -21,6 +21,7 @@ class TransferWindow(private val clock: () -> Long) {
         val recent=intervals.filter { now-it.end < 5000 }
         val avg=recent.sumOf { it.bytes }*1000/recent.sumOf { it.duration }.coerceAtLeast(1)
         val peak=intervals.filter { it.duration >= 250 }.maxOfOrNull { it.bytes*1000/it.duration } ?: 0
-        return Sample(count*1000/elapsed,avg,peak,total,lastByte?.let { (now-it).coerceAtLeast(0) })
+        return Sample(count*1000/elapsed,avg,peak,total,lastByte?.let { (now-it).coerceAtLeast(0) },
+            intervals.sumOf { it.bytes }*1000/intervals.sumOf { it.duration }.coerceAtLeast(1))
     }
 }

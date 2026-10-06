@@ -19,17 +19,17 @@ import java.nio.file.Files
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[23],manifest=Config.NONE,application=Application::class)
 class ProductionDiskRangeTest {
-    private fun withCache(test:(PlaybackDiskCache.Handle)->Unit) {
+    private fun withCache(requestedMb:Int=512,test:(PlaybackDiskCache.Handle)->Unit) {
         val folder=Files.createTempDirectory("bronya-simple-cache-").toFile()
         val context=object:ContextWrapper(RuntimeEnvironment.getApplication()) {
             override fun getApplicationContext():Context=this
             override fun getCacheDir()=folder
         }
-        val handle=requireNotNull(PlaybackDiskCache(context).configure(256,80_000_000,15))
+        val handle=requireNotNull(PlaybackDiskCache(context).configure(requestedMb,80_000_000,15))
         try { test(handle) } finally { handle.cache.release();folder.deleteRecursively() }
     }
     @Test fun productionDiskCacheKeepsFiftyEightyAndHundredMbpsConsumersFed() {
-        for(mbps in listOf(50,80,100)) withCache { handle ->
+        for(mbps in listOf(20,50,80,100)) withCache { handle ->
             val plan=StreamPolicy.create(8,mbps*1_000_000L,512L*1048576,32L*1048576,false,true)
             val status=RangePlaybackStatus(plan.connections,plan.budgetBytes,plan.chunkBytes,plan.aheadWindowBytes)
             val disk=DiskPrefetcher(handle,"production-$mbps",status)
@@ -248,4 +248,203 @@ class ProductionDiskRangeTest {
             } finally { source.close();client.connectionPool.evictAll() }
         }
     }
+    @Test(timeout=240000) fun fiftyMbpsWith128MbpsNetworkContinuouslyBuildsOneGiBAheadWithBoundedRam()=withCache(1024) { continuousDiskCase(it,50,false) }
+    @Test(timeout=180000) fun allBitratesSurviveNetworkSlowdownInterruptionAndRecoveryWithShortRam() {
+        for(mbps in listOf(20,50,80,100)) withCache(1024) { continuousDiskCase(it,mbps,true) }
+    }
+    private fun continuousDiskCase(handle:PlaybackDiskCache.Handle,mbps:Int,disturbed:Boolean) {
+        val mib=1048576L
+        val sourceSize=3L*1024*mib
+        val startedAt=java.util.concurrent.atomic.AtomicLong()
+        val networkFailures=java.util.concurrent.atomic.AtomicInteger()
+        val bodyInterrupted=java.util.concurrent.atomic.AtomicBoolean()
+        val received=java.util.concurrent.atomic.AtomicLong()
+        val overlap=java.util.concurrent.atomic.AtomicInteger()
+        val requested=java.util.TreeMap<Long,Long>()
+        val connections=java.util.concurrent.ConcurrentHashMap.newKeySet<okhttp3.Connection>()
+        val acquired=java.util.concurrent.ConcurrentHashMap.newKeySet<okhttp3.Connection>()
+        val downloadSamples=java.util.concurrent.CopyOnWriteArrayList<Long>()
+        val prefetchSamples=java.util.concurrent.CopyOnWriteArrayList<Int>()
+        val ramSamples=java.util.concurrent.CopyOnWriteArrayList<Int>()
+        val failure=java.util.concurrent.atomic.AtomicReference<Throwable>()
+        okhttp3.mockwebserver.MockWebServer().use { server ->
+            server.dispatcher=object:okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request:okhttp3.mockwebserver.RecordedRequest):okhttp3.mockwebserver.MockResponse {
+                    val elapsed=startedAt.get().takeIf { it>0 }?.let { (System.nanoTime()-it)/1e9 } ?: 0.0
+                    if(disturbed && elapsed in 4.0..5.0) {
+                        networkFailures.incrementAndGet()
+                        return okhttp3.mockwebserver.MockResponse().setResponseCode(503)
+                    }
+                    val parts=request.getHeader("Range")!!.removePrefix("bytes=").split('-')
+                    val start=parts[0].toLong();val end=parts[1].toLong()
+                    synchronized(requested) {
+                        if(requested.floorEntry(start)?.value?.let { it>=start }==true || requested.ceilingKey(start)?.let { it<=end }==true) overlap.incrementAndGet()
+                        requested[start]=end
+                    }
+                    val bytes=ByteArray((end-start+1).toInt()) { ((start+it)%251).toByte() }
+                    // Eight persistent HTTP/1.1 lanes offer 128 Mbps in total, including a 20 ms RTT.
+                    return okhttp3.mockwebserver.MockResponse().setResponseCode(206)
+                        .setHeader("Content-Range","bytes $start-$end/$sourceSize").setHeader("ETag","\"soak\"")
+                        .setHeadersDelay(20,java.util.concurrent.TimeUnit.MILLISECONDS)
+                        .setBody(okio.Buffer().write(bytes)).throttleBody(65536,if(disturbed && elapsed in 2.0..4.0) (65536*8L*8/ (mbps*0.6)).toLong() else if(disturbed) 16384 else 32768,java.util.concurrent.TimeUnit.MICROSECONDS)
+                        .apply { if(disturbed && elapsed in 6.0..7.0 && bodyInterrupted.compareAndSet(false,true)) setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY) }
+                }
+            }
+            val client=okhttp3.OkHttpClient.Builder().protocols(listOf(okhttp3.Protocol.HTTP_1_1))
+                .connectionPool(okhttp3.ConnectionPool(8,30,java.util.concurrent.TimeUnit.SECONDS))
+                .eventListener(object:okhttp3.EventListener() {
+                    override fun connectionAcquired(call:okhttp3.Call,connection:okhttp3.Connection) { connections.add(connection);acquired.add(connection) }
+                    override fun connectionReleased(call:okhttp3.Call,connection:okhttp3.Connection) { connections.remove(connection) }
+                }).build()
+            val plan=StreamPolicy.create(8,mbps*1_000_000L,512*mib,64*mib,false,true)
+            val status=RangePlaybackStatus(8,plan.budgetBytes,plan.chunkBytes,plan.aheadWindowBytes)
+            val disk=DiskPrefetcher(handle,"soak",status)
+            val loader=java.util.concurrent.Executors.newSingleThreadExecutor()
+            val timer=java.util.concurrent.Executors.newSingleThreadScheduledExecutor()
+            val queue=java.util.concurrent.ArrayBlockingQueue<androidx.media3.exoplayer.upstream.Allocation>(1024)
+            val bytesPlayed=java.util.concurrent.atomic.AtomicLong()
+            val timeline=androidx.media3.exoplayer.source.SinglePeriodTimeline(600_000_000,true,false,false,null,androidx.media3.common.MediaItem.Builder().build())
+            val playerId=androidx.media3.exoplayer.analytics.PlayerId.UNSET
+            val loadControl=tv.ember.client.player.TvLoadControl(tv.ember.client.player.BufferPolicy(45000,120000,5000,5000,64*mib.toInt()),status::setLoadingDemand)
+            loadControl.onPrepared(playerId)
+            val allocator=loadControl.getAllocator(playerId)
+            val reader=ParallelRangeReader(client,server.url("/original.mkv").toString(),emptyMap(),0,-1,8,plan.chunkBytes,plan.aheadWindowBytes,disk) { received.addAndGet(it.toLong()) }
+            status.reader=reader
+            var zeroReads=0;var minimumRam=Long.MAX_VALUE;var peakRam=0L
+            try {
+                reader.open();reader.setPlaybackPosition(0)
+                loader.submit {
+                    try {
+                        var mediaPosition=0L
+                        while(!Thread.currentThread().isInterrupted) {
+                            val parameters=androidx.media3.exoplayer.LoadControl.Parameters(playerId,timeline,
+                                androidx.media3.exoplayer.source.MediaSource.MediaPeriodId(timeline.getUidOfPeriod(0)),
+                                bytesPlayed.get()*8/mbps,queue.size*65536L*8/mbps,1f,true,false,androidx.media3.common.C.TIME_UNSET,androidx.media3.common.C.TIME_UNSET)
+                            if(!loadControl.shouldContinueLoading(parameters)) { Thread.sleep(2);continue }
+                            val allocation=allocator.allocate();var count=0
+                            while(count<65536) { val n=reader.read(allocation.data,allocation.offset+count,65536-count);if(n<0) break;count+=n }
+                            if(count!=65536) { allocator.release(allocation);break }
+                            queue.put(allocation);mediaPosition+=count
+                            disk.advance(mediaPosition);disk.updatePlaybackBuffer(queue.size*65536L)
+                        }
+                    } catch(e:Throwable) { if(!Thread.currentThread().isInterrupted) failure.set(e) }
+                }
+                val primeDeadline=System.nanoTime()+20_000_000_000L
+                while(queue.size<512 && failure.get()==null && System.nanoTime()<primeDeadline) Thread.sleep(10)
+                failure.get()?.let { throw it };assertTrue("32 MiB playable startup",queue.size>=512)
+                var lastBytes=received.get()
+                timer.scheduleAtFixedRate({
+                    val count=received.get();val sample=reader.snapshot()
+                    if(disk.cachedAheadBytes<disk.aheadBytes-8*mib) {
+                        downloadSamples.add(count-lastBytes);prefetchSamples.add(sample.prefetchConnections)
+                    }
+                    ramSamples.add(queue.size);lastBytes=count
+                },1,1,java.util.concurrent.TimeUnit.SECONDS)
+                val begin=System.nanoTime();startedAt.set(begin);var due=begin
+                if(disturbed) {
+                    // Interrupt sockets already carrying slow bodies; do not wait for their
+                    // next request to observe the outage and subsequent recovery.
+                    timer.schedule({ connections.toList().forEach { runCatching { it.socket().close() } } },4,java.util.concurrent.TimeUnit.SECONDS)
+                    timer.schedule({ connections.firstOrNull()?.let { bodyInterrupted.set(true);runCatching { it.socket().close() } } },6,java.util.concurrent.TimeUnit.SECONDS)
+                }
+                var reachedAt=0L
+                while(System.nanoTime()-begin<180_000_000_000L) {
+                    failure.get()?.let { throw it }
+                    val allocation=queue.poll(100,java.util.concurrent.TimeUnit.MILLISECONDS)
+                    if(allocation==null) { zeroReads++;continue }
+                    val position=bytesPlayed.get()
+                    assertEquals((position%251).toByte(),allocation.data[allocation.offset])
+                    assertEquals(((position+65535)%251).toByte(),allocation.data[allocation.offset+65535])
+                    bytesPlayed.addAndGet(65536);allocator.release(allocation)
+                    disk.updatePlaybackBuffer(queue.size*65536L)
+                    val ram=queue.size*65536L;minimumRam=minOf(minimumRam,ram);peakRam=maxOf(peakRam,ram+reader.bufferedBytes.get())
+                    if(disturbed && System.nanoTime()-begin>=12_000_000_000L) break
+                    if(!disturbed && disk.cachedAheadBytes>=disk.aheadBytes-4*mib) {
+                        if(reachedAt==0L) reachedAt=System.nanoTime()
+                        if(System.nanoTime()-reachedAt>=5_000_000_000L) break
+                    }
+                    due+=65536L*8000/mbps
+                    val delay=due-System.nanoTime();if(delay>0) java.util.concurrent.TimeUnit.NANOSECONDS.sleep(delay)
+                }
+                val elapsed=(System.nanoTime()-begin)/1e9
+                val result="$mbps Mbps / ${if(disturbed) 256 else 128} Mbps (faults=$disturbed): diskAhead=${disk.cachedAheadBytes/mib} MiB, target=${disk.aheadBytes/mib} MiB, RAM minimum=${minimumRam/mib} MiB, combined peak=${peakRam/mib} MiB, underruns=$zeroReads, averageDownload=${downloadSamples.average()*8/1e6} Mbps, zeroDownloadSeconds=${downloadSamples.count { it==0L }}, averagePrefetch=${prefetchSamples.average()}, uniqueTCP=${acquired.size}, resumedHeaders=${if(disturbed) overlap.get() else 0}, duplicateRanges=${reader.duplicatedRangeRequests.get()}, elapsed=${elapsed}s"
+                println("CONTINUOUS_DISK_RESULT $result")
+                assertTrue(result,disk.cachedAheadBytes>=(if(disturbed) 32 else 1020)*mib)
+                assertEquals(result,0,zeroReads);assertTrue(result,minimumRam>=(if(disturbed) 16 else 24)*mib)
+                assertTrue(result,peakRam<=96*mib+65536)
+                assertTrue(result,downloadSamples.size>=if(disturbed) 10 else 30)
+                if(!disturbed) assertEquals(result,0,downloadSamples.count { it==0L })
+                else { assertTrue("outage was exercised: $result",networkFailures.get()>0);assertTrue("body interruption was exercised: $result",bodyInterrupted.get());assertTrue("download recovered: $result",downloadSamples.takeLast(2).average()>8*mib) }
+                assertTrue(result,prefetchSamples.average()>=1)
+                if(!disturbed) assertEquals(result,0,overlap.get());assertEquals(0,reader.duplicatedRangeRequests.get())
+                assertTrue("persistent sockets should be reused: $result",acquired.size<=if(disturbed) 20 else 8)
+                if(disturbed) {
+                    loader.shutdownNow();reader.close();loader.awaitTermination(5,java.util.concurrent.TimeUnit.SECONDS)
+                    val closeDeadline=System.nanoTime()+3_000_000_000L
+                    while(reader.activeRequests.get()>0 && System.nanoTime()<closeDeadline) Thread.sleep(2)
+                    assertEquals("seek releases obsolete lanes",0,reader.activeRequests.get())
+                    val seekPosition=bytesPlayed.get()+16*mib+19
+                    disk.seek(seekPosition)
+                    val count=server.requestCount
+                    ParallelRangeReader(client,server.url("/original.mkv").toString(),emptyMap(),seekPosition,2*mib,8,
+                        plan.chunkBytes,plan.aheadWindowBytes,disk) {}.use { seekReader ->
+                        assertEquals(2*mib,seekReader.open())
+                        val actual=ByteArray((2*mib).toInt());var offset=0
+                        while(offset<actual.size) { val n=seekReader.read(actual,offset,actual.size-offset);assertTrue(n>0);offset+=n }
+                        assertArrayEquals(ByteArray(actual.size) { ((seekPosition+it)%251).toByte() },actual)
+                    }
+                    assertEquals("$mbps Mbps cached seek must not redownload",count,server.requestCount)
+                    val uncached=2L*1024*mib+37
+                    disk.seek(uncached)
+                    ParallelRangeReader(client,server.url("/original.mkv").toString(),emptyMap(),uncached,mib,8,
+                        plan.chunkBytes,plan.aheadWindowBytes,disk) {}.use { seekReader ->
+                        assertEquals(mib,seekReader.open())
+                        val actual=ByteArray(mib.toInt());var offset=0
+                        while(offset<actual.size) { val n=seekReader.read(actual,offset,actual.size-offset);assertTrue(n>0);offset+=n }
+                        assertArrayEquals(ByteArray(actual.size) { ((uncached+it)%251).toByte() },actual)
+                        assertEquals(0,seekReader.duplicatedRangeRequests.get())
+                    }
+                    assertTrue("uncached seek starts a new forward window",server.requestCount>count)
+                }
+            } finally {
+                timer.shutdownNow();reader.close();loader.shutdownNow();loader.awaitTermination(5,java.util.concurrent.TimeUnit.SECONDS)
+                disk.close();loadControl.onReleased(playerId);client.connectionPool.evictAll();client.dispatcher.executorService.shutdown()
+            }
+        }
+    }
+
+    @Test(timeout=20000) fun selectedSingleConnectionUsesTheSharedSchedulerAndPrefetchesWhileRamLoadingIsPaused()=withCache { handle ->
+        val fixture=ByteArray(16*1048576) { (it%251).toByte() }
+        okhttp3.mockwebserver.MockWebServer().use { server ->
+            server.dispatcher=object:okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request:okhttp3.mockwebserver.RecordedRequest):okhttp3.mockwebserver.MockResponse {
+                    val parts=request.getHeader("Range")!!.removePrefix("bytes=").split('-')
+                    val start=parts[0].toInt();val end=parts[1].toInt()
+                    return okhttp3.mockwebserver.MockResponse().setResponseCode(206).setHeader("ETag","\"single-shared\"")
+                        .setHeader("Content-Range","bytes $start-$end/${fixture.size}")
+                        .setBody(okio.Buffer().write(fixture,start,end-start+1))
+                }
+            }
+            val client=okhttp3.OkHttpClient.Builder().build()
+            val url=server.url("/original.mkv").toString()
+            val status=RangePlaybackStatus(1,8*1048576,2*1048576,8*1048576)
+            val disk=DiskPrefetcher(handle,"single-shared",status);status.store=disk
+            val source=DiskPlaybackDataSource(url,{ RangePlaybackDataSource(androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(client),client,url,emptyMap(),status) },disk)
+            try {
+                source.open(androidx.media3.datasource.DataSpec.Builder().setUri(url).build())
+                assertNotNull("selected single mode still uses the unified owner",status.reader)
+                status.setLoadingDemand(false)
+                val deadline=System.nanoTime()+5_000_000_000L
+                while(!disk.contains(0,fixture.size) && System.nanoTime()<deadline) Thread.sleep(2)
+                assertTrue("disk is independent of paused RAM demand",disk.contains(0,fixture.size))
+                assertTrue(status.reader!!.backgroundBytes.get()>0)
+                assertTrue(status.bufferedBytes<=8*1048576)
+                val requests=server.requestCount;val actual=ByteArray(fixture.size);var offset=0
+                while(offset<actual.size) { val n=source.read(actual,offset,actual.size-offset);assertTrue(n>0);offset+=n }
+                assertArrayEquals(fixture,actual);assertEquals(requests,server.requestCount)
+                assertEquals(0,status.reader!!.duplicatedRangeRequests.get())
+            } finally { source.close();disk.close();client.connectionPool.evictAll();client.dispatcher.executorService.shutdown() }
+        }
+    }
+
 }

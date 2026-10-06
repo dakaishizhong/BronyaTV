@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.*
@@ -26,12 +27,13 @@ import androidx.tv.material3.Text
 
 /** Android window interoperability, with the entire dialog body implemented in Compose for TV. */
 class TvDialog(context: Context): androidx.activity.ComponentDialog(context) {
-    companion object { private val backKeys=BackKeyGate() }
+    companion object { private val backKeys=BackKeyGate.shared }
     // Filter TV remote repeats; gestures use the same AndroidX dispatcher callback.
     @android.annotation.SuppressLint("GestureBackNavigation")
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
         if(event.keyCode==android.view.KeyEvent.KEYCODE_BACK) {
-            if(event.action==android.view.KeyEvent.ACTION_UP && backKeys.accept(event.downTime,event.isCanceled)) onBackPressedDispatcher.onBackPressed()
+            if(event.action==android.view.KeyEvent.ACTION_DOWN) backKeys.begin(event.downTime,this)
+            if(event.action==android.view.KeyEvent.ACTION_UP && backKeys.accept(event.downTime,event.isCanceled,this)) onBackPressedDispatcher.onBackPressed()
             return true
         }
         return super.dispatchKeyEvent(event)
@@ -64,7 +66,7 @@ class TvDialog(context: Context): androidx.activity.ComponentDialog(context) {
                         Spacer(Modifier.height(12.dp))
                         body?.invoke()
                         if(options.isNotEmpty()) {
-                            LazyColumn(Modifier.fillMaxWidth().weight(1f,false).heightIn(max=(260*scale).dp),state=rememberLazyListState(selected.coerceIn(0,options.lastIndex)),verticalArrangement=Arrangement.spacedBy(7.dp)) {
+                            LazyColumn(Modifier.focusGroup().fillMaxWidth().weight(1f,false).heightIn(max=(260*scale).dp),state=rememberLazyListState(selected.coerceIn(0,options.lastIndex)),verticalArrangement=Arrangement.spacedBy(7.dp)) {
                                 itemsIndexed(options,key={ i,_-> i }) { i,label ->
                                     TvAction(label,tag="dialog_option_$i",modifier=Modifier.fillMaxWidth().then(if(i==selected.coerceAtLeast(0)) Modifier.focusRequester(focus) else Modifier),selected=i==selected) {
                                         optionAction?.invoke(this@TvDialog,i);if(!singleChoice) dismiss()

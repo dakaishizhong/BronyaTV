@@ -16,8 +16,8 @@ android {
         applicationId = "tv.ember.client"
         minSdk = 23
         targetSdk = 36
-        versionCode = 18
-        versionName = "1.7.4"
+        versionCode = 19
+        versionName = "1.7.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

@@ -24,7 +24,9 @@ class DiskPrefetcher(val handle: PlaybackDiskCache.Handle, val key: String, priv
     @Volatile private var invalidating=false
     @Volatile private var cursor=0L
     @Volatile private var generation=0L
-    private var identity: RangeIdentity?=null
+    @Volatile override var identity: RangeIdentity?=null; private set
+    @Volatile private var mediaPosition=0L
+    @Volatile private var playbackBufferedBytes=0L
     private val storageLock=Any()
     private val readLock=Any()
     @Volatile private var readInput:RandomAccessFile?=null
@@ -47,9 +49,22 @@ class DiskPrefetcher(val handle: PlaybackDiskCache.Handle, val key: String, priv
     fun seek(position: Long)=synchronized(lock) {
         if(closed) return@synchronized
         if(position!=cursor) { generation++;clearQueue();if(invalidating) queue.offer(Write(-1,ByteArray(0),generation)) }
-        cursor=position
+        mediaPosition=position;cursor=position;playbackBufferedBytes=0
+        handle.evictor?.setPlaybackWindow(handle.cache,key,cursor)
+        range.reader?.setPlaybackPosition(cursor)
     }
-    fun advance(position: Long) { cursor=position }
+    fun advance(position: Long) {
+        mediaPosition=position;cursor=(position-playbackBufferedBytes).coerceAtLeast(0)
+        handle.evictor?.setPlaybackWindow(handle.cache,key,cursor)
+        range.reader?.setPlaybackPosition(cursor)
+    }
+    fun updatePlaybackBuffer(bytes:Long) {
+        playbackBufferedBytes=bytes.coerceAtLeast(0);cursor=(mediaPosition-playbackBufferedBytes).coerceAtLeast(0)
+        handle.evictor?.setPlaybackWindow(handle.cache,key,cursor)
+        range.reader?.setPlaybackPosition(cursor)
+    }
+    override fun cachedLength(position:Long,length:Long):Long = if(enabled)
+        runCatching { handle.cache.getCachedLength(key,position,length) }.getOrDefault(-length) else -length
     override fun validate(identity: RangeIdentity): RangeChunkStore {
         synchronized(lock) {
             if(this.identity!=null && (this.identity!=identity || (identity.etag==null || identity.etag.startsWith("W/",true)) && identity.lastModified==null)) {
@@ -60,6 +75,8 @@ class DiskPrefetcher(val handle: PlaybackDiskCache.Handle, val key: String, priv
             this.identity=identity
             val epoch=generation
             return object: RangeChunkStore {
+                override val identity get()=if(enabled) this@DiskPrefetcher.identity else null
+                override fun cachedLength(position:Long,length:Long)=if(enabled) this@DiskPrefetcher.cachedLength(position,length) else -length
                 override val aheadBytes get()=this@DiskPrefetcher.aheadBytes
                 override val enabled get()=this@DiskPrefetcher.enabled && epoch==generation
                 override val canPrefetch get()=enabled && this@DiskPrefetcher.canPrefetch

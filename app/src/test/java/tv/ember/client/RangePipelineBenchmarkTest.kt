@@ -19,7 +19,7 @@ class RangePipelineBenchmarkTest {
         val selected=System.getenv("BRONYA_PIPELINE_CASES")
         val cases=if(!selected.isNullOrBlank()) selected.split(',').map { val parts=it.split(':').map(String::toInt);Triple(parts[0],parts[1],parts[2]) } else if(full) listOf(20,50,80,100).flatMap { mbps -> listOf(20,50,100,200).flatMap { rtt ->
             listOf(2,4,8).map { lanes -> Triple(mbps,rtt,lanes) }
-        } } else listOf(50,80,100).map { Triple(it,200,8) }
+        } } else listOf(20,50,80,100).map { Triple(it,200,8) }
         for((mbps,rtt,lanes) in cases) for(disk in listOf(false,true)) runCase(mbps,rtt,lanes,disk)
     }
     private data class Frame(val bytes:ByteArray,val count:Int)

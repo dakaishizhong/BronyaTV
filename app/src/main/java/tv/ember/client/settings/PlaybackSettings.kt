@@ -48,7 +48,12 @@ class PlaybackSettings(context: Context) {
         get()=p.getInt("back_buffer_seconds",5).takeIf { it in listOf(0,5,15,30) } ?: 5
         set(v) { require(v in listOf(0,5,15,30));p.edit().putInt("back_buffer_seconds",v).apply() }
     var diskCacheMb: Int
-        get() = p.getInt("disk_cache_mb", -1).takeIf { it in tv.ember.client.cache.DiskCachePlan.sizesMb } ?: -1
+        get() = when(val saved=p.getInt("disk_cache_mb",1024)) {
+            -1 -> 1024
+            256 -> 512
+            in tv.ember.client.cache.DiskCachePlan.sizesMb -> saved
+            else -> 1024
+        }
         set(v) { require(v in tv.ember.client.cache.DiskCachePlan.sizesMb); p.edit().putInt("disk_cache_mb", v).apply() }
     var diskAheadSeconds: Int
         get() = p.getInt("disk_ahead_seconds", 60).takeIf { it in tv.ember.client.cache.DiskCachePlan.aheadSeconds } ?: 60

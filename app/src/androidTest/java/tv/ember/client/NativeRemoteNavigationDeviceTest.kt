@@ -63,6 +63,7 @@ class NativeRemoteNavigationDeviceTest {
         tv.ember.client.network.HttpClient.api.newCall(Request.Builder().url("$server/fixture/control?small_catalog=1&fail=0").build()).execute().use { check(it.isSuccessful) }
         AppLanguage.save(context,InstrumentationRegistry.getArguments().getString("testLanguage") ?: "zh")
         app.sessions.save(Session(server,"fixture-token","u1","CinemaMaster"));app.progress.clear()
+        app.settings.player=tv.ember.client.settings.PlayerChoice.INTERNAL
         app.settings.diskCacheMb=0;app.settings.osd=false;app.settings.introSeconds=0;app.settings.outroSeconds=0
         app.settings.resizeMode=androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
     }
@@ -208,4 +209,43 @@ class NativeRemoteNavigationDeviceTest {
             step(KeyEvent.KEYCODE_DPAD_RIGHT,"settings_tile_0")
         }
     }
+    @Test fun loggedInRailShowsTheAccountAfterReturningFromAnotherPage() {
+        ActivityScenario.launch(MainActivity::class.java).use {
+            ready("media_demo");expect(nav(UiText.HOME_267))
+            step(KeyEvent.KEYCODE_DPAD_UP,nav(UiText.LOGIN_SCREEN))
+            compose.onNodeWithText("CinemaMaster").assertExists()
+            compose.onNodeWithText(Tr.text(UiText.LOGIN_SCREEN)).assertDoesNotExist()
+            step(KeyEvent.KEYCODE_DPAD_DOWN,nav(UiText.HOME_267))
+            step(KeyEvent.KEYCODE_DPAD_RIGHT,"media_demo")
+            key(KeyEvent.KEYCODE_DPAD_CENTER);ready("detail_play")
+            step(KeyEvent.KEYCODE_BACK,"media_demo")
+            step(KeyEvent.KEYCODE_DPAD_LEFT,nav(UiText.HOME_267))
+            step(KeyEvent.KEYCODE_DPAD_UP,nav(UiText.LOGIN_SCREEN))
+            compose.onNodeWithText("CinemaMaster").assertExists()
+        }
+    }
+    @Test fun playbackBackPreservesDetailThenBrowserThenHomeAndIgnoresARepeatedRelease() {
+        ActivityScenario.launch(MainActivity::class.java).use {
+            ready("media_demo")
+            step(KeyEvent.KEYCODE_DPAD_DOWN,nav(UiText.MOVIES_316))
+            key(KeyEvent.KEYCODE_DPAD_CENTER);ready("browse_grid")
+            step(KeyEvent.KEYCODE_DPAD_RIGHT,"media_film0","media_demo")
+            key(KeyEvent.KEYCODE_DPAD_CENTER);ready("detail_play")
+            key(KeyEvent.KEYCODE_DPAD_CENTER);ready("playback_surface")
+            val press=android.os.SystemClock.uptimeMillis()
+            fun back(action:Int) {
+                instrumentation.runOnMainSync {
+                    val activity=androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                        .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).single()
+                    activity.dispatchKeyEvent(KeyEvent(press,press+10,action,KeyEvent.KEYCODE_BACK,0))
+                }
+                compose.waitForIdle()
+            }
+            back(KeyEvent.ACTION_DOWN);back(KeyEvent.ACTION_UP);ready("detail_play")
+            back(KeyEvent.ACTION_UP);compose.onNodeWithTag("detail_play").assertExists()
+            key(KeyEvent.KEYCODE_BACK);ready("browse_grid")
+            key(KeyEvent.KEYCODE_BACK);ready("home_rows")
+        }
+    }
+
 }
