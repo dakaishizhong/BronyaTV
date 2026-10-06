@@ -22,6 +22,7 @@ class HttpTransportMonitor(private val sockets: ReceiveBufferSocketFactory? = nu
     val redirects=AtomicInteger()
     val failures=AtomicInteger()
     val activeRequests=AtomicInteger()
+    val activeRangeRequests=AtomicInteger()
     val peakConnections=AtomicInteger()
     private val liveConnections=java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<Connection,Boolean>())
     val activeConnections get() = liveConnections.size
@@ -33,10 +34,11 @@ class HttpTransportMonitor(private val sockets: ReceiveBufferSocketFactory? = nu
         if(path.contains("/Subtitles/",true) || listOf(".srt",".ass",".ssa",".vtt").any { path.endsWith(it,true) })
             return EventListener.NONE
         return object : EventListener() {
+        private val rangeRequest=call.request().header("Range")!=null
         private var dnsAt=0L; private var connectAt=0L;private var tlsAt=0L;private var requestAt=0L
         private var dns:Long?=null;private var connect:Long?=null;private var tls:Long?=null
         private var protocol=Tr.text(UiText.WAITING_FOR_CONNECTION_025);private var remote=Tr.text(UiText.NOT_PROVIDED_026)
-        override fun callStart(call:Call) { requests.incrementAndGet();activeRequests.incrementAndGet() }
+        override fun callStart(call:Call) { requests.incrementAndGet();activeRequests.incrementAndGet();if(rangeRequest) activeRangeRequests.incrementAndGet() }
         override fun dnsStart(call:Call,domainName:String) { dnsAt=clock() }
         override fun dnsEnd(call:Call,domainName:String,inetAddressList:List<InetAddress>) { dns=(clock()-dnsAt).coerceAtLeast(0) }
         override fun connectStart(call:Call,inetSocketAddress:InetSocketAddress,proxy:Proxy) { connectAt=clock();tls=null }
@@ -49,14 +51,14 @@ class HttpTransportMonitor(private val sockets: ReceiveBufferSocketFactory? = nu
             liveConnections.add(connection);recordPeak(liveConnections.size)
         }
         override fun connectionReleased(call:Call,connection:Connection) { liveConnections.remove(connection) }
-        override fun callEnd(call:Call) { activeRequests.decrementAndGet() }
+        override fun callEnd(call:Call) { activeRequests.decrementAndGet();if(rangeRequest) activeRangeRequests.decrementAndGet() }
         override fun requestHeadersEnd(call:Call,request:Request) { requestAt=clock() }
         override fun responseHeadersEnd(call:Call,response:Response) {
             if(response.code in 300..399) redirects.incrementAndGet()
             latest=Snapshot(protocol,remote,dns,connect,tls,(clock()-requestAt).coerceAtLeast(0),
                 response.header("Content-Type") ?: Tr.text(UiText.NOT_PROVIDED_026),response.header("Content-Range") ?: Tr.text(UiText.NOT_PROVIDED_026),response.code)
         }
-        override fun callFailed(call:Call,ioe:IOException) { failures.incrementAndGet();activeRequests.decrementAndGet() }
+        override fun callFailed(call:Call,ioe:IOException) { failures.incrementAndGet();activeRequests.decrementAndGet();if(rangeRequest) activeRangeRequests.decrementAndGet() }
     }
     }
     fun summary():String {

@@ -35,13 +35,28 @@ class DiskCachePolicyTest {
         val unknown=DiskCachePlan.create(-1,4000*mib,0,0,60)
         assertEquals(64*mib,unknown.aheadBytes)
     }
-    @Test fun diskAndForegroundReceiveQueuesShareTheOriginalMemoryBudget() {
+    @Test fun diskAndForegroundShareOneWindowIncludingAllStorageCopies() {
         val old=StreamPolicy.create(0,50_000_000,256*mib,32*mib,false)
         val disk=StreamPolicy.create(0,50_000_000,256*mib,32*mib,false,true)
-        assertTrue(disk.budgetBytes.toLong()*2<=old.budgetBytes)
+        assertTrue(disk.budgetBytes<=old.budgetBytes)
+        assertTrue(disk.budgetBytes<=32*mib)
+        assertTrue(disk.aheadWindowBytes+4*disk.chunkBytes<=disk.budgetBytes)
+        assertTrue(disk.aheadWindowBytes>=2*disk.connections*disk.chunkBytes)
         assertEquals(8,disk.connections)
         assertEquals(1,StreamPolicy.create(1,50_000_000,256*mib,32*mib,false,true).connections)
         assertEquals(1,StreamPolicy.create(0,50_000_000,256*mib,32*mib,true,true).connections)
+    }
+    @Test fun sharedPipelineKeepsTwoWorkerWavesAndProtectsSmallHeaps() {
+        for(heap in listOf(64,128,256,512)) for(used in listOf(0,32,48)) for(lanes in listOf(1,2,4,8)) for(disk in listOf(false,true)) {
+            val plan=StreamPolicy.create(lanes,80_000_000,heap*mib,used*mib,false,disk)
+            assertTrue(plan.budgetBytes<=32*mib)
+            if(plan.connections>1) {
+                assertTrue(plan.aheadWindowBytes>=2*plan.connections*plan.chunkBytes)
+                assertEquals(plan.budgetBytes,plan.aheadWindowBytes+(if(disk) 4*plan.chunkBytes else 0))
+            }
+        }
+        val low=StreamPolicy.create(8,80_000_000,256*mib,32*mib,true,true)
+        assertEquals(1,low.connections);assertTrue(low.budgetBytes<=4*mib)
     }
     @Test fun windowsSkipTheCachedPrefixAndStopAtTheActualFileEnd() {
         assertEquals(PrefetchWindow(7*mib,8*mib),PrefetchWindow.next(5*mib,60*mib,100*mib,2*mib))

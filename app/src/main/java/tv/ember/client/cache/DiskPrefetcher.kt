@@ -2,96 +2,165 @@ package tv.ember.client.cache
 
 import tv.ember.client.i18n.Tr
 import tv.ember.client.i18n.UiText
-import android.os.SystemClock
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DataSpec
-import androidx.media3.datasource.cache.CacheDataSource
-import androidx.media3.datasource.cache.CacheWriter
-import androidx.media3.datasource.cache.ContentMetadata
-import okhttp3.OkHttpClient
+import tv.ember.client.network.RangeChunkStore
+import tv.ember.client.network.RangeIdentity
 import tv.ember.client.network.RangePlaybackStatus
+import java.io.RandomAccessFile
+import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicInteger
 
-/** Downloads ahead of the extractor independently of Media3's RAM allocator. */
+/** Storage half of the shared range pipeline. This class never owns an HTTP downloader. */
 @UnstableApi
-class DiskPrefetcher(
-    val handle: PlaybackDiskCache.Handle, private val factory: CacheDataSource.Factory,
-    private val client: OkHttpClient, private val url: String, val key: String,
-    private val range: RangePlaybackStatus
-) : AutoCloseable {
-    private val lock = Object()
-    @Volatile private var closed = false
-    @Volatile private var writer: CacheWriter? = null
-    private var cursor = 0L
-    private var generation = 0L
-    private var positioned = false
-    private var stopped = false
-    val hitBytes = AtomicLong()
-    val rangeStatus get() = range
-    @Volatile var state = Tr.text(UiText.WAITING_FOR_PLAYBACK_POSITION_001); private set
-    val capacityBytes get() = handle.plan.capacityBytes
-    val aheadBytes: Long get() = synchronized(lock) {
-        if (!positioned || closed) 0 else handle.cache.getCachedLength(key, cursor, handle.plan.aheadBytes).coerceAtLeast(0)
-    }
-    val usedBytes get() = handle.cache.cacheSpace
-    private val worker = Thread(::run, "BronyaTVDiskPrefetch").apply { isDaemon = true; start() }
+class DiskPrefetcher(val handle: PlaybackDiskCache.Handle, val key: String, private val range: RangePlaybackStatus) : RangeChunkStore, AutoCloseable {
+    private data class Write(val position: Long, val bytes: ByteArray, val generation: Long)
+    private val lock=Any()
+    private val queue=ArrayBlockingQueue<Write>(2)
+    private val queuedBytes=AtomicLong()
+    private val queuedBodies=AtomicInteger()
+    @Volatile private var closed=false
+    @Volatile private var failed=false
+    @Volatile private var invalidating=false
+    @Volatile private var cursor=0L
+    @Volatile private var generation=0L
+    private var identity: RangeIdentity?=null
+    private val storageLock=Any()
+    private val readLock=Any()
+    @Volatile private var readInput:RandomAccessFile?=null
+    private var readSpan:androidx.media3.datasource.cache.CacheSpan?=null
+    private var readGeneration=-1L
+    val hitBytes=AtomicLong()
+    val writtenBytes=AtomicLong()
+    val skippedWrites=AtomicLong()
+    val rangeStatus get()=range
+    val capacityBytes get()=handle.plan.capacityBytes
+    override val aheadBytes get()=handle.plan.aheadBytes
+    override val enabled get()=!closed && !invalidating
+    override val canPrefetch get()=enabled && !failed
+    val pendingWriteBytes get()=queuedBytes.get()
+    val usedBytes get()=handle.cache.cacheSpace
+    val cachedAheadBytes: Long get()=if(closed) 0 else runCatching { handle.cache.getCachedLength(key,cursor,aheadBytes).coerceAtLeast(0) }.getOrDefault(0)
+    @Volatile var state=Tr.text(UiText.SHARED_RANGE_PIPELINE); private set
+    private val worker=Thread(::run,"BronyaTVDiskWriter").apply { isDaemon=true;start() }
 
-    fun seek(position: Long) = synchronized(lock) {
-        if (closed) return@synchronized
-        cursor = position; positioned = true; generation++
-        writer?.cancel(); client.dispatcher.cancelAll(); lock.notifyAll()
+    fun seek(position: Long)=synchronized(lock) {
+        if(closed) return@synchronized
+        if(position!=cursor) { generation++;clearQueue();if(invalidating) queue.offer(Write(-1,ByteArray(0),generation)) }
+        cursor=position
     }
-    fun advance(position: Long) = synchronized(lock) { cursor = position; lock.notifyAll() }
-    private fun waitForChange(ms: Long) = synchronized(lock) { if (!closed) lock.wait(ms) }
-    private fun run() {
-        val buffer = ByteArray(128 * 1024)
-        var retryAt = 0L
-        var retryGeneration = -1L
-        var failures = 0
-        while (!closed) {
-            try {
-                val request = synchronized(lock) { if (!positioned || stopped) null else cursor to generation }
-                if (request == null) { waitForChange(500); continue }
-                if (handle.directory.usableSpace < 64 * DiskCachePlan.MIB) {
-                    state = Tr.text(UiText.LOW_DISK_SPACE_READ_AHEAD_STOPPED_002)
-                    synchronized(lock) { stopped = true }
-                    continue
-                }
-                val (position, epoch) = request
-                if (epoch != retryGeneration) { retryAt = 0; failures = 0; retryGeneration = epoch }
-                if (SystemClock.elapsedRealtime() < retryAt) { waitForChange(500); continue }
-                val metadataLength = ContentMetadata.getContentLength(handle.cache.getContentMetadata(key))
-                val knownLength = range.totalBytes.takeIf { it > 0 } ?: metadataLength
-                val ready = handle.cache.getCachedLength(key, position, handle.plan.aheadBytes).coerceAtLeast(0)
-                val window = PrefetchWindow.next(position, handle.plan.aheadBytes, knownLength, ready)
-                if (window == null) { state = Tr.text(UiText.READ_AHEAD_CACHE_READY_003); waitForChange(500); continue }
-                val spec = DataSpec.Builder().setUri(url).setKey(key).setPosition(window.position).setLength(window.length)
-                    .setFlags(DataSpec.FLAG_ALLOW_CACHE_FRAGMENTATION).build()
-                val next = CacheWriter(factory.createDataSource(), spec, buffer, null)
-                synchronized(lock) {
-                    if (closed || epoch != generation) next.cancel()
-                    writer = next
-                }
-                state = Tr.text(UiText.CACHING_AHEAD_004)
-                try { next.cache() } finally { synchronized(lock) { if (writer === next) writer = null } }
-                if (range.rangeUnsupported) {
-                    state = Tr.text(UiText.SERVER_DOES_NOT_SUPPORT_RANGE_USING_005)
-                    synchronized(lock) { stopped = true }
-                }
-                failures = 0
-            } catch (e: InterruptedException) {
-                if (closed) return
-            } catch (e: Exception) {
-                if (closed) return
-                state = Tr.text(UiText.READ_AHEAD_PAUSED_READING_CACHE_OR_006)
-                failures = (failures + 1).coerceAtMost(5)
-                retryAt = SystemClock.elapsedRealtime() + (1000L shl failures).coerceAtMost(30_000)
+    fun advance(position: Long) { cursor=position }
+    override fun validate(identity: RangeIdentity): RangeChunkStore {
+        synchronized(lock) {
+            if(this.identity!=null && (this.identity!=identity || (identity.etag==null || identity.etag.startsWith("W/",true)) && identity.lastModified==null)) {
+                generation++;clearQueue();invalidating=true
+                // Index invalidation is ordered with writes, but never holds up the first network bytes.
+                queue.offer(Write(-1,ByteArray(0),generation))
+            }
+            this.identity=identity
+            val epoch=generation
+            return object: RangeChunkStore {
+                override val aheadBytes get()=this@DiskPrefetcher.aheadBytes
+                override val enabled get()=this@DiskPrefetcher.enabled && epoch==generation
+                override val canPrefetch get()=enabled && this@DiskPrefetcher.canPrefetch
+                override fun validate(identity:RangeIdentity)=this@DiskPrefetcher.validate(identity)
+                override fun contains(position:Long,length:Int)=enabled && this@DiskPrefetcher.contains(position,length)
+                override fun read(position:Long,target:ByteArray,offset:Int,length:Int)=if(enabled) readForEpoch(position,target,offset,length,epoch) else -1
+                override fun offer(position:Long,bytes:ByteArray)=offerForEpoch(position,bytes,epoch)
+                override fun persist(position:Long,bytes:ByteArray)=write(Write(position,bytes,epoch))
             }
         }
     }
+    override fun contains(position: Long,length: Int): Boolean = enabled &&
+        runCatching { handle.cache.isCached(key,position,length.toLong()) }.getOrDefault(false)
+    override fun read(position:Long,target:ByteArray,offset:Int,length:Int)=readForEpoch(position,target,offset,length,generation)
+    private fun readForEpoch(position:Long,target:ByteArray,offset:Int,length:Int,epoch:Long):Int = synchronized(readLock) {
+        if(!enabled || epoch!=generation) return@synchronized -1
+        try {
+            var span=readSpan
+            if(span==null || readGeneration!=epoch || position<span.position || position>=span.position+span.length) {
+                readInput?.close();readInput=null;readSpan=null
+                span=handle.cache.startReadWriteNonBlocking(key,position,length.toLong()) ?: return@synchronized -1
+                if(!span.isCached) { handle.cache.releaseHoleSpan(span);return@synchronized -1 }
+                readInput=RandomAccessFile(requireNotNull(span.file),"r");readSpan=span;readGeneration=epoch
+            }
+            val count=minOf(length.toLong(),span.position+span.length-position).toInt()
+            val input=requireNotNull(readInput)
+            val fileOffset=position-span.position
+            if(input.filePointer!=fileOffset) input.seek(fileOffset)
+            input.readFully(target,offset,count)
+            hitBytes.addAndGet(count.toLong());count
+        } catch(e:Exception) {
+            runCatching { readInput?.close() };readInput=null;readSpan=null;-1
+        }
+    }
+    override fun offer(position: Long,bytes: ByteArray)=offerForEpoch(position,bytes,generation)
+    private fun offerForEpoch(position:Long,bytes:ByteArray,epoch:Long) {
+        // At most two bodies including the currently writing body, never wait on disk IO.
+        synchronized(lock) {
+            if(!canPrefetch || epoch!=generation || queuedBodies.get()>=2 || queuedBytes.get()+bytes.size>2L*range.chunkBytes) { skippedWrites.incrementAndGet();return }
+            queuedBytes.addAndGet(bytes.size.toLong());queuedBodies.incrementAndGet()
+            if(!queue.offer(Write(position,bytes.copyOf(),epoch))) { queuedBytes.addAndGet(-bytes.size.toLong());queuedBodies.decrementAndGet() }
+        }
+    }
+    override fun persist(position: Long,bytes: ByteArray): Boolean = write(Write(position,bytes,generation))
+    private fun write(task: Write): Boolean {
+        if(task.position<0) {
+            synchronized(storageLock) {
+                if(task.generation==generation && !closed) {
+                    try { handle.cache.removeResource(key);invalidating=false }
+                    catch(e:Exception) { failed=true;state=Tr.text(UiText.DISK_UNAVAILABLE_USING_MEMORY_BUFFER_011) }
+                }
+            }
+            return false
+        }
+        if(!canPrefetch || task.generation!=generation) return false
+        if(handle.directory.usableSpace<64*DiskCachePlan.MIB) { failed=true;state=Tr.text(UiText.LOW_DISK_SPACE_READ_AHEAD_STOPPED_002);return false }
+        return try {
+            // Only writers serialize; foreground cached reads and network reads never acquire this lock.
+            synchronized(storageLock) {
+                if(!enabled || task.generation!=generation) return false
+                var offset=0
+                // A seek range may straddle cached spans and holes. Commit only missing portions;
+                // a cached first span does not mean the entire body has reached disk.
+                while(offset<task.bytes.size) {
+                    if(!enabled || task.generation!=generation) return false
+                    val position=task.position+offset
+                    val remaining=task.bytes.size-offset
+                    val span=handle.cache.startReadWriteNonBlocking(key,position,remaining.toLong()) ?: return false
+                    if(span.isCached) {
+                        offset+=minOf(remaining.toLong(),span.position+span.length-position).toInt()
+                        continue
+                    }
+                    try {
+                        val count=if(span.isOpenEnded) remaining else minOf(remaining.toLong(),span.length).toInt()
+                        val file=handle.cache.startFile(key,position,count.toLong())
+                        try {
+                            file.outputStream().use { it.write(task.bytes,offset,count) }
+                            if(task.generation!=generation || closed) { file.delete();return false }
+                            handle.cache.commitFile(file,count.toLong())
+                            writtenBytes.addAndGet(count.toLong());offset+=count
+                            state=Tr.text(UiText.SHARED_RANGE_DISK_READY)
+                        } catch(e:Exception) { file.delete();throw e }
+                    } finally { handle.cache.releaseHoleSpan(span) }
+                }
+            }
+            true
+        } catch(e:Exception) { failed=true;state=Tr.text(UiText.DISK_UNAVAILABLE_USING_MEMORY_BUFFER_011);false }
+    }
+    private fun clearQueue() {
+        while(true) { val task=queue.poll() ?: break;queuedBytes.addAndGet(-task.bytes.size.toLong());if(task.position>=0) queuedBodies.decrementAndGet() }
+    }
+    private fun run() {
+        while(!closed) {
+            try {
+                val task=queue.take()
+                try { write(task) } finally { queuedBytes.addAndGet(-task.bytes.size.toLong());if(task.position>=0) queuedBodies.decrementAndGet() }
+            } catch(e:InterruptedException) { if(closed) return }
+        }
+    }
     override fun close() {
-        synchronized(lock) { closed = true; writer?.cancel(); client.dispatcher.cancelAll(); lock.notifyAll() }
-        worker.interrupt()
-        if (Thread.currentThread() !== worker) runCatching { worker.join(1000) }
+        synchronized(lock) { if(closed) return;closed=true;generation++;clearQueue() }
+        worker.interrupt();runCatching { readInput?.close() };readInput=null
     }
 }

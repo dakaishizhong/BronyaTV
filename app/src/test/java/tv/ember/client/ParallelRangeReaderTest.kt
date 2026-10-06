@@ -37,7 +37,7 @@ class ParallelRangeReaderTest {
             server.dispatcher=object:Dispatcher() { override fun dispatch(request:RecordedRequest):MockResponse {
                 val r=response(request)
                 val offset=request.getHeader("Range")!!.removePrefix("bytes=").substringBefore('-').toInt()
-                if(offset==12345+65536) r.setBodyDelay(120,TimeUnit.MILLISECONDS)
+                if(offset==12345+chunk) r.setBodyDelay(120,TimeUnit.MILLISECONDS)
                 return r
             } }
             val peak=AtomicLong();var reader:ParallelRangeReader?=null
@@ -46,8 +46,8 @@ class ParallelRangeReaderTest {
                 peak.updateAndGet { maxOf(it,reader!!.bufferedBytes.get()) }
             }
             reader.use { assertEquals(count.toLong(),it.open());assertArrayEquals(bytes.copyOfRange(12345,12345+count),readAll(it)) }
-            assertEquals("bytes=12345-77880",server.takeRequest().getHeader("Range"))
-            assertTrue("bounded prefetch",peak.get()<=5L*chunk)
+            assertEquals("bytes=12345-274488",server.takeRequest().getHeader("Range"))
+            assertTrue("bounded prefetch",peak.get()<=8L*chunk)
             assertEquals(0L,reader.bufferedBytes.get())
         }
     }
@@ -56,7 +56,7 @@ class ParallelRangeReaderTest {
             server.dispatcher=object:Dispatcher() { override fun dispatch(request:RecordedRequest)=response(request,true) }
             val active=AtomicInteger();val peak=AtomicInteger()
             val http=client(object:EventListener() {
-                override fun connectionAcquired(call:Call,connection:Connection) { peak.updateAndGet { maxOf(it,active.incrementAndGet()) } }
+                override fun connectionAcquired(call:Call,connection:Connection) { val count=active.incrementAndGet();peak.updateAndGet { maxOf(it,count) } }
                 override fun connectionReleased(call:Call,connection:Connection) { active.decrementAndGet() }
             })
             val url=server.url("/original.mp4").toString()
@@ -118,7 +118,7 @@ class ParallelRangeReaderTest {
             server.dispatcher=object:Dispatcher() { override fun dispatch(request:RecordedRequest)=
                 if(request.getHeader("Range")!!.startsWith("bytes=0-")) response(request) else MockResponse().setResponseCode(410) }
             ParallelRangeReader(client(),server.url("/file").toString(),mapOf("X-Test-Signature" to "signed-value"),0,-1,4,chunk) {}.use {
-                it.open();try { readAll(it);fail("410 must propagate") } catch(e:RangeHttpException) { assertEquals(410,e.code) }
+                try { it.open();readAll(it);fail("410 must propagate") } catch(e:RangeHttpException) { assertEquals(410,e.code) }
             }
         }
     }
@@ -127,7 +127,7 @@ class ParallelRangeReaderTest {
             server.dispatcher=object:Dispatcher() { override fun dispatch(request:RecordedRequest)=response(request,
                 etag=if(request.getHeader("Range")!!.startsWith("bytes=0-")) "\"v1\"" else "\"v2\"") }
             ParallelRangeReader(client(),server.url("/file").toString(),mapOf("X-Test-Signature" to "signed-value"),0,-1,4,chunk) {}.use {
-                it.open();try { readAll(it);fail("must reject changed file") } catch(e:IOException) { assertTrue(e.message!!.contains("version changed")) }
+                try { it.open();readAll(it);fail("must reject changed file") } catch(e:IOException) { assertTrue(e.message!!.contains("version changed")) }
             }
         }
     }
@@ -139,7 +139,7 @@ class ParallelRangeReaderTest {
                 return r
             } }
             ParallelRangeReader(client(),server.url("/file").toString(),mapOf("X-Test-Signature" to "signed-value"),0,-1,4,chunk) {}.use {
-                it.open();try { readAll(it);fail("must reject wrong position") } catch(e:IOException) { assertTrue(e.message!!.contains("position mismatch")) }
+                try { it.open();readAll(it);fail("must reject wrong position") } catch(e:IOException) { assertTrue(e.message!!.contains("position mismatch")) }
             }
         }
     }
@@ -168,13 +168,13 @@ class ParallelRangeReaderTest {
             val executor=Executors.newSingleThreadExecutor()
             ParallelRangeReader(client(),server.url("/file").toString(),mapOf("X-Test-Signature" to "signed-value"),0,400000,4,chunk) {}.use { reader ->
                 try {
-                    reader.open();val probe=ByteArray(65536);var consumed=0
+                    reader.open();val probe=ByteArray(chunk);var consumed=0
                     while(consumed<probe.size) consumed+=reader.read(probe,consumed,probe.size-consumed)
-                    assertArrayEquals(bytes.copyOfRange(0,65536),probe)
+                    assertArrayEquals(bytes.copyOfRange(0,chunk),probe)
                     val part=ByteArray(8192)
                     val n=executor.submit<Int> { reader.read(part,0,part.size) }.get(2,TimeUnit.SECONDS)
-                    assertTrue(n>0);assertArrayEquals(bytes.copyOfRange(65536,65536+n),part.copyOf(n))
-                    assertTrue(reader.bufferedBytes.get()<=5L*chunk)
+                    assertTrue(n>0);assertArrayEquals(bytes.copyOfRange(chunk,chunk+n),part.copyOf(n))
+                    assertTrue(reader.bufferedBytes.get()<=8L*chunk)
                 } finally { executor.shutdownNow() }
             }
         }
@@ -208,7 +208,7 @@ class ParallelRangeReaderTest {
                 assertEquals(source.size.toLong(),consumed)
                 assertArrayEquals(java.security.MessageDigest.getInstance("SHA-256").digest(source),digest.digest())
                 assertTrue("No multi-second range stalls",slowest<TimeUnit.MILLISECONDS.toNanos(500))
-                assertTrue(peak<=5L*512*1024);assertEquals(4,budget.peakCount)
+                assertTrue(peak<=8L*512*1024);assertEquals(4,budget.peakCount)
                 println("50 Mbps paced receive: ${consumed/1048576} MiB, longest read ${slowest/1000000} ms, queue peak ${peak/1024} KiB, connections ${budget.peakCount}")
             }
         }

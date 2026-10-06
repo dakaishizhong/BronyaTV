@@ -14,6 +14,9 @@ class StreamTransferBudget(val limit: Int) {
     private val active = mutableSetOf<Lease>()
     private var foregroundWaiting = 0
     private var peak = 0
+    @Volatile var foregroundDemand = limit
+    val foregroundActive get() = synchronized(lock) { active.count { !it.background } }
+    val backgroundActive get() = synchronized(lock) { active.count { it.background } }
     val activeCount get() = synchronized(lock) { active.size }
     val peakCount get() = synchronized(lock) { peak }
     private inner class Lease(val background: Boolean, val cancel: () -> Unit) : AutoCloseable {
@@ -26,16 +29,14 @@ class StreamTransferBudget(val limit: Int) {
         synchronized(lock) { if (!background) foregroundWaiting++ }
         try {
             while (true) {
-                val victims = synchronized(lock) {
+                synchronized(lock) {
                     if (cancelled()) throw InterruptedIOException("Stream request cancelled")
-                    if (active.size < limit && (!background || foregroundWaiting == 0)) {
+                    if (active.size < limit && (!background || (foregroundWaiting == 0 && active.count { it.background } < (limit-foregroundDemand).coerceAtLeast(0)))) {
                         return Lease(background, cancel).also { active.add(it); peak = maxOf(peak, active.size) }
                     }
-                    if (!background) active.filter { it.background } else emptyList()
+                    lock.wait(50)
                 }
-                // Cancelling a read-ahead response unblocks its socket read; the owner closes the lease.
-                victims.forEach { it.cancel() }
-                synchronized(lock) { lock.wait(50) }
+                // Demand only gates new background leases; an in-flight body completes naturally.
             }
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt(); throw InterruptedIOException("Stream request interrupted")

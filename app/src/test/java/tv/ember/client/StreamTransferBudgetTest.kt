@@ -12,7 +12,7 @@ import java.util.concurrent.*
 class StreamTransferBudgetTest {
     @Test fun foregroundAndReadAheadShareTheSelectedTotalAtTwoFourAndEight() {
         for(limit in listOf(2,4,8)) MockWebServer().use { server ->
-            val budget=StreamTransferBudget(limit)
+            val budget=StreamTransferBudget(limit).apply { foregroundDemand=limit/2 }
             val client=OkHttpClient.Builder().protocols(listOf(Protocol.HTTP_1_1)).build()
             val background=client.newBuilder().addInterceptor(budget.interceptor(true)).build()
             val foreground=client.newBuilder().addInterceptor(budget.interceptor()).build()
@@ -20,30 +20,33 @@ class StreamTransferBudgetTest {
             repeat(limit*2) { server.enqueue(MockResponse().setBody(Buffer().write(ByteArray(128*1024))).throttleBody(8192,10,TimeUnit.MILLISECONDS)) }
             try {
                 val reads=(0 until limit*2).map { index -> executor.submit<Boolean> {
-                    runCatching { (if(index%2==0) background else foreground).newCall(Request.Builder().url(server.url("/file")).build())
-                        .execute().use { it.body!!.bytes() } }.isSuccess
+                    (if(index%2==0) background else foreground).newCall(Request.Builder().url(server.url("/file")).build())
+                        .execute().use { assertEquals(128*1024,it.body!!.bytes().size);true }
                 } }
-                reads.forEachIndexed { index,read -> if(index%2==1) assertTrue(read.get(10,TimeUnit.SECONDS)) else read.get(10,TimeUnit.SECONDS) }
+                reads.forEach { assertTrue(it.get(10,TimeUnit.SECONDS)) }
                 assertTrue(budget.peakCount in 1..limit);assertEquals(0,budget.activeCount)
             } finally { executor.shutdownNow() }
         }
     }
-    @Test fun foregroundCancelsASlowBackgroundResponseAndDoesNotWaitForItsChunk() {
+    @Test fun foregroundDemandStopsNewBackgroundLeasesWithoutCancellingTheCurrentChunk() {
         MockWebServer().use { server ->
-            val budget=StreamTransferBudget(1)
-            val background=OkHttpClient.Builder().addInterceptor(budget.interceptor(true)).build()
-            val foreground=background.newBuilder().apply { interceptors().clear() }.addInterceptor(budget.interceptor()).build()
-            server.enqueue(MockResponse().setBody(Buffer().write(ByteArray(1024*1024))).throttleBody(1024,1,TimeUnit.SECONDS))
+            val budget=StreamTransferBudget(2).apply { foregroundDemand=1 }
+            val client=OkHttpClient.Builder().protocols(listOf(Protocol.HTTP_1_1)).build()
+            val background=client.newBuilder().addInterceptor(budget.interceptor(true)).build()
+            val foreground=client.newBuilder().addInterceptor(budget.interceptor()).build()
+            server.enqueue(MockResponse().setBody(Buffer().write(ByteArray(128*1024))).throttleBody(8192,20,TimeUnit.MILLISECONDS))
             server.enqueue(MockResponse().setBody("playback"))
             val executor=Executors.newFixedThreadPool(2)
             try {
                 val slow=background.newCall(Request.Builder().url(server.url("/ahead")).build())
-                val waiting=executor.submit { runCatching { slow.execute().use { it.body!!.bytes() } } }
+                val waiting=executor.submit<Int> { slow.execute().use { it.body!!.bytes().size } }
                 assertNotNull(server.takeRequest(2,TimeUnit.SECONDS))
+                budget.foregroundDemand=2
                 val playback=executor.submit<String> { foreground.newCall(Request.Builder().url(server.url("/now")).build())
                     .execute().use { it.body!!.string() } }
                 assertEquals("playback",playback.get(2,TimeUnit.SECONDS))
-                waiting.get(2,TimeUnit.SECONDS);assertTrue(slow.isCanceled());assertEquals(1,budget.peakCount);assertEquals(0,budget.activeCount)
+                assertEquals(128*1024,waiting.get(2,TimeUnit.SECONDS).toInt());assertFalse(slow.isCanceled())
+                assertEquals(2,budget.peakCount);assertEquals(0,budget.activeCount)
             } finally { executor.shutdownNow() }
         }
     }

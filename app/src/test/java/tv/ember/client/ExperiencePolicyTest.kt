@@ -20,7 +20,7 @@ class ExperiencePolicyTest {
     @Test fun autoConnectionsFollowBitrateAndPreserveManualChoice() {
         assertEquals(1,StreamPolicy.create(0,2_000_000,heap,0,false).connections)
         assertEquals(2,StreamPolicy.create(0,8_000_000,heap,0,false).connections)
-        assertEquals(4,StreamPolicy.create(0,80_000_000,heap,0,false).connections)
+        assertEquals(8,StreamPolicy.create(0,80_000_000,heap,0,false).connections)
         assertEquals(8,StreamPolicy.create(8,2_000_000,heap,0,false).connections)
         assertEquals(1,StreamPolicy.create(8,80_000_000,heap,0,true).connections)
         val tight=StreamPolicy.create(8,80_000_000,heap,heap-1024,false)

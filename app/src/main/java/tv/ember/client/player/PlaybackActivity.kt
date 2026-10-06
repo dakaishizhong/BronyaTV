@@ -398,7 +398,6 @@ class PlaybackActivity : TvActivity(), Player.Listener {
         val r = Runtime.getRuntime()
         val mem = ActivityManager.MemoryInfo().also { (getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(it) }
         val policy = BufferPolicy.create(app.settings.snapshot(), r.maxMemory(), r.totalMemory() - r.freeMemory(), mem.lowMemory,current.version.bitrate,disk!=null)
-        control = TvLoadControl(policy)
         val currentStats=PlayerStatsMonitor().apply { sourceBitrate=current.version.bitrate };stats=currentStats
         val currentNetwork=NetworkMonitor(this);network=currentNetwork;lastNetwork=null
         val selector = MediaCodecSelector { mime, secure, tunnel ->
@@ -434,34 +433,17 @@ class PlaybackActivity : TvActivity(), Player.Listener {
             if(chain.request().url.toString() in subtitleUrls) chain.proceed(chain.request()) else mediaTransfers.intercept(chain)
         }.build();playbackHttp=httpClient
         val http=OkHttpDataSource.Factory(httpClient).setDefaultRequestProperties(current.headers)
-        val range=RangePlaybackStatus(connections,prefetchBudget);rangeStatus=range
+        val range=RangePlaybackStatus(connections,prefetchBudget,streamPlan.chunkBytes,streamPlan.aheadWindowBytes);rangeStatus=range
+        control=TvLoadControl(policy,range::setLoadingDemand)
         val upstream=androidx.media3.datasource.DataSource.Factory {
             RangePlaybackDataSource(http,httpClient,current.url,current.headers,range).apply { addTransferListener(currentNetwork) }
         }
         val dataSources=if(disk==null) upstream else {
-            val prefetchClient=transportClient.newBuilder().dispatcher(okhttp3.Dispatcher())
-                .addInterceptor(transferBudget.interceptor(background=true)).build()
-            val prefetchRange=RangePlaybackStatus(connections,prefetchBudget)
-            val prefetchHttp=OkHttpDataSource.Factory(prefetchClient).setDefaultRequestProperties(current.headers)
-            val prefetchSource=androidx.media3.datasource.DataSource.Factory {
-                RangePlaybackDataSource(prefetchHttp,prefetchClient,current.url,current.headers,prefetchRange).apply { addTransferListener(currentNetwork) }
-            }
-            // Unique per player: signed URL changes or changed server files cannot merge stale spans.
+            // Unique per player: signed URL/source changes never merge with another playback's spans.
             val key="bronya-"+java.util.UUID.randomUUID().toString()
-            val writable=CacheDataSource.Factory().setCache(disk.cache).setUpstreamDataSourceFactory(prefetchSource)
-                .setCacheWriteDataSinkFactory(CacheDataSink.Factory().setCache(disk.cache).setFragmentSize(2*DiskCachePlan.MIB))
-                .setFlags(CacheDataSource.FLAG_BLOCK_ON_CACHE or CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-            val prefetch=DiskPrefetcher(disk,writable,prefetchClient,current.url,key,prefetchRange)
-            diskPrefetch=prefetch
-            // Foreground is read-only: an unlimited writer lock here would block all read-ahead.
-            val readable=CacheDataSource.Factory().setCache(disk.cache).setUpstreamDataSourceFactory(upstream)
-                .setCacheWriteDataSinkFactory(null)
-                .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-                .setEventListener(object: CacheDataSource.EventListener {
-                    override fun onCacheIgnored(reason:Int) {}
-                    override fun onCachedBytesRead(cacheSizeBytes:Long,cachedBytesRead:Long) { prefetch.hitBytes.addAndGet(cachedBytesRead) }
-                })
-            androidx.media3.datasource.DataSource.Factory { DiskPlaybackDataSource(current.url,readable,upstream,prefetch) }
+            val prefetch=DiskPrefetcher(disk,key,range)
+            range.store=prefetch;diskPrefetch=prefetch
+            androidx.media3.datasource.DataSource.Factory { DiskPlaybackDataSource(current.url,upstream,prefetch) }
         }
         val errorPolicy = object : DefaultLoadErrorHandlingPolicy(3) {
             override fun getRetryDelayMsFor(info: LoadErrorHandlingPolicy.LoadErrorInfo): Long {
@@ -650,16 +632,18 @@ class PlaybackActivity : TvActivity(), Player.Listener {
     }
     private fun diskSummary(detailed:Boolean):String {
         val disk=diskPrefetch ?: return Tr.text(UiText.DISK_CACHE_174 ,(diskMode))
-        val ahead=disk.aheadBytes
+        val ahead=disk.cachedAheadBytes
         val seconds=spec?.version?.bitrate?.takeIf { it>0 }?.let { ahead*8.0/it }
         return Tr.text(UiText.DISK_AHEAD_MB_175 ,(ahead/1048576))+(seconds?.let { Tr.text(UiText.ABOUT_FS_176).format(it) } ?: "")+
             " · ${disk.state}"+if(detailed) Tr.text(UiText.DISK_USED_MIB_CACHE_READS_MIB_177 ,(disk.usedBytes/1048576),(disk.capacityBytes/1048576),(disk.hitBytes.get()/1048576)) else ""
     }
     private fun performanceRows(p:ExoPlayer,version:MediaVersion,c:CpuSample?=null,m:MemorySample?=null):List<Pair<String,String>> {
         val net=lastNetwork;val disk=diskPrefetch;val http=transport;val sample=http?.latest
+        val pipeline=rangeStatus?.reader?.snapshot();val rates=rangeStatus?.throughput()
         fun mib(value:Long?)="%.2f MiB".format((value ?: 0)/1048576.0)
         fun rate(value:Long?)="%.2f".format((value ?: 0)/1048576.0)
-        fun range(value:RangePlaybackStatus?)=value?.let { it.mode+" · "+mib(it.bufferedBytes)+" / "+mib(it.budgetBytes.toLong()) } ?: "—"
+        fun range(value:RangePlaybackStatus?)=value?.let { it.mode+" · "+mib(it.bufferedBytes)+" / "+mib(it.budgetBytes.toLong())+
+            " · chunk "+mib((pipeline?.currentChunkBytes ?: it.chunkBytes).toLong())+" / "+mib(it.chunkBytes.toLong())+" · window "+mib(it.aheadWindowBytes.toLong()) } ?: "—"
         val runtime=Runtime.getRuntime()
         return stats.cinemaHud(p,version,net?.bytesPerSecond ?: 0,control?.allocatedBytes?.toLong() ?: 0)+listOf(
             Tr.text(UiText.HUD_CPU) to (c?.percent?.let { "%.1f%%".format(it)+(if(c.processOnly) " APP" else "") } ?: Tr.text(UiText.WAITING_029))+" · "+(c?.frequencyMhz?.let { "${it}MHz" } ?: "—")+(c?.let { " · APP %.1f%%/core".format(it.coreEquivalent) } ?: ""),
@@ -668,8 +652,12 @@ class PlaybackActivity : TvActivity(), Player.Listener {
             Tr.text(UiText.HUD_TRANSFERRED) to mib(net?.total)+" · "+(net?.idleMs?.let { "%.1f s".format(it/1000.0) } ?: "—"),
             Tr.text(UiText.HUD_CONNECTIONS) to "${http?.activeConnections ?: 0} TCP · peak ${http?.peakConnections?.get() ?: 0} · limit ${rangeStatus?.requestedConnections ?: 1} · "+(if(app.settings.streamConnections==0) Tr.text(UiText.AUTO_220) else "set ${app.settings.streamConnections}"),
             Tr.text(UiText.HUD_FOREGROUND) to range(rangeStatus),
-            Tr.text(UiText.HUD_PREFETCH) to range(disk?.rangeStatus),
-            Tr.text(UiText.HUD_DISK) to (disk?.let { "${mib(it.aheadBytes)} ahead · ${mib(it.hitBytes.get())} hit · ${mib(it.usedBytes)}/${mib(it.capacityBytes)}" } ?: diskMode),
+            Tr.text(UiText.HUD_RANGE_QUEUE) to "${pipeline?.downloadingChunks ?: 0} downloading · ${pipeline?.completedWaitingChunks ?: 0} completed · ordered ${mib(pipeline?.orderedReadyBytes)} · ahead ready ${mib(pipeline?.aheadReadyBytes)}",
+            Tr.text(UiText.HUD_RANGE_LOADING) to "${http?.activeRangeRequests?.get() ?: 0} HTTP Range · demand ${control?.loadingDemand ?: false} · isLoading ${p.isLoading} · buffer ${p.totalBufferedDuration} ms",
+            Tr.text(UiText.HUD_TRANSFER_RATES) to "${rate(rates?.foreground)} / ${rate(rates?.background)} / ${rate(net?.bytesPerSecond)} MiB/s",
+            Tr.text(UiText.HUD_RANGE_CANCEL) to "${rangeStatus?.duplicatedRangeRequests?.get()?.plus(rangeStatus?.reader?.duplicatedRangeRequests?.get() ?: 0) ?: 0} duplicate · FG ${rangeStatus?.cancelledForeground?.get()?.plus(rangeStatus?.reader?.cancelledForeground?.get() ?: 0) ?: 0} · disk ${rangeStatus?.cancelledBackground?.get()?.plus(rangeStatus?.reader?.cancelledBackground?.get() ?: 0) ?: 0}",
+            Tr.text(UiText.HUD_PREFETCH) to (disk?.let { it.state+" · write queue "+mib(it.pendingWriteBytes) } ?: "—"),
+            Tr.text(UiText.HUD_DISK) to (disk?.let { "${mib(it.cachedAheadBytes)} ahead · ${mib(it.hitBytes.get())} hit · ${mib(it.usedBytes)}/${mib(it.capacityBytes)}" } ?: diskMode),
             Tr.text(UiText.HUD_HTTP) to "${sample?.protocol ?: "—"} ${sample?.status ?: 0} · fail ${http?.failures?.get() ?: 0} · "+(sample?.ttfbMs?.let { "${it}ms" } ?: "—")
         )
     }

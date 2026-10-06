@@ -6,6 +6,8 @@ An Emby playback client for Android TV. Dark movie backdrops, green remote focus
 
 [Latest APK: 1.7.3](https://github.com/dakaishizhong/BronyaTV/releases/download/v1.7.3/BronyaTV-1.7.3-release.apk) · [Release notes](https://github.com/dakaishizhong/BronyaTV/releases) · [Build and development guide (Chinese)](docs/DEVELOPMENT.md)
 
+The source branch includes the range-pipeline improvements described below. The published 1.7.3 APK predates these changes.
+
 ## Features
 
 - Username and password login, encrypted session storage, and automatic login.
@@ -22,8 +24,8 @@ An Emby playback client for Android TV. Dark movie backdrops, green remote focus
 - Configurable short-press and long-press seeking, seek preview, Back to cancel, and jumping to a specific time.
 - Previous / next episode, continuous playback across seasons, configurable intro / outro skipping, and a cancelable next-episode countdown.
 - Playback speed, aspect ratio, default player, and support for installed VLC, MX Player, and Just Player apps.
-- Automatic or 2 / 4 / 8 total stream connections shared by playback and disk read-ahead. Playback gets priority; ranges stream in order with bounded, reusable buffers.
-- Configurable disk read-ahead cache, immediate network fallback for unready cache spans, cache clearing, and usage diagnostics.
+- Automatic or 1 / 2 / 4 / 8 stream connections. Independent range workers refill a bounded forward window as requests finish; bytes reach Media3 in offset order.
+- Configurable disk read-ahead cache shares downloaded data with playback. Cache misses use the same network scheduler, writes run separately, and background work uses spare capacity without repeatedly cancelling active requests.
 - Performance overlay and playback diagnostics: decoded resolution, first frame, HDR / Dolby path, system audio output, network speed, frame rate, dropped frames, and memory.
 
 ## Installation and login
@@ -44,7 +46,7 @@ Choose a version in **Details → Video versions**, then select Play or Resume. 
 
 Use **Settings → Interface & diagnostics → Interface language** to switch between English and Simplified Chinese. The choice persists across restarts; server-provided titles and descriptions keep their original language. Sign-in shows public user profiles, server / username / password fields, and the sign-in action.
 
-Use direction buttons to move focus and OK to open content or choose an action. Press Menu for refresh, filtering, search and favorites. Home and category pages have no top-right action buttons. The player has previous chapter / episode, Play/Pause and next chapter / episode circles, with subtitle, audio and aspect buttons on the right. Play/Pause stays at the horizontal screen center. Up reaches the timeline and then the HUD toggle; Down returns to Play/Pause. Aspect cycles directly on click. Playback Menu puts track, speed, aspect, subtitle size and parallel receive choices in one panel. There is no exit button; use remote Back. The HUD shows 21 live decoder, CPU/RAM, network, TCP/range and disk-cache measurements. Pages use the remote Back key.
+Use direction buttons to move focus and OK to open content or choose an action. Press Menu for refresh, filtering, search and favorites. Home and category pages have no top-right action buttons. The player has previous chapter / episode, Play/Pause and next chapter / episode circles, with subtitle, audio and aspect buttons on the right. Play/Pause stays at the horizontal screen center. Up reaches the timeline and then the HUD toggle; Down returns to Play/Pause. Aspect cycles directly on click. Playback Menu puts track, speed, aspect, subtitle size and parallel receive choices in one panel. There is no exit button; use remote Back. The HUD shows live decoder, CPU/RAM, network, configured connections, active TCP and HTTP ranges, ready bytes, loading demand, cache hits and cancellation measurements. Pages use the remote Back key.
 
 When the control bar is hidden, briefly press Left / Right to preview a seek position. Hold a direction button to advance by the configured long-press step, then release to seek. Press Back to cancel. When the bar is visible, Left / Right selects controls. Fast-forward and rewind buttons are also supported. The defaults are 10 seconds for a short press and 30 seconds per long-press step; adjust them under **Settings → Remote control**.
 
@@ -56,6 +58,8 @@ Disk cache defaults to automatic capacity, up to 512 MiB, with 60 seconds of rea
 
 Disk read-ahead applies to original-file playback such as MP4 and MKV. HLS / DASH uses the player's buffer. Cache lives in private application storage and requires no storage permission. Backward playback and seeking within the current player can reuse cached data. Switching sources, rebuilding the player, or reopening a title uses a new cache identifier to avoid mixing expired links or different files. This is temporary playback cache, not offline downloading.
 
+Range sizes and the forward window depend on bitrate, connection count and heap headroom. The shared range payload and retained disk copies are capped at 32 MiB; low-memory protection uses a smaller budget and one connection. Media3's sample buffer has its own limit. A filled window or a pause in loading demand can legitimately leave no active requests.
+
 **Image cache** defaults to 256 MiB of private disk storage and can be disabled or set to 64–1024 MiB. Images are requested and decoded for their displayed dimensions; the URL includes the server ImageTag. Identical requests share work, with at most three image loads. Different display sizes of the same image URL reuse its encoded disk data. Stopped pages release their bitmap references and cancel outstanding loads. Decoded memory is capped at 2–12 MiB according to heap size and drops to at most 3 MiB during playback or 2 MiB under memory pressure. Clear image cache affects only these images.
 
 Title, overview, cast and descriptive version metadata use a separate 24 MiB persistent cache. Both caches are isolated by server and user. Metadata appears immediately from cache and refreshes in the background. A page revisited within 15 seconds reuses its in-memory response while applying fresh local playback progress; explicit Refresh always contacts the server. Genre/year facets load only when Filter & sort is opened. Browse/search card responses omit unnecessary full descriptions and cast lists; details still fetch these fields. Playback progress remains live; temporary URLs, authentication headers and playback sessions are excluded from persistent metadata. Playback buffers and read-ahead are separate.
@@ -64,7 +68,7 @@ Title, overview, cast and descriptive version metadata use a separate 24 MiB per
 
 ## Screenshots
 
-Player and settings screenshots show 1.7.2; Home, details, sidebar and login retain the Cinema UI baseline captures. Demo images and users come from the supplied design document; see [example resources](tests/media/CINEMA-REFERENCE.md). Test video is generated from the reference images. Production pages use the connected Emby server's data.
+Player and settings screenshots show 1.7.2; Home, details, sidebar and login retain the Cinema UI baseline captures. Demo images and users are fictional examples; see [example resources](tests/media/CINEMA-REFERENCE.md). Test video is generated from the reference images. Production pages use the connected Emby server's data.
 
 | Home | Details |
 | --- | --- |
@@ -85,5 +89,7 @@ Player and settings screenshots show 1.7.2; Home, details, sidebar and login ret
 ## Development
 
 All application pages, sidebar navigation, settings editors, playback controls and dialog content use Kotlin and Compose for TV / TV Material. Media3 playback and decoding remain intact; PlayerView interoperability supplies the video Surface and subtitles. Lazy lists use stable item keys and restore remote focus and scroll positions. See the [development guide (Chinese)](docs/DEVELOPMENT.md) for build and test instructions and [releases](https://github.com/dakaishizhong/BronyaTV/releases) for changes and validation.
+
+The [range-pipeline validation report](docs/validation/range-pipeline-2026-10-06/report.json) includes synthetic HTTP/1.1 throughput, integrity and cache tests: 96 network scenarios and nine 256 MiB runs, with SHA-256 verification and zero final underruns. These are local simulations, not physical-TV or public-CDN measurements. Reproduce them with `scripts/verify_range_pipeline.sh normal`, `matrix` or `soak` after configuring the build environment. Published fixtures use generated bytes, example hosts and test credentials.
 
 Licensed under [GPL-3.0](LICENSE).

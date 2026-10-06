@@ -101,15 +101,18 @@ class DiskCacheDeviceTest {
             val url=Uri.fromFile(fixture).toString()
             val key="device-cache-test"
             val file=FileDataSource.Factory()
-            val writable=CacheDataSource.Factory().setCache(handle.cache).setUpstreamDataSourceFactory(file)
-                .setCacheWriteDataSinkFactory(CacheDataSink.Factory().setCache(handle.cache).setFragmentSize(2*DiskCachePlan.MIB))
-                .setFlags(CacheDataSource.FLAG_BLOCK_ON_CACHE)
             val range=RangePlaybackStatus(1,DiskCachePlan.MIB.toInt()).apply { totalBytes=fixture.length() }
-            val worker=DiskPrefetcher(handle,writable,OkHttpClient(),url,key,range)
+            val worker=DiskPrefetcher(handle,key,range)
             prefetch=worker
             worker.seek(0)
+            // The shared network scheduler calls persist; exercise the real SimpleCache adapter here.
+            val currentStore=worker.validate(tv.ember.client.network.RangeIdentity(fixture.length(),"fixture-v1",null))
+            fixture.inputStream().use { input ->
+                val bytes=ByteArray(1024*1024)
+                repeat(4) { block -> input.read(bytes);assertTrue(currentStore.persist(block*DiskCachePlan.MIB,bytes)) }
+            }
             await { handle.cache.getCachedLength(key,0,4*DiskCachePlan.MIB)>=4*DiskCachePlan.MIB }
-            assertTrue(worker.aheadBytes>=4*DiskCachePlan.MIB)
+            assertTrue(worker.cachedAheadBytes>=4*DiskCachePlan.MIB)
             assertTrue(manager.snapshot().usedBytes>0)
             assertTrue(handle.cache.keys.contains(key))
             val cacheOnly=CacheDataSource.Factory().setCache(handle.cache).setUpstreamDataSourceFactory(null)
@@ -119,7 +122,7 @@ class DiskCacheDeviceTest {
                     override fun onCachedBytesRead(cacheSizeBytes:Long,cachedBytesRead:Long) { worker.hitBytes.addAndGet(cachedBytesRead) }
                 })
             fun cachedRead(position:Long) {
-                val source=DiskPlaybackDataSource(url,cacheOnly,DataSource.Factory { error("Main video used bypass source") },worker)
+                val source=DiskPlaybackDataSource(url,cacheOnly,worker)
                 try {
                     source.open(DataSpec.Builder().setUri(url).setPosition(position).setLength(1024).build())
                     val bytes=ByteArray(1024)
@@ -134,6 +137,12 @@ class DiskCacheDeviceTest {
             cachedRead(1024)
             val end=22*DiskCachePlan.MIB
             worker.seek(end)
+            val tailStore=worker.validate(tv.ember.client.network.RangeIdentity(fixture.length(),"fixture-v1",null))
+            java.io.RandomAccessFile(fixture,"r").use { input ->
+                input.seek(end)
+                val bytes=ByteArray(1024*1024)
+                repeat(2) { block -> input.readFully(bytes);assertTrue(tailStore.persist(end+block*DiskCachePlan.MIB,bytes)) }
+            }
             await { handle.cache.getCachedLength(key,end,2*DiskCachePlan.MIB)>=2*DiskCachePlan.MIB }
             cachedRead(end)
             worker.seek(1024);cachedRead(1024)

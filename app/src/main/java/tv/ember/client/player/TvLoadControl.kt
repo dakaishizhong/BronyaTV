@@ -13,14 +13,15 @@ import androidx.media3.exoplayer.trackselection.ExoTrackSelection
 class TvLoadControl private constructor(
     val policy: BufferPolicy,
     private val allocator: DefaultAllocator,
-    private val delegate: DefaultLoadControl
+    private val delegate: DefaultLoadControl,
+    private val onLoadingDemand: (Boolean)->Unit
 ) : LoadControl {
-    constructor(policy: BufferPolicy) : this(policy, DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE))
-    private constructor(policy: BufferPolicy, allocator: DefaultAllocator) : this(policy, allocator,
+    constructor(policy: BufferPolicy, onLoadingDemand:(Boolean)->Unit = {}) : this(policy, DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE), onLoadingDemand)
+    private constructor(policy: BufferPolicy, allocator: DefaultAllocator, onLoadingDemand:(Boolean)->Unit) : this(policy, allocator,
         DefaultLoadControl.Builder().setAllocator(allocator)
             .setBufferDurationsMs(policy.minMs, policy.maxMs, policy.startMs, policy.rebufferMs)
             .setTargetBufferBytes(policy.targetBytes).setPrioritizeTimeOverSizeThresholds(false)
-            .setBackBuffer(policy.backBufferMs, policy.backBufferMs>0).build())
+            .setBackBuffer(policy.backBufferMs, policy.backBufferMs>0).build(), onLoadingDemand)
 
     @Volatile private var seeking = false
     fun markSeek() { seeking = true }
@@ -29,22 +30,24 @@ class TvLoadControl private constructor(
     override fun onPrepared(playerId: PlayerId) { seeking = false; delegate.onPrepared(playerId) }
     override fun onTracksSelected(parameters: LoadControl.Parameters, trackGroups: TrackGroupArray, trackSelections: Array<out ExoTrackSelection?>) =
         delegate.onTracksSelected(parameters, trackGroups, trackSelections)
-    override fun onStopped(playerId: PlayerId) { seeking = false; delegate.onStopped(playerId) }
-    override fun onReleased(playerId: PlayerId) { seeking = false; delegate.onReleased(playerId) }
+    override fun onStopped(playerId: PlayerId) { seeking = false; reportDemand(false); delegate.onStopped(playerId) }
+    override fun onReleased(playerId: PlayerId) { seeking = false; reportDemand(false); delegate.onReleased(playerId) }
     override fun getAllocator(playerId: PlayerId) = delegate.getAllocator(playerId)
     override fun getBackBufferDurationUs(playerId: PlayerId) = policy.backBufferMs*1000L
     override fun retainBackBufferFromKeyframe(playerId: PlayerId) = policy.backBufferMs>0
 
+    @Volatile var loadingDemand=false; private set
     override fun shouldContinueLoading(parameters: LoadControl.Parameters): Boolean {
         // A seek can leave retained samples at the target while the new forward buffer is empty.
         // Allow only a small, bounded reserve to obtain playable audio and video at the new position.
         if (seeking && allocator.totalBytesAllocated >= policy.targetBytes) {
             val reserve = minOf(policy.targetBytes / 4, 4 * 1024 * 1024)
-            return parameters.bufferedDurationUs < 500_000L * parameters.playbackSpeed &&
-                allocator.totalBytesAllocated.toLong() < policy.targetBytes.toLong() + reserve
+            return reportDemand(parameters.bufferedDurationUs < 500_000L * parameters.playbackSpeed &&
+                allocator.totalBytesAllocated.toLong() < policy.targetBytes.toLong() + reserve)
         }
-        return delegate.shouldContinueLoading(parameters)
+        return reportDemand(delegate.shouldContinueLoading(parameters))
     }
+    private fun reportDemand(value:Boolean):Boolean { loadingDemand=value;onLoadingDemand(value);return value }
     override fun shouldStartPlayback(parameters: LoadControl.Parameters): Boolean {
         if (!seeking) return delegate.shouldStartPlayback(parameters)
         // Don't declare a seek ready based on memory retained from the old position alone.
