@@ -1,7 +1,6 @@
 name: Publish signed APK
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - "main"
@@ -54,21 +53,13 @@ jobs:
           if [[ -s "$evidence" ]]; then
             assets+=("$evidence")
           fi
-          for descriptor in RELEASE-NOTES.md VALIDATION.md; do
-            if [[ -s "$release_dir/$descriptor" ]]; then
-              assets+=("$release_dir/$descriptor")
-            fi
-          done
           assets+=(--repo "$GITHUB_REPOSITORY")
-          # Release creation belongs to the repository owner; this job uploads only.
-          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Create the release as dakaishizhong before running the asset publisher."
-            exit 0
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --title "BronyaTV $version" --notes-file "$release_dir/RELEASE-NOTES.md"
+          else
+            gh release create "$RELEASE_TAG" "${assets[@]}" --verify-tag --title "BronyaTV $version" --notes-file "$release_dir/RELEASE-NOTES.md"
           fi
-          release_author="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq '.author.login')"
-          [[ "$release_author" == "dakaishizhong" ]]
-          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
-          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --title "BronyaTV $version" --notes-file "$release_dir/RELEASE-NOTES.md"
           # Keep the existing release's display name consistent with the renamed app.
           if [[ "$RELEASE_TAG" != "v1.0.3" ]] && gh release view v1.0.3 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit v1.0.3 --repo "$GITHUB_REPOSITORY" --title "BronyaTV 1.0.3" --notes-file releases/v1.0.3/RELEASE-NOTES.md
