@@ -13,6 +13,8 @@ bash scripts/build_release.sh
 
 1.7.4 使用新的正式签名；更早版本需要先卸载。后续版本沿用 1.7.4 密钥。请离线保存私有签名备份，密钥及密码不得提交源码或上传 GitHub Releases。
 
+后续 Git 作者与提交者使用 `dakaishizhong` 及 GitHub 隐私邮箱。准备并验证 `releases/vX.Y.Z/` 文件后，推送发布提交与标签，再由该账号创建对应发行版。`release-apk.yml` 只向该账号创建的发行版上传附件；不存在发行版时等待账号创建，不自动创建 bot 署名的发行版。更新 `releases/CURRENT_VERSION` 后，可在 Actions 手动运行此工作流，或执行 `gh workflow run release-apk.yml --ref main` 上传当前版本。
+
 TrueHD / MLP / DTS 的音频扩展包含已构建的四种 ABI 原生库，普通 APK 构建不需要 NDK。原生库采用 Media3 1.11.1 官方音频解码器和 FFmpeg 6.1.4，仅编译 TrueHD、MLP 与 DTS 的 `dca` 解码器；视频继续使用设备解码器。重新编译原生库时运行 `bash scripts/build_audio_decoders.sh`。脚本、NDK 版本、对应源码和许可见 [解码模块](../decoder-ffmpeg/README.md)。此兼容路径输出 PCM，不保留 TrueHD Atmos 或 DTS:X 对象元数据。
 
 ## 测试

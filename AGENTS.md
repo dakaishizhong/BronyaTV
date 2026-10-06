@@ -2,6 +2,7 @@
 
 - 后续 Git 提交的作者与提交者均使用 `dakaishizhong`。
 - 邮箱使用 GitHub 隐私地址 `86052564+dakaishizhong@users.noreply.github.com`。
+- GitHub 发行版由 `dakaishizhong` 账号创建；自动工作流仅上传附件。推送已验证的发布提交与标签后，使用该账号创建发行版，再触发附件上传工作流。
 - 正式 APK 沿用 1.7.4 的签名密钥；私有签名文件及备份不进入公开源码或发行附件。
 
 # 示例资源约定
