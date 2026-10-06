@@ -13,10 +13,14 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.testTag
@@ -31,6 +35,7 @@ import tv.ember.client.i18n.*
 import tv.ember.client.network.ApiException
 
 class LoginActivity: TvActivity() {
+    @OptIn(ExperimentalLayoutApi::class,ExperimentalComposeUiApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         tvContent {
@@ -50,6 +55,7 @@ class LoginActivity: TvActivity() {
             }
             val serverEmptyAtStart=remember { server.isBlank() }
             val first=remember { FocusRequester() };val submitFocus=remember { FocusRequester() }
+            val passwordFocus=remember { FocusRequester() };val imeVisible=WindowInsets.isImeVisible
             fun submit() {
                 if(busy) return
                 val address=try { EmbyApi.normalizeServer(server) } catch(e: IllegalArgumentException) { status=e.message.orEmpty();return }
@@ -110,11 +116,18 @@ class LoginActivity: TvActivity() {
                             }
                             Column(verticalArrangement=Arrangement.spacedBy((4*scale).dp)) {
                                 Text(Tr.text(UiText.PASSWORD_281),color=Muted,fontSize=(12*scale).sp)
-                                TvField(password,{ password=it },"••••••••","login_password",Modifier.fillMaxWidth(),secret=true,icon=TvGlyph.Lock,onSubmit=::submit)
+                                TvField(password,{ password=it },"••••••••","login_password",Modifier.fillMaxWidth().focusRequester(passwordFocus),secret=true,icon=TvGlyph.Lock,onSubmit=::submit)
                             }
                             if(status.isNotBlank()) Text(status,color=if(busy) Cyan else Color(TvUi.error),fontSize=(12*scale).sp)
                         }
-                        TvAction(Tr.text(UiText.CINEMA_LOGIN_BUTTON),"login_connect",Modifier.fillMaxWidth().height((56*scale).dp).focusRequester(submitFocus),primary=true,enabled=!busy,large=true,onClick=::submit)
+                        TvAction(Tr.text(UiText.CINEMA_LOGIN_BUTTON),"login_connect",Modifier.fillMaxWidth().height((56*scale).dp).focusRequester(submitFocus)
+                            .onPreInterceptKeyBeforeSoftKeyboard { event ->
+                                // Keep the closed-keyboard return path on this page.
+                                if(!imeVisible && event.key==Key.DirectionUp) {
+                                    if(event.type==KeyEventType.KeyDown) passwordFocus.requestFocus()
+                                    true
+                                } else false
+                            },primary=true,enabled=!busy,large=true,onClick=::submit)
                     }
                 }
             }
@@ -124,9 +137,22 @@ class LoginActivity: TvActivity() {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class,ExperimentalComposeUiApi::class)
 @Composable private fun UserProfileCard(user: PublicUser,selected: Boolean,enabled: Boolean,onClick: ()->Unit) {
     val scale=LocalTvScale.current;var focused by remember { mutableStateOf(false) };val shape=RoundedCornerShape(16.dp)
+    val focusManager=LocalFocusManager.current;val imeVisible=WindowInsets.isImeVisible
     Row(Modifier.fillMaxWidth().testTag("login_user_${user.id}").onFocusChanged { focused=it.isFocused }
+        .onPreInterceptKeyBeforeSoftKeyboard { event ->
+            if(!imeVisible && event.key in listOf(Key.DirectionUp,Key.DirectionDown,Key.DirectionLeft,Key.DirectionRight)) {
+                if(event.type==KeyEventType.KeyDown) focusManager.moveFocus(when(event.key) {
+                    Key.DirectionUp -> FocusDirection.Up
+                    Key.DirectionDown -> FocusDirection.Down
+                    Key.DirectionLeft -> FocusDirection.Left
+                    else -> FocusDirection.Right
+                })
+                true
+            } else false
+        }
         .background(if(selected || focused) Cyan.copy(alpha=.12f) else Color(TvUi.panel),shape)
         .border(if(focused) 2.dp else 1.dp,if(focused || selected) Cyan else CardBorder,shape)
         .clickable(enabled=enabled,onClick=onClick).padding((14*scale).dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy((12*scale).dp)) {

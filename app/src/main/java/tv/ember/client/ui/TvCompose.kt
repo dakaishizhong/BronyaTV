@@ -94,13 +94,31 @@ fun TvActivity.tvContent(content: @Composable ()->Unit) {
     var editingBack by remember { mutableStateOf(false) }
     val scale=LocalTvScale.current;val keyboard=LocalSoftwareKeyboardController.current;val focusManager=LocalFocusManager.current
     val imeVisible=WindowInsets.isImeVisible;val backOwner=LocalView.current.findViewTreeOnBackPressedDispatcherOwner()
+    // Include the show/hide transition: the IME can own keys before its inset arrives,
+    // and must keep them until its window has actually closed.
+    fun imeOwnsKeys()=editing || imeVisible
+    fun stopEditing() { editing=false }
+    fun navigate(key:Key) { focusManager.moveFocus(when(key) {
+        Key.DirectionUp -> FocusDirection.Up
+        Key.DirectionDown -> FocusDirection.Down
+        Key.DirectionLeft -> FocusDirection.Left
+        else -> FocusDirection.Right
+    }) }
     LaunchedEffect(imeVisible,focused) {
         if(imeVisible && focused) { editing=true;keyboardWasVisible=true }
-        else if(!imeVisible && keyboardWasVisible) { editing=false;keyboardWasVisible=false }
+        else if(!imeVisible && keyboardWasVisible) { stopEditing();keyboardWasVisible=false }
     }
-    DisposableEffect(backOwner,focused,editing) {
-        val callback=object:OnBackPressedCallback(focused && editing) {
-            override fun handleOnBackPressed() { editing=false;keyboard?.hide() }
+    LaunchedEffect(editing,focused) {
+        if(editing && focused) {
+            // A newly focused editor may still be binding its input connection.
+            // Retry after its first frame, and cancel when Back ends editing.
+            withFrameNanos { }
+            if(editing && focused && !keyboardWasVisible) keyboard?.show()
+        }
+    }
+    DisposableEffect(backOwner,focused,imeOwnsKeys()) {
+        val callback=object:OnBackPressedCallback(focused && imeOwnsKeys()) {
+            override fun handleOnBackPressed() { stopEditing();keyboard?.hide() }
         }
         backOwner?.onBackPressedDispatcher?.addCallback(callback)
         onDispose { callback.remove() }
@@ -108,38 +126,38 @@ fun TvActivity.tvContent(content: @Composable ()->Unit) {
     BasicTextField(value,onValue,modifier.heightIn(min=(40*scale).dp).testTag(tag)
         .onPreInterceptKeyBeforeSoftKeyboard { event ->
             when {
-                event.key==Key.Back && (editing || editingBack) -> {
-                    if(event.type==KeyEventType.KeyDown) { editingBack=true;editing=false;keyboard?.hide() }
+                event.key==Key.Back && (imeOwnsKeys() || editingBack) -> {
+                    if(event.type==KeyEventType.KeyDown) { editingBack=true;stopEditing();keyboard?.hide() }
                     else if(event.type==KeyEventType.KeyUp) editingBack=false
                     true
                 }
-                !editing && event.key in listOf(Key.DirectionLeft,Key.DirectionRight) -> {
-                    if(event.type==KeyEventType.KeyDown) focusManager.moveFocus(if(event.key==Key.DirectionLeft) FocusDirection.Left else FocusDirection.Right)
+                !imeOwnsKeys() && event.key in listOf(Key.DirectionUp,Key.DirectionDown,Key.DirectionLeft,Key.DirectionRight) -> {
+                    if(event.type==KeyEventType.KeyDown) navigate(event.key)
                     true
                 }
                 else -> false
             }
         }
-        .onFocusChanged { focused=it.isFocused;if(!it.isFocused) { editing=false;keyboardWasVisible=false } }.onPreviewKeyEvent {
+        .onFocusChanged { focused=it.isFocused;if(!it.isFocused) { stopEditing();keyboardWasVisible=false } }.onPreviewKeyEvent {
             when(it.key) {
-                Key.DirectionUp,Key.DirectionDown -> {
-                    if(it.type==KeyEventType.KeyDown) focusManager.moveFocus(if(it.key==Key.DirectionUp) FocusDirection.Up else FocusDirection.Down)
+                Key.DirectionUp,Key.DirectionDown,Key.DirectionLeft,Key.DirectionRight -> {
+                    // Pre-IME dispatch above lets the keyboard select its keys first.
+                    // Swallow any keys it returns while editing so Compose's fallback
+                    // focus navigation cannot move the login page behind the keyboard.
+                    if(!imeOwnsKeys() && it.type==KeyEventType.KeyDown) navigate(it.key)
                     true
                 }
-                Key.DirectionLeft,Key.DirectionRight -> {
-                    if(editing) false else {
-                        if(it.type==KeyEventType.KeyDown) focusManager.moveFocus(if(it.key==Key.DirectionLeft) FocusDirection.Left else FocusDirection.Right)
-                        true
-                    }
+                Key.DirectionCenter -> {
+                    if(!imeOwnsKeys() && it.type==KeyEventType.KeyDown) { editing=true;keyboard?.show() }
+                    true
                 }
-                Key.DirectionCenter -> { if(it.type==KeyEventType.KeyDown) { editing=true;keyboard?.show() };true }
                 else -> false
             }
         }.background(Color(TvUi.panel),RoundedCornerShape(12.dp)).border(1.dp,if(focused) Cyan else CardBorder,RoundedCornerShape(12.dp)).padding((12*scale).dp),
         singleLine=true,textStyle=TextStyle(color=Paper,fontSize=((if(icon==null) 15 else 14)*scale).sp),cursorBrush=SolidColor(Cyan),
         visualTransformation=if(secret) PasswordVisualTransformation() else VisualTransformation.None,
         keyboardOptions=KeyboardOptions(keyboardType=if(secret) KeyboardType.Password else if(uri) KeyboardType.Uri else KeyboardType.Text,imeAction=ImeAction.Done),
-        keyboardActions=KeyboardActions(onDone={ editing=false;keyboard?.hide();onSubmit() }),
+        keyboardActions=KeyboardActions(onDone={ stopEditing();keyboard?.hide();onSubmit() }),
         decorationBox={ inner -> Row(verticalAlignment=Alignment.CenterVertically) {
             if(icon!=null) { TvIcon(icon,Cyan,Modifier.size((18*scale).dp));Spacer(Modifier.width((10*scale).dp)) }
             Box(Modifier.weight(1f)) { if(value.isEmpty()) Text(label,color=Muted,fontSize=(14*scale).sp);inner() }
